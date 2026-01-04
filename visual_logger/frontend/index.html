@@ -35,7 +35,11 @@
                 </div>
                 <div class="token-info" id="tokenInfo">
                     <span class="token-icon">🪙</span>
-                    <span class="token-display" id="sessionTokens" title="Token usage per request">--</span>
+                    <span class="token-display">
+                        <span class="token-input" id="totalInputTokens" title="Total input tokens">↓ 0</span>
+                        <span class="token-separator">|</span>
+                        <span class="token-output" id="totalOutputTokens" title="Total output tokens">↑ 0</span>
+                    </span>
                 </div>
             </div>
             <div class="header-right">
@@ -149,6 +153,8 @@
                                 <button class="graph-btn" id="zoomIn" title="Zoom In">+</button>
                                 <button class="graph-btn" id="zoomOut" title="Zoom Out">−</button>
                                 <button class="graph-btn" id="zoomReset" title="Reset Zoom">⟲</button>
+                                <button class="graph-btn graph-btn-toggle active" id="toggleLineTokens"
+                                    title="Toggle token display on lines">🪙</button>
                             </div>
                             <div class="graph-viewport" id="graphViewport">
                                 <div class="mermaid" id="mermaidGraph">
@@ -273,6 +279,8 @@
                         </div>
                         <div class="tests-controls">
                             <button class="chip-btn" id="testsFilterToggle">Show failures only</button>
+                            <button class="chip-btn chip-btn-danger" id="testsClearBtn"
+                                title="Clear all test results">🗑️ Clear Tests</button>
                             <span class="tests-legend">✅ pass · ❌ fail</span>
                         </div>
                     </div>

@@ -6,6 +6,7 @@ from coding.tools.modify_inline import modify_file_inline
 from coding.tools.code_analysis import find_function_usages, get_function_source, list_functions_in_file
 from coding.non_callable_tools.action_logger import action_logger
 from coding.tools.testing import run_all_tests, parse_test_results
+from coding.non_callable_tools.gather_context import gather_context_fix
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.helpers import check_integrity
 
@@ -172,11 +173,14 @@ def main_manual_repl():
 
 if __name__ == "__main__":
     #print(run_all_tests())
+    results = run_all_tests()
+    issues_to_fix = parse_test_results(results)
+    error_context = gather_context_fix(results)
+    print("Error context: ", error_context)
     #handler = BackupHandler("__game_backups")
     #handler.restore_backup("20260104025335_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
-
     #main_manual_repl()
-    main_version_control()
+    #main_version_control()
     #print(gather_context_planning())
     #print(gather_context_coding())

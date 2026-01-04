@@ -100,7 +100,7 @@ class BackupHandler:
         else:
             raise ValueError(f"Backup {backup_name} is corrupted")
         
-        return True
+        return backup_path, backup_name
 
     def list_backups(self):
         """

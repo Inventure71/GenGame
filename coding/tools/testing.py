@@ -86,12 +86,12 @@ def run_all_tests() -> dict:
         action_logger.visual_enabled = True
         # If it wasn't started properly, we might need to ensure connection
         if not action_logger.visual_connected:
-             # Basic attempt to connect just in case
-             try:
-                 action_logger._ensure_server_running()
-                 action_logger._start_visual_worker()
-             except:
-                 pass
+            # Basic attempt to connect just in case
+            try:
+                action_logger._ensure_server_running()
+                action_logger._start_visual_worker()
+            except Exception as e:
+                pass
 
     failures = []
     

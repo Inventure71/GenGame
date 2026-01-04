@@ -2,7 +2,7 @@ import time
 from dotenv import load_dotenv
 from coding.non_callable_tools.backup_handling import BackupHandler
 from coding.generic_implementation import GenericHandler
-from coding.non_callable_tools.gather_context import gather_context_planning, gather_context_coding, gather_context_testing
+from coding.non_callable_tools.gather_context import gather_context_planning, gather_context_coding, gather_context_testing, gather_context_fix
 from coding.non_callable_tools.todo_list import TodoList
 from coding.tools.file_handling import get_tree_directory, read_file, create_file, get_directory
 from coding.tools.modify_inline import modify_file_inline
@@ -10,16 +10,17 @@ from coding.tools.code_analysis import find_function_usages, get_function_source
 from coding.non_callable_tools.action_logger import action_logger
 from coding.tools.testing import run_all_tests, parse_test_results
 from coding.non_callable_tools.helpers import load_prompt
-from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.helpers import check_integrity
 
-def plan_feature(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool):
+def plan_feature(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, results: dict=None):
     if fix_mode:
         print("------ Planning in fix mode ------")
         planning_sys_prompt = load_prompt("coding/system_prompts/planning_fix.md")
+        context = gather_context_fix(results=results)
     else:
         print("------ Planning in normal mode ------")
         planning_sys_prompt = load_prompt("coding/system_prompts/planning.md")
+        context = gather_context_planning()
 
     planning_tools = [
         todo_list.append_to_todo_list,
@@ -37,7 +38,7 @@ def plan_feature(prompt: str, modelHandler: GenericHandler, todo_list: TodoList,
     full_prompt = (
         f"## User Request\n"
         f"{prompt}\n"
-        f"{gather_context_planning()}\n"
+        f"{context}\n"
     )
         
     print("--------------------------------")
@@ -146,11 +147,11 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
     print("Tests created (REMEMBER THAT WE DIDN'T SUMMARIZE THE CHAT FOR NOW)")
     print("--------------------------------")
 
-def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool):
+def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None):
     if total_cleanup:
         modelHandler.clean_chat_history()
 
-    plan_feature(prompt, modelHandler, todo_list, fix_mode=fix_mode)
+    plan_feature(prompt, modelHandler, todo_list, fix_mode=fix_mode, results=results)
     implement_feature(modelHandler, todo_list)
     if not fix_mode:
         generate_tests(prompt, modelHandler, todo_list)
@@ -170,38 +171,52 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
             print("Asking for a fix to model...")
             print("Not cleaning up chat history in fix mode but we are summarizing it again in case last step wasn't summarized")
             modelHandler.summarize_chat_history(autocleanup=True)
+            # files involved in issues_to_fix
             prompt = (
                 f"## The following tests failed, understand why and fix the issues\n"
                 f"{issues_to_fix}\n"
             )
-            full_loop(prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False)
+            full_loop(prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results)
+        if fix_mode:
+            return False
     else:
         print("Tests passed, continuing...")    
-
+        if fix_mode:
+            return True
 
     if input("Save changes to extension file? (y/n): ").strip().lower() == 'y':
         action_logger.save_changes_to_extension_file("patches.json", name_of_backup=backup_name)
 
-    #gemini.set_tools([run_all_tests])
-
-    # End session and show summary
-    action_logger.end_session()
+    print("--------------------------------")
     action_logger.print_summary(todo_list)
+    print("--------------------------------")
     
     # Prompt user to see full diffs
     show_diffs = input("\nShow full diffs? (y/n): ").strip().lower()
     if show_diffs == 'y':
         action_logger.print_diffs()
 
-def new_main():
+def new_main(start_from_base: str = None):
     load_dotenv()
     check_integrity()
     handler = BackupHandler("__game_backups")
-    backup_path, backup_name = handler.create_backup("GameFolder") 
-    print("Backup created at: ", backup_path)
+    if start_from_base is None:
+        backup_path, backup_name = handler.create_backup("GameFolder") 
+        print("Backup created at: ", backup_path)
+
+    else:
+        backup_path, backup_name = handler.restore_backup(start_from_base, target_path="GameFolder")
+        print("Restored backup from: ", backup_path)
+    
     print("Backup name: ", backup_name)
+
+    # start logger
+    action_logger.start_session(visual=True)
+
     modelHandler = GenericHandler(thinking_model=True, provider="GEMINI", model_name="models/gemini-3-flash-preview")
+    
     todo_list = TodoList()
+
     prompt = input("Enter your prompt: ")
     full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True)
 
@@ -212,10 +227,11 @@ def new_main():
         - CLEAN UP chat history or SUMMARIZE chat history
         - Cleanup the Todo List recreating the object to reset
     """
+    action_logger.end_session()
 
 if __name__ == "__main__":
     #print(run_all_tests())
     #handler = BackupHandler("__game_backups")
-    #handler.restore_backup("20260104025335_GameFolder", target_path="GameFolder")
+    #handler.restore_backup("20260104161653_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
-    new_main()
+    new_main(start_from_base="20260104161653_GameFolder")

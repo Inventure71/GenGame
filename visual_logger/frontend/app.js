@@ -85,7 +85,8 @@ class VisualLogger {
             selectedAction: null,
             graphZoom: 1,
             graphPan: { x: 0, y: 0 },
-            isPanning: false
+            isPanning: false,
+            showLineTokens: true  // Toggle for per-line token display
         };
         
         this.elements = {};
@@ -154,7 +155,8 @@ class VisualLogger {
             detailsArgs: document.getElementById('detailsArgs'),
             detailsResult: document.getElementById('detailsResult'),
             detailsFiles: document.getElementById('detailsFiles'),
-            testsFilterToggle: document.getElementById('testsFilterToggle')
+            testsFilterToggle: document.getElementById('testsFilterToggle'),
+            testsClearBtn: document.getElementById('testsClearBtn')
         };
     }
     
@@ -194,6 +196,11 @@ class VisualLogger {
                 this.renderTests();
             });
         }
+
+        // Clear Tests button
+        if (this.elements.testsClearBtn) {
+            this.elements.testsClearBtn.addEventListener('click', () => this.clearTests());
+        }
     }
     
     initZoomControls() {
@@ -220,6 +227,16 @@ class VisualLogger {
             this.state.graphPan = { x: 0, y: 0 };
             this.applyZoom();
         });
+        
+        // Token line toggle
+        const toggleLineTokens = document.getElementById('toggleLineTokens');
+        if (toggleLineTokens) {
+            toggleLineTokens.addEventListener('click', () => {
+                this.state.showLineTokens = !this.state.showLineTokens;
+                toggleLineTokens.classList.toggle('active', this.state.showLineTokens);
+                this.updateFlowGraph();
+            });
+        }
         
         // Pan with mouse drag
         let startPan = { x: 0, y: 0 };
@@ -449,6 +466,15 @@ class VisualLogger {
         });
         this.state.events = reconstructedEvents;
         
+        // Recalculate token totals from model_requests
+        this.state.totalInputTokens = 0;
+        this.state.totalOutputTokens = 0;
+        this.state.modelRequests.forEach(req => {
+            this.state.totalInputTokens += req.inputTokens || req.input_tokens || 0;
+            this.state.totalOutputTokens += req.outputTokens || req.output_tokens || 0;
+        });
+        this.updateTokenDisplay();
+        
         // Re-render UI pieces
         this.renderActionsFromState();
         this.updateFlowGraph();
@@ -631,22 +657,28 @@ class VisualLogger {
             timestamp: data.timestamp
         });
 
-        this.state.totalInputTokens = data.cumulative_after;
+        // Track cumulative totals for input and output separately
+        this.state.totalInputTokens += request.inputTokens || 0;
+        this.state.totalOutputTokens += request.outputTokens || 0;
         
         // Always update flow graph when we get a model request
         this.updateFlowGraph();
         
         // Update token display
-        this.updateTokenDisplay(request);
+        this.updateTokenDisplay();
     }
     
-    updateTokenDisplay(request) {
-        const tokenEl = document.getElementById('sessionTokens');
-        if (tokenEl) {
-            const input = request.inputTokens.toLocaleString();
-            const cumulative = request.cumulativeBefore.toLocaleString();
-            tokenEl.textContent = `This req: ${input} | Total: ${cumulative}`;
-            tokenEl.title = `Current request: ${input} input tokens\nPreviously used: ${cumulative} tokens`;
+    updateTokenDisplay() {
+        const inputEl = document.getElementById('totalInputTokens');
+        const outputEl = document.getElementById('totalOutputTokens');
+        
+        if (inputEl) {
+            inputEl.textContent = `↓ ${this.state.totalInputTokens.toLocaleString()}`;
+            inputEl.title = `Total input tokens: ${this.state.totalInputTokens.toLocaleString()}`;
+        }
+        if (outputEl) {
+            outputEl.textContent = `↑ ${this.state.totalOutputTokens.toLocaleString()}`;
+            outputEl.title = `Total output tokens: ${this.state.totalOutputTokens.toLocaleString()}`;
         }
     }
     
@@ -824,6 +856,30 @@ class VisualLogger {
             }
         }
         
+        // Build token map: associate tool_calls with their model_request's token count
+        // Each model_request follows its tool_calls, so we look backwards from each model_request
+        const tokenMap = new Map(); // idx -> {input, output}
+        for (let i = 0; i < events.length; i++) {
+            const event = events[i];
+            if (event.type === 'model_request') {
+                const inputTokens = event.data.input_tokens || event.data.inputTokens || 0;
+                const outputTokens = event.data.output_tokens || event.data.outputTokens || 0;
+                const tools = event.data.tool_calls || event.data.toolCalls || [];
+                const numTools = tools.length || 1; // At least 1 for single tool requests
+                
+                // Associate preceding tool_calls with this model_request's tokens
+                let foundTools = 0;
+                for (let j = i - 1; j >= 0 && foundTools < numTools; j--) {
+                    const prevEvent = events[j];
+                    if (prevEvent.type === 'model_request') break;
+                    if (prevEvent.type === 'tool_call' && !tokenMap.has(j)) {
+                        tokenMap.set(j, { input: inputTokens, output: outputTokens });
+                        foundTools++;
+                    }
+                }
+            }
+        }
+        
         // Second pass: build the graph with proper grouping
         let prevNodeIds = [];
         let processedGroups = new Set();
@@ -867,10 +923,15 @@ class VisualLogger {
                 
                 graphDef += `    end\n`;
                 
-                // Link from previous nodes to all nodes in parallel group
+                // Link from previous nodes to all nodes in parallel group with token labels
+                // Get token info for this group (all share same tokens)
+                const firstGroupIdx = groupIndices[0];
+                const groupTokenInfo = tokenMap.get(firstGroupIdx);
+                const tokenLabel = (this.state.showLineTokens && groupTokenInfo) ? `|${groupTokenInfo.input.toLocaleString()}t|` : '';
+                
                 prevNodeIds.forEach(prevId => {
                     groupNodeIds.forEach(currId => {
-                        graphDef += `    ${prevId} --> ${currId};\n`;
+                        graphDef += `    ${prevId} -->${tokenLabel} ${currId};\n`;
                     });
                 });
                 
@@ -879,8 +940,12 @@ class VisualLogger {
                 // Regular single node
                 graphDef += this.generateNodeDef(event, idx);
                 
+                // Get token info for edge label
+                const edgeTokenInfo = tokenMap.get(idx);
+                const edgeTokenLabel = (this.state.showLineTokens && edgeTokenInfo) ? `|${edgeTokenInfo.input.toLocaleString()}t|` : '';
+                
                 prevNodeIds.forEach(prevId => {
-                    graphDef += `    ${prevId} --> ${nodeId};\n`;
+                    graphDef += `    ${prevId} -->${edgeTokenLabel} ${nodeId};\n`;
                 });
                 
                 prevNodeIds = [nodeId];
@@ -1457,6 +1522,18 @@ class VisualLogger {
             </div>
         `;
         
+        // Reset tests container
+        const testsContainer = document.getElementById('testsContainer');
+        if (testsContainer) {
+            testsContainer.innerHTML = `
+                <div class="empty-state">
+                    <span class="empty-icon">🧪</span>
+                    <span class="empty-text">No test results available</span>
+                    <span class="empty-subtext">Run tests to see results here</span>
+                </div>`;
+        }
+        this.updateTestSummaryCounts();
+        
         this.elements.flowSvg.innerHTML = '';
         const emptyFlow = this.elements.flowContainer.querySelector('.flow-empty');
         if (emptyFlow) emptyFlow.style.display = 'flex';
@@ -1491,11 +1568,24 @@ class VisualLogger {
     
     clearSession() {
         this.state.actions = [];
+        this.state.events = [];
+        this.state.modelRequests = [];
         this.state.files = {};
         this.state.todos = [];
+        this.state.tests = [];
+        this.state.totalInputTokens = 0;
+        this.state.totalOutputTokens = 0;
         this.state.selectedFile = null;
         this.clearUI();
+        this.updateTokenDisplay();
         this.showToast('Session cleared', 'info');
+    }
+    
+    clearTests() {
+        this.state.tests = [];
+        this.renderTests();
+        this.updateTestSummaryCounts();
+        this.showToast('Test results cleared', 'info');
     }
     
     startSessionTimer() {
