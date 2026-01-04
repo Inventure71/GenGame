@@ -151,6 +151,7 @@ class GeminiHandler:
                         else:
                             print(f"Failed after {max_retries} attempts: {e}")
                             print(f"The request was: {api_history}")
+                            print(f"The config was: {config}")
                             raise e
                     else:
                         # Non-server error, re-raise immediately

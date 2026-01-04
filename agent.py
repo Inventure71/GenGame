@@ -1,4 +1,4 @@
-from time import time
+import time
 from dotenv import load_dotenv
 from coding.non_callable_tools.backup_handling import BackupHandler
 from coding.generic_implementation import GenericHandler
@@ -412,13 +412,53 @@ def main_version_control():
     version_control = VersionControl(action_logger, path_to_security_backup="__TEMP_SECURITY_BACKUP")
     version_control.merge_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches="patches.json")
 
-if __name__ == "__main__":
+def small_check():
+    load_dotenv()
+
+    logger = action_logger.start_session(visual=True)
+    modelHandler = GenericHandler(thinking_model=True, provider="GEMINI", model_name="models/gemini-3-flash-preview")
+    all_tools = [
+        read_file, 
+        create_file,
+        get_directory,
+        get_tree_directory,
+        modify_file_inline,
+        list_functions_in_file,
+        find_function_usages,
+        get_function_source,
+    ]
+
+    coding_sys_prompt = load_prompt("coding/system_prompts/coding.md")
     
+    modelHandler.set_tools(all_tools)
+    modelHandler.setup_config("LOW", coding_sys_prompt, tools=all_tools)
+
+    while True:
+        user_input = input("User: ").strip()
+        if user_input.lower() in ['exit', 'quit']:
+            break
+        if user_input.lower() == "summarize":
+            modelHandler.summarize_chat_history(autocleanup=True)
+            continue
+        
+        response = modelHandler.generate_response(
+            prompt=user_input,
+            use_tools=True,
+            use_history=True,
+        )
+        print(response)
+    
+    action_logger.end_session()
+
+        
+if __name__ == "__main__":
     #print(run_all_tests())
     #handler = BackupHandler("__game_backups")
     #handler.restore_backup("20260104025335_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
     main()
+    #small_check()
+
     #main_manual_repl()
     #main_version_control()
     #print(gather_context_planning())
