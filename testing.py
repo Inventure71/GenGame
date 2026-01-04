@@ -174,7 +174,11 @@ def main_manual_repl():
 if __name__ == "__main__":
     #print(run_all_tests())
     results = run_all_tests()
+    print("Results: ", results)
+    print("--------------------------------")
     issues_to_fix = parse_test_results(results)
+    print(issues_to_fix)
+    print("--------------------------------")
     error_context = gather_context_fix(results)
     print("Error context: ", error_context)
     #handler = BackupHandler("__game_backups")
