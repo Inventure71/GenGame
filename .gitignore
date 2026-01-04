@@ -4,3 +4,7 @@
 /_GAME_FEATURES.md
 /__TEMP_SECURITY_BACKUP
 /__game_backups
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
