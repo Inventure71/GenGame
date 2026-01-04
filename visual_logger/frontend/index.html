@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Logger | Agent Monitor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+</head>
+
+<body>
+    <div class="app">
+        <!-- Header Bar -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <span class="logo-icon">◈</span>
+                    <span class="logo-text">Visual Logger</span>
+                </div>
+                <div class="connection-status" id="connectionStatus">
+                    <span class="status-dot disconnected"></span>
+                    <span class="status-text">Disconnected</span>
+                </div>
+            </div>
+            <div class="header-center">
+                <div class="session-info" id="sessionInfo">
+                    <span class="session-label">Session:</span>
+                    <span class="session-status" id="sessionStatus">Idle</span>
+                </div>
+                <div class="token-info" id="tokenInfo">
+                    <span class="token-icon">🪙</span>
+                    <span class="token-display" id="sessionTokens" title="Token usage per request">--</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="btn btn-primary" id="exportBtn" title="Export Current Tab to Markdown">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                    </svg>
+                    <span>Export</span>
+                </button>
+                <button class="btn btn-ghost" id="clearBtn" title="Clear Session">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                    </svg>
+                </button>
+                <button class="btn btn-ghost" id="themeBtn" title="Toggle Theme">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="5" />
+                        <path
+                            d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Left Sidebar - TODOs & Files -->
+            <aside class="sidebar" id="sidebar">
+                <!-- TODO List -->
+                <div class="sidebar-section">
+                    <div class="sidebar-header">
+                        <span class="sidebar-title">📋 Tasks</span>
+                        <span class="todo-progress" id="todoProgress">0/0</span>
+                    </div>
+                    <div class="todo-list" id="todoList">
+                        <div class="empty-state">
+                            <span class="empty-icon">📝</span>
+                            <span class="empty-text">No tasks yet</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- File Tree -->
+                <div class="sidebar-section">
+                    <div class="sidebar-header">
+                        <span class="sidebar-title">📁 Modified Files</span>
+                        <span class="file-count" id="fileCount">0</span>
+                    </div>
+                    <div class="file-tree" id="fileTree">
+                        <div class="empty-state">
+                            <span class="empty-icon">📂</span>
+                            <span class="empty-text">No files modified yet</span>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+            <div class="resizer" id="sidebarResizer"></div>
+
+            <!-- Center Panel - Main View -->
+            <section class="center-panel">
+                <div class="panel-tabs" id="panelTabs">
+                    <button class="tab active" data-tab="flow">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="5" r="3" />
+                            <circle cx="12" cy="19" r="3" />
+                            <path d="M12 8v8" />
+                        </svg>
+                        Process Flow
+                    </button>
+                    <button class="tab" data-tab="diff">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M12 3v18M3 12h18" />
+                        </svg>
+                        Diff Viewer
+                    </button>
+                    <button class="tab" data-tab="thinking">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 6v6l4 2" />
+                        </svg>
+                        Thoughts & Chat
+                    </button>
+                    <button class="tab" data-tab="timeline">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <line x1="12" y1="20" x2="12" y2="10" />
+                            <line x1="18" y1="20" x2="18" y2="4" />
+                            <line x1="6" y1="20" x2="6" y2="16" />
+                        </svg>
+                        Timeline
+                    </button>
+                    <button class="tab" data-tab="tests">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <polyline points="14 2 14 8 20 8"></polyline>
+                            <line x1="9" y1="15" x2="15" y2="15"></line>
+                        </svg>
+                        Tests
+                    </button>
+                </div>
+
+                <!-- Process Flow View -->
+                <div class="tab-content active" id="flowTab">
+                    <div class="flow-layout">
+                        <div class="flow-graph-container" id="flowContainer">
+                            <div class="graph-controls">
+                                <button class="graph-btn" id="zoomIn" title="Zoom In">+</button>
+                                <button class="graph-btn" id="zoomOut" title="Zoom Out">−</button>
+                                <button class="graph-btn" id="zoomReset" title="Reset Zoom">⟲</button>
+                            </div>
+                            <div class="graph-viewport" id="graphViewport">
+                                <div class="mermaid" id="mermaidGraph">
+                                    graph TD;
+                                    Start[Waiting for data...]
+                                </div>
+                            </div>
+                        </div>
+                        <div class="resizer" id="flowResizer"></div>
+                        <div class="flow-details-panel" id="flowDetails">
+                            <div class="details-placeholder">
+                                <span class="placeholder-icon">👆</span>
+                                <span class="placeholder-text">Click a node to view details</span>
+                            </div>
+                            <div class="details-content hidden" id="detailsContent">
+                                <h3 id="detailsTitle">Action Name</h3>
+                                <div class="details-meta">
+                                    <span id="detailsStatus" class="tag">Success</span>
+                                    <span id="detailsTime" class="timestamp">12:00:00</span>
+                                </div>
+
+                                <div class="details-section">
+                                    <h4>Arguments</h4>
+                                    <pre id="detailsArgs" class="code-block json"></pre>
+                                </div>
+
+                                <div class="details-section">
+                                    <h4>Result</h4>
+                                    <pre id="detailsResult" class="code-block"></pre>
+                                </div>
+
+                                <div class="details-section">
+                                    <h4>Related Files</h4>
+                                    <div id="detailsFiles" class="file-list"></div>
+                                </div>
+
+                                <div class="details-section" id="chatHistorySection">
+                                    <h4>Chat History
+                                        <button class="btn btn-ghost btn-sm" id="toggleChatHistory"
+                                            title="Download Chat History">📥 Download</button>
+                                    </h4>
+                                    <div id="detailsChatHistory"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Diff View -->
+                <div class="tab-content" id="diffTab">
+                    <div class="diff-header" id="diffHeader">
+                        <span class="diff-filename">Select a file to view changes</span>
+                    </div>
+                    <div class="diff-toolbar" id="diffToolbar">
+                        <div class="diff-mode-toggle">
+                            <button class="mode-btn active" data-mode="split">Split</button>
+                            <button class="mode-btn" data-mode="unified">Unified</button>
+                        </div>
+                        <div class="diff-stats" id="diffStats">
+                            <span class="stat additions">+0</span>
+                            <span class="stat deletions">-0</span>
+                        </div>
+                        <div class="version-selector" id="versionSelector">
+                            <select id="versionA" class="version-select">
+                                <option value="0">Original</option>
+                            </select>
+                            <span class="version-arrow">→</span>
+                            <select id="versionB" class="version-select">
+                                <option value="latest">Latest</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="diff-container" id="diffContainer">
+                        <div class="diff-empty">
+                            <div class="diff-empty-icon">⚡</div>
+                            <div class="diff-empty-text">Select a modified file to view changes</div>
+                            <div class="diff-empty-hint">Files will appear as they are modified during the session</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Thinking View -->
+                <div class="tab-content" id="thinkingTab">
+                    <div class="thinking-container" id="thinkingContainer">
+                        <div class="empty-state">
+                            <span class="empty-icon">💭</span>
+                            <span class="empty-text">Agent thoughts will appear here</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Timeline View -->
+                <div class="tab-content" id="timelineTab">
+                    <div class="timeline-container" id="timelineContainer">
+                        <div class="empty-state">
+                            <span class="empty-icon">📊</span>
+                            <span class="empty-text">Action timeline will appear here</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tests View -->
+                <div class="tab-content" id="testsTab">
+                    <div class="tests-header">
+                        <div class="tests-summary" id="testsSummary">
+                            <div class="summary-card">
+                                <span class="summary-label">Tests Run</span>
+                                <span class="summary-value" id="testsTotal">0</span>
+                            </div>
+                            <div class="summary-card success">
+                                <span class="summary-label">Passed</span>
+                                <span class="summary-value" id="testsPassed">0</span>
+                            </div>
+                            <div class="summary-card error">
+                                <span class="summary-label">Failed</span>
+                                <span class="summary-value" id="testsFailed">0</span>
+                            </div>
+                            <div class="summary-card time">
+                                <span class="summary-label">Duration</span>
+                                <span class="summary-value" id="testsDuration">0s</span>
+                            </div>
+                        </div>
+                        <div class="tests-controls">
+                            <button class="chip-btn" id="testsFilterToggle">Show failures only</button>
+                            <span class="tests-legend">✅ pass · ❌ fail</span>
+                        </div>
+                    </div>
+                    <div class="tests-container" id="testsContainer">
+                        <div class="empty-state">
+                            <span class="empty-icon">🧪</span>
+                            <span class="empty-text">No test results available</span>
+                            <span class="empty-subtext">Run tests to see results here</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Bottom Status Bar -->
+        <footer class="status-bar">
+            <div class="status-left">
+                <span class="status-item" id="lastAction">Ready</span>
+            </div>
+            <div class="status-center">
+                <span class="status-item" id="actionProgress">Actions: 0</span>
+            </div>
+            <div class="status-right">
+                <span class="status-item" id="sessionTime">00:00</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Action Detail Modal -->
+    <div class="modal" id="actionModal">
+        <div class="modal-overlay" id="modalOverlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">Action Details</h3>
+                <button class="modal-close" id="modalClose">&times;</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
