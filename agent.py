@@ -129,7 +129,8 @@ def main():
         Objective: {user_input}
         Starting Context:\n{gather_context_planning()}
         """
-
+        
+        print("--------------------------------")
         print("Planning...") # the goal is to create a few tasks to be completed with a deep description
         planning_response = modelHandler.generate_response(
             prompt=full_prompt, 
@@ -138,17 +139,19 @@ def main():
         )
         print(planning_response) 
 
+        print("--------------------------------")
         print("Setting up coding agent...")
+        modelHandler.summarize_chat_history(autocleanup=True)
         modelHandler.set_tools(all_tools)
         modelHandler.setup_config("LOW", coding_sys_prompt, tools=all_tools)
-        modelHandler.summarize_chat_history(autocleanup=True)
-
+    
         print("\nAgent is working...\n")
         
         number_of_tasks = todo_list.get_number_of_tasks()
         current_index = todo_list.index_of_current_task
 
         while current_index < number_of_tasks and current_index != -1:
+            print("--------------------------------")
             todo_item_str = todo_list.get_current_task()
             if todo_item_str == "No tasks remaining, all tasks have been completed":
                 print("Agent has completed all tasks")
@@ -175,8 +178,10 @@ def main():
             """
             
             current_index = modelHandler.ask_until_task_completed(todo_list, current_index, full_prompt, summarize_at_completion=True)
+            print("--------------------------------")
 
         if not was_fixing_issues:
+            print("--------------------------------")
             print("Generating tests...")
             # we add to the todo list the task of creating the tests
             todo_list.append_to_todo_list("Create tests for the newly implemented features", "Create tests for all the newly implemented features in the GameFolder/tests/ directory.")
@@ -199,7 +204,8 @@ def main():
             print("Creating tests...")
             current_index = modelHandler.ask_until_task_completed(todo_list, current_index, full_prompt, summarize_at_completion=False)
             print("Tests created (REMEMBER THAT WE DIDN'T SUMMARIZE THE CHAT FOR NOW)")
-            
+            print("--------------------------------")
+
         # Then we give the model the answer to all the tests
         print("Running tests...")
         results = run_all_tests()

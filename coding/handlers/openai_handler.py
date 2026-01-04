@@ -17,7 +17,6 @@ class OpenAIHandler:
         
         self.thinking_model = thinking_model
         self.model_name = model_name
-        self.config = None
     
         self.available_tools = []
         self.tool_map = {}
@@ -27,6 +26,8 @@ class OpenAIHandler:
         self.reasoning = {"effort": "low", "summary": self.auto_summary}
         self.instructions = "" # system instructions
         self.tools = [] 
+
+        self.base_config_dic = None
     
     def _as_dict(self, item):
         return item.model_dump() if hasattr(item, "model_dump") else item
@@ -61,6 +62,12 @@ class OpenAIHandler:
             self.tool_map = {tool.__name__: tool for tool in tools}
             # Use explicit schemas where available for better parameter enforcement
             self.tools = get_tool_declarations_openai(tools)
+
+        self.base_config_dic = {
+            "thinking_level": thinking_level,
+            "system_instruction": system_instruction,
+            "tools": tools
+        }
 
     def filter_chat_history(self, most_recent_chat: list):
         filtered = []
