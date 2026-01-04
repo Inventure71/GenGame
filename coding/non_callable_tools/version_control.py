@@ -71,8 +71,12 @@ class VersionControl:
             data = json.load(f)
             name_of_backup = data["name_of_backup"]
             changes = data["changes"]
-        with open(file_path.replace('.json', '_metadata.json'), 'r') as f:
-            metadata = json.load(f)
+        if os.path.exists(file_path.replace('.json', '_metadata.json')):
+            with open(file_path.replace('.json', '_metadata.json'), 'r') as f:
+                metadata = json.load(f)
+        else:
+            print(f"No metadata file found for {file_path}")
+            metadata = []
         return name_of_backup, changes, metadata
     
     def valid_apply(self, file_path: str, diff: str) -> bool:

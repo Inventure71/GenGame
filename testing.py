@@ -10,12 +10,12 @@ from coding.non_callable_tools.gather_context import gather_context_fix
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.helpers import check_integrity
 
-def main_version_control():
+def main_version_control(file_containing_patches: str = "patches.json"):
     load_dotenv()
     check_integrity()
     action_logger.start_session(visual=True)
     version_control = VersionControl(action_logger, path_to_security_backup="__TEMP_SECURITY_BACKUP")
-    version_control.merge_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches="patches.json")
+    version_control.merge_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches=file_containing_patches)
 
 def main_manual_repl():
     load_dotenv()
@@ -172,19 +172,19 @@ def main_manual_repl():
     print("Session ended.")
 
 if __name__ == "__main__":
-    #print(run_all_tests())
-    results = run_all_tests()
-    print("Results: ", results)
-    print("--------------------------------")
-    issues_to_fix = parse_test_results(results)
-    print(issues_to_fix)
-    print("--------------------------------")
-    error_context = gather_context_fix(results)
-    print("Error context: ", error_context)
+    print(run_all_tests())
+    #results = run_all_tests()
+    #print("Results: ", results)
+    #print("--------------------------------")
+    #issues_to_fix = parse_test_results(results)
+    #print(issues_to_fix)
+    #print("--------------------------------")
+    #error_context = gather_context_fix(results)
+    #print("Error context: ", error_context)
     #handler = BackupHandler("__game_backups")
     #handler.restore_backup("20260104025335_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
     #main_manual_repl()
-    #main_version_control()
+    #main_version_control(file_containing_patches="__patches/ChaosEngine.json")
     #print(gather_context_planning())
     #print(gather_context_coding())

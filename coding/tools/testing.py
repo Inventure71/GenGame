@@ -153,7 +153,7 @@ def run_all_tests() -> dict:
         "failures": failures
     }
 
-
+# TODO: cleanup maybe remove
 def get_test_file_template(feature_name: str) -> str:
     """
     Generate a template for a new test file.
