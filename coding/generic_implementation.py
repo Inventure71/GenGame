@@ -71,21 +71,14 @@ class GenericHandler:
             print(f"DEBUG: No new work to summarize, REALLY REALLY STRANGE!!!")
             return "No new work to summarize."
 
-        old_config_dic = self.client.base_config_dic
-        summarize_system = "You are a helpful assistant that summarizes technical work done in previous conversations."
-        self.client.setup_config(thinking_level="LOW", system_instruction=summarize_system, tools=None)
+        #summarize_system = "You are a helpful assistant that summarizes technical work done in previous conversations."
+        #self.client.setup_config(thinking_level="LOW", system_instruction=summarize_system, tools=None)
         
         prompt = load_prompt("coding/prompts/summarize_history.md", include_general_context=False)
         response = self.generate_response(prompt, use_tools=False, use_history=True, chat_history_to_update=most_recent_chat)
 
         summary_entry = f"TASK SUMMARY ({len(self.summary_history) + 1}):\n{response}"
         self.summary_history.append(summary_entry)
-
-        # we revert back
-        old_config_dic.get("thinking_level")
-        old_config_dic.get("system_instruction")
-        old_config_dic.get("tools")
-        self.client.setup_config(thinking_level=old_config_dic.get("thinking_level"), system_instruction=old_config_dic.get("system_instruction"), tools=old_config_dic.get("tools"))
 
         if autocleanup:
             # we just clean the memory and then add the summaries to the empty chat

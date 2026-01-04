@@ -26,8 +26,6 @@ class OpenAIHandler:
         self.reasoning = {"effort": "low", "summary": self.auto_summary}
         self.instructions = "" # system instructions
         self.tools = [] 
-
-        self.base_config_dic = None
     
     def _as_dict(self, item):
         return item.model_dump() if hasattr(item, "model_dump") else item

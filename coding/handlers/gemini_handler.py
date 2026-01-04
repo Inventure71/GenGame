@@ -34,7 +34,6 @@ class GeminiHandler:
             threshold="BLOCK_NONE"
         ),
         ]
-        self.base_config_dic = None
         self.base_config = types.GenerateContentConfig(safety_settings=self.safety_settings)
 
     def get_config(self):
@@ -84,11 +83,6 @@ class GeminiHandler:
             config_kwargs["tools"] = get_tool_declarations_gemini(tools)
 
         self.base_config = types.GenerateContentConfig(**config_kwargs)
-        self.base_config_dic = {
-            "thinking_level": thinking_level,
-            "system_instruction": system_instruction,
-            "tools": tools
-        }
 
     def filter_chat_history(self, most_recent_chat: list):
         filtered_chat = []

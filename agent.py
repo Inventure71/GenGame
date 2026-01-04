@@ -1,3 +1,4 @@
+from time import time
 from dotenv import load_dotenv
 from coding.non_callable_tools.backup_handling import BackupHandler
 from coding.generic_implementation import GenericHandler
@@ -141,10 +142,14 @@ def main():
 
         print("--------------------------------")
         print("Setting up coding agent...")
+        print("------ Summarizing chat history... ------")
         modelHandler.summarize_chat_history(autocleanup=True)
+
+        print("------ Summarized chat history ------")
         modelHandler.set_tools(all_tools)
         modelHandler.setup_config("LOW", coding_sys_prompt, tools=all_tools)
-    
+        print("Waiting 5 seconds for the API to be ready...")
+        time.sleep(5)
         print("\nAgent is working...\n")
         
         number_of_tasks = todo_list.get_number_of_tasks()
