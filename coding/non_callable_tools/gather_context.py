@@ -64,3 +64,39 @@ def gather_context_coding():
 Do NOT call get_tree_directory - use the paths above.
 
 === END OF STARTING CONTEXT ==="""
+
+
+def gather_context_testing():
+    """Gathers context for the testing phase, including critical pitfalls."""
+    lines = [
+        "=== TESTING CONTEXT ===",
+        "",
+        get_full_directory_tree(),
+        "",
+        "## CRITICAL: Character & Weapon Attributes",
+        "Before writing tests, note these BASE_components facts:",
+        "",
+        "### Character (BASE_character.py)",
+        "- Health attribute: `character.health` (NOT `hp`)",
+        "- `character.is_alive` is a read-only property: `health > 0 AND lives > 0`",
+        "- To kill: `character.health = 0`",
+        "- Dimensions use: `char.width * char.scale_ratio`",
+        "",
+        "### Weapon Cooldowns",
+        "- `weapon.shoot()` returns `None` if cooldown hasn't elapsed",
+        "- Create NEW weapon instances per test, or reset: `weapon.last_shot_time = 0`",
+        "",
+        "### Timing in Tests",
+        "- Use INTEGER frame counting, not float accumulation:",
+        "  `for _ in range(int(duration / dt)): ...` NOT `while total < duration: total += dt`",
+        "",
+        "### Arena Effects",
+        "- `arena.handle_collisions(dt)` applies ALL effects each call (damage, knockback, recoil)",
+        "- Effects ACCUMULATE across loop iterations",
+        "",
+        "## Testing Guide:",
+        read_file("coding/prompts/GUIDE_Testing.md"),
+        "",
+        "=== END OF TESTING CONTEXT ==="
+    ]
+    return "\n".join(lines)
