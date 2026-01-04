@@ -126,10 +126,10 @@ def main():
         modelHandler.setup_config("HIGH", planning_sys_prompt, tools=planning_tools)
         modelHandler.clean_chat_history()
 
-        full_prompt = f"""
-        Objective: {user_input}
-        Starting Context:\n{gather_context_planning()}
-        """
+        full_prompt = f"""## User Request
+{user_input}
+
+{gather_context_planning()}"""
         
         print("--------------------------------")
         print("Planning...") # the goal is to create a few tasks to be completed with a deep description
@@ -164,23 +164,15 @@ def main():
                 break
             print("Agent is working on: ", todo_item_str)
 
-            old_full_prompt = (
-                f"General Objective: {user_input}\n"
-                f"Current Step: {todo_item_str}\n"
-                f"Instructions: Complete the current task using your tools. "
-                f"Once finished, you MUST call 'complete_task' to proceed."
-            )
+            full_prompt = f"""## Current Task
+{todo_item_str}
 
-            full_prompt = f"""TASK FOCUS: Complete ONLY the current step. Ignore all other objectives until this specific task is done.
-            Current Task: {todo_item_str}
+## Instructions
+1. Implement exactly what this task specifies
+2. Call `complete_task()` when done
+3. Do NOT implement features beyond this task
 
-            Requirements: Use your tools to implement exactly what this task specifies.
-            When finished, call 'complete_task' immediately - do not continue to other features.
-
-            Remember: Stay focused on this single task. Do not implement additional features or optimizations beyond what's required.
-            
-            Starting Context:\n{gather_context_coding()}
-            """
+{gather_context_coding()}"""
             
             current_index = modelHandler.ask_until_task_completed(todo_list, current_index, full_prompt, summarize_at_completion=True)
             print("--------------------------------")

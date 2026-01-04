@@ -13,11 +13,9 @@ TOOL_DEFINITIONS = {
     "get_tree_directory": {
         "name": "get_tree_directory",
         "description": (
-            "Shows the complete directory tree structure. USE THIS FIRST before reading/modifying files! "
-            "Never guess file paths. You ONLY have access to 'GameFolder' and 'BASE_components'. "
-            "⚠️ WARNING: The directory tree is ALREADY provided in your initial context at the start of each session. "
-            "Only call this if you NEED to refresh after creating new files or if a file access fails. "
-            "Do NOT try to explore the root directory ('.') or 'coding/'."
+            "Shows directory tree structure. The tree is ALREADY in your Starting Context - "
+            "only call this AFTER creating new files to refresh paths. "
+            "Access limited to 'GameFolder' and 'BASE_components'."
         ),
         "parameters": {
             "type": "object",
@@ -51,11 +49,8 @@ TOOL_DEFINITIONS = {
     "read_file": {
         "name": "read_file",
         "description": (
-            "Reads and returns file content with line numbers. "
-            "IMPORTANT: Only use paths you discovered via get_tree_directory! Never guess paths. "
-            "STRATEGY: Use full read when you don't know the file. Use line ranges when you have partial context. "
-            "ALWAYS expand ranges: If you need lines 16-20, request 10-30 for better context. "
-            "VERIFICATION: After modify_file_inline, immediately call read_file with line ranges to verify changes."
+            "Reads file content with line numbers. Use paths from Starting Context or get_tree_directory. "
+            "Use line ranges when you know the location; expand ranges for context (e.g., 10-30 instead of 16-20)."
         ),
         "parameters": {
             "type": "object",
@@ -81,8 +76,8 @@ TOOL_DEFINITIONS = {
     "modify_file_inline": {
         "name": "modify_file_inline",
         "description": (
-            "Applies a unified diff patch to modify a file. Creates a backup before modifying. "
-            "IMPORTANT: Use EXACTLY the parameter names 'file_path' and 'diff_text'. "
+            "Applies a unified diff patch to modify a file. Creates backup first. "
+            "Include 3 lines context before/after changes. Returns modified section for verification."
         ),
         "parameters": {
             "type": "object",
@@ -104,8 +99,7 @@ TOOL_DEFINITIONS = {
     "create_file": {
         "name": "create_file",
         "description": (
-            "Creates an EMPTY file at the specified path. "
-            "IMPORTANT: This tool does NOT accept 'content'! It only creates empty files."
+            "Creates an EMPTY file. Use modify_file_inline afterwards to add content."
         ),
         "parameters": {
             "type": "object",

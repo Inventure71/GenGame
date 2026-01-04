@@ -226,7 +226,7 @@ class Arena(BaseArena):
                     char_w = char.width * char.scale_ratio
                     if char.location[0] < beam_x_max and char.location[0] + char_w > beam_x_min:
                         char.take_damage(proj.damage * delta_time)
-
+            
             # Put persistent projectile back into active list
             if proj.active:
                 self.projectiles.append(proj)
