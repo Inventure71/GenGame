@@ -16,6 +16,11 @@ Each task includes a **Starting Context** with the current `GameFolder/` directo
 - New entities → own file in correct `GameFolder/` subdirectory.
 - Register new weapons/entities in `GameFolder/setup.py` inside `setup_battle_arena()`.
 
+## Reading Files (Efficiency)
+- **Large Files**: ALWAYS use `get_file_outline` first to get class/method line ranges. Then read specific chunks.
+- **Small Files**: Read the whole file with `read_file`.
+- **Docs**: Check `BASE_components/BASE_COMPONENTS_DOCS.md` before reading any BASE source code.
+
 ## Writing Files
 - **New file**: `create_file(path)` creates empty file, then `modify_file_inline(file_path, diff_text)` adds content.
 - **Modify existing**: Use `modify_file_inline` with 3 lines context before/after the change.

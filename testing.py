@@ -9,6 +9,7 @@ from coding.tools.testing import run_all_tests, parse_test_results
 from coding.non_callable_tools.gather_context import gather_context_fix
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.helpers import check_integrity
+from coding.tools.code_analysis import get_file_outline
 
 def main_version_control(file_containing_patches: str = "patches.json"):
     load_dotenv()
@@ -172,7 +173,8 @@ def main_manual_repl():
     print("Session ended.")
 
 if __name__ == "__main__":
-    print(run_all_tests())
+    #print(run_all_tests())
+    #print(get_file_outline("GameFolder/weapons/GAME_weapon.py"))
     #results = run_all_tests()
     #print("Results: ", results)
     #print("--------------------------------")
@@ -185,6 +187,6 @@ if __name__ == "__main__":
     #handler.restore_backup("20260104025335_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
     #main_manual_repl()
-    #main_version_control(file_containing_patches="__patches/ChaosEngine.json")
+    main_version_control(file_containing_patches="__patches/ChaosEngine.json")
     #print(gather_context_planning())
     #print(gather_context_coding())

@@ -117,21 +117,22 @@ def get_function_source(file_path: str, function_name: str):
         print(f"[TOOL LOG] get_function_source output: {result}")
         return result
 
-def list_functions_in_file(file_path: str):
+def get_file_outline(file_path: str):
     """
-    Lists all function names defined in a specific file.
+    Generates a high-level outline of a Python file, including classes, methods, 
+    signatures, docstrings, AND line number ranges. Useful for understanding file structure 
+    and planning detailed reads.
 
     Args:
         file_path: The path to the Python file.
 
     Returns:
-        list or str: A list of function names, or an error message.
+        str: A formatted string outlining the file structure with line numbers.
     """
-    print(f"[TOOL LOG] list_functions_in_file called with:")
-    print(f"  file_path: {file_path}")
+    print(f"[TOOL LOG] get_file_outline called with: {file_path}")
     if not is_file_allowed(file_path, operation="read"):
         result = f"Error: Path '{file_path}' is not allowed for reading."
-        print(f"[TOOL LOG] list_functions_in_file output: {result}")
+        print(f"[TOOL LOG] get_file_outline output: {result}")
         return result
     
     try:
@@ -139,15 +140,55 @@ def list_functions_in_file(file_path: str):
             source = f.read()
             
         tree = ast.parse(source)
-        functions = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
-        print(f"[TOOL LOG] list_functions_in_file output: {len(functions)} functions found")
-        return functions
+        output = []
+        
+        for node in tree.body:
+            if isinstance(node, ast.ClassDef):
+                start = node.lineno
+                end = node.end_lineno
+                lines = end - start + 1
+                output.append(f"Class: {node.name} (Lines: {start}-{end}, {lines} total)")
+                if (docstring := ast.get_docstring(node)):
+                    output.append(f"  \"\"\"{docstring.splitlines()[0]}...\"\"\"")
+                
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef):
+                        m_start = item.lineno
+                        m_end = item.end_lineno
+                        m_lines = m_end - m_start + 1
+                        
+                        args = [a.arg for a in item.args.args]
+                        if item.args.vararg: args.append(f"*{item.args.vararg.arg}")
+                        if item.args.kwarg: args.append(f"**{item.args.kwarg.arg}")
+                        sig = f"{item.name}({', '.join(args)})"
+                        
+                        output.append(f"  Method: {sig} (Lines: {m_start}-{m_end}, {m_lines} total)")
+                        if (method_doc := ast.get_docstring(item)):
+                            output.append(f"    \"\"\"{method_doc.splitlines()[0]}...\"\"\"")
+                            
+            elif isinstance(node, ast.FunctionDef):
+                start = node.lineno
+                end = node.end_lineno
+                lines = end - start + 1
+                
+                args = [a.arg for a in node.args.args]
+                if node.args.vararg: args.append(f"*{node.args.vararg.arg}")
+                if node.args.kwarg: args.append(f"**{node.args.kwarg.arg}")
+                sig = f"{node.name}({', '.join(args)})"
+                
+                output.append(f"Function: {sig} (Lines:{start}-{end}, {lines} total)")
+                if (func_doc := ast.get_docstring(node)):
+                    output.append(f"  \"\"\"{func_doc.splitlines()[0]}...\"\"\"")
+
+        result = "\n".join(output)
+        print(f"[TOOL LOG] get_file_outline output: {len(result)} chars")
+        return result
+        
     except SyntaxError:
-        result = f"Error: Syntax error in file {file_path}."
-        print(f"[TOOL LOG] list_functions_in_file output: {result}")
-        return result
+        return f"Error: Syntax error in file {file_path}."
     except Exception as e:
-        result = f"Error: {str(e)}"
-        print(f"[TOOL LOG] list_functions_in_file output: {result}")
-        return result
+        return f"Error: {str(e)}"
+
+# Alias for backward compatibility if needed, or we can update schemas to use get_file_outline
+list_functions_in_file = get_file_outline
 

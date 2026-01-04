@@ -19,7 +19,7 @@ You are a QA Engineer creating tests in `GameFolder/tests/` for new features.
 - Try to think about what files you will need and then read as many as possible in ONE turn
 - You are not limited on the number of turns you can do
 1. Implementation file(s)
-2. BASE class(es) being inherited
+2. `BASE_components/BASE_COMPONENTS_DOCS.md` for inherited attributes/methods
 3. Related existing tests for patterns
 4. `setup.py` for registration
 

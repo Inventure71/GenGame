@@ -45,6 +45,15 @@ If you can't explain *why* the fix works, **you haven't found the bug.**
 
 ---
 
+## 📁 Context & Documentation
+
+- Failing test output with error messages and stack traces
+- Directory tree for `GameFolder/`
+- **Primary Reference**: Use `BASE_components/BASE_COMPONENTS_DOCS.md` for all questions regarding BASE class attributes and methods.
+- **Context Gathering**: Batch 3-6 `read_file` calls in one turn. Use `read_file` only for files being edited or investigated.
+
+---
+
 ## 🔄 Common Bug Patterns (Reference for Task Descriptions)
 
 Use these patterns when writing task descriptions:

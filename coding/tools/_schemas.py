@@ -15,6 +15,7 @@ TOOL_DEFINITIONS = {
         "description": (
             "Shows directory tree structure. The tree is ALREADY in your Starting Context - "
             "only call this AFTER creating new files to refresh paths. "
+            "⚠️ WARNING: The directory tree is ALREADY provided in your initial context at the start of each session. "
             "Access limited to 'GameFolder' and 'BASE_components'."
         ),
         "parameters": {
@@ -49,8 +50,12 @@ TOOL_DEFINITIONS = {
     "read_file": {
         "name": "read_file",
         "description": (
+            "Reads and returns file content with line numbers. "
+            "IMPORTANT: Only use paths you discovered via get_tree_directory! Never guess paths. "
+            "STRATEGY: Use full read or better get_file_outline when you don't know the file. Use line ranges when you have partial context. "
+            "ALWAYS expand ranges: If you need lines 16-20, request 10-30 for better context. "
             "Reads file content with line numbers. Use paths from Starting Context or get_tree_directory. "
-            "Use line ranges when you know the location; expand ranges for context (e.g., 10-30 instead of 16-20)."
+            "Utilize as many of these as possible in a single turn for highest efficiency."
         ),
         "parameters": {
             "type": "object",
@@ -76,8 +81,9 @@ TOOL_DEFINITIONS = {
     "modify_file_inline": {
         "name": "modify_file_inline",
         "description": (
-            "Applies a unified diff patch to modify a file. Creates backup first. "
+            "Applies a unified diff patch to modify a file."
             "Include 3 lines context before/after changes. Returns modified section for verification."
+            "IMPORTANT: Use EXACTLY the parameter names 'file_path' and 'diff_text'. "
         ),
         "parameters": {
             "type": "object",
@@ -100,6 +106,7 @@ TOOL_DEFINITIONS = {
         "name": "create_file",
         "description": (
             "Creates an EMPTY file. Use modify_file_inline afterwards to add content."
+            "Always think about what you want to insert in the file before calling this and then call both create_file and modify_file_inline in a single turn for better efficiency."
         ),
         "parameters": {
             "type": "object",
@@ -156,7 +163,10 @@ TOOL_DEFINITIONS = {
     # === CODE ANALYSIS ===
     "find_function_usages": {
         "name": "find_function_usages",
-        "description": "Finds all locations where a specific function is used within a directory.",
+        "description": (
+            "Finds all locations where a specific function is used within a directory."
+            "Utilize as many of these as possible in a single turn for highest efficiency."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -174,7 +184,10 @@ TOOL_DEFINITIONS = {
     },
     "get_function_source": {
         "name": "get_function_source",
-        "description": "Extracts the full source code of a specific function from a file.",
+        "description": (
+            "Extracts the full source code of a specific function from a file."
+            "Utilize as many of these as possible in a single turn for highest efficiency."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -190,9 +203,13 @@ TOOL_DEFINITIONS = {
             "required": ["file_path", "function_name"]
         }
     },
-    "list_functions_in_file": {
-        "name": "list_functions_in_file",
-        "description": "Lists all function definitions found in a specific Python file.",
+    "get_file_outline": {
+        "name": "get_file_outline",
+        "description": (
+            "Reads a file efficiently by returning only classes, methods, signatures, docstrings, AND line number ranges."
+            "Use this for high-level understanding before reading specific sections."
+            "Utilize as many of these as possible in a single turn for highest efficiency."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
