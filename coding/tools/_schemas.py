@@ -221,6 +221,45 @@ TOOL_DEFINITIONS = {
             "required": ["file_path"]
         }
     },
+
+    # === CONFLICT RESOLUTION ===
+    "resolve_conflict": {
+        "name": "resolve_conflict",
+        "description": (
+            "Resolves a specific merge conflict in a patch file. "
+            "Choose 'a' for patch A's version, 'b' for patch B's, 'both' for both, or 'manual' with custom content."
+            "When choosing both be aware that the indentation spaces between both need to be the same"
+            "IMPORTANT: fix as many merge conflicts at once in one turn by calling this function in parallel"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "patch_path": {
+                    "type": "string",
+                    "description": "Path to the merged patch JSON file (e.g., 'merged_patch.json')"
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "The file containing the conflict (e.g., 'GameFolder/arenas/GAME_arena.py')"
+                },
+                "conflict_num": {
+                    "type": "integer",
+                    "description": "Which conflict to resolve (1-indexed, from get_all_conflicts output)"
+                },
+                "resolution": {
+                    "type": "string",
+                    "enum": ["a", "b", "both", "manual"],
+                    "description": "Resolution choice: 'a' (use patch A), 'b' (use patch B), 'both' (keep both), 'manual' (custom)"
+                },
+                "manual_content": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Lines of code to use when resolution is 'manual'. Each array item is one line."
+                }
+            },
+            "required": ["patch_path", "file_path", "conflict_num", "resolution"]
+        }
+    },
 }
 
 def get_tool_declarations_gemini(tools: list) -> list:

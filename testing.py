@@ -1,3 +1,5 @@
+import math
+import time
 from dotenv import load_dotenv
 from coding.non_callable_tools.backup_handling import BackupHandler
 from coding.generic_implementation import GenericHandler
@@ -8,7 +10,8 @@ from coding.non_callable_tools.action_logger import action_logger
 from coding.tools.testing import run_all_tests, parse_test_results
 from coding.non_callable_tools.gather_context import gather_context_fix
 from coding.non_callable_tools.version_control import VersionControl
-from coding.non_callable_tools.helpers import check_integrity
+from coding.non_callable_tools.helpers import check_integrity, load_prompt
+from coding.tools.conflict_resolution import get_all_conflicts, resolve_conflict, resolve_conflicts_interactive
 from coding.tools.code_analysis import get_file_outline
 
 def main_version_control(file_containing_patches: str = "patches.json"):
@@ -172,8 +175,134 @@ def main_manual_repl():
     action_logger.end_session()
     print("Session ended.")
 
+def auto_fix_conflicts(path_to_problematic_patch: str):
+    conflicts_by_file = get_all_conflicts(path_to_problematic_patch)
+    print(f"Found conflicts in {len(conflicts_by_file)} file(s)")
+
+    if len(conflicts_by_file) == 0:
+        print("No conflicts found, continuing...")
+        return
+
+    load_dotenv()
+    check_integrity()
+    action_logger.start_session(visual=True)
+    print("Waiting 5 seconds to start...")
+    time.sleep(5)
+
+    modelHandler = GenericHandler(
+        thinking_model=True,
+        provider="GEMINI",
+        model_name="models/gemini-3-flash-preview",
+    )
+    tools = [
+        # add the tool to fix the conflict
+        resolve_conflict,    
+        read_file,
+    ]
+
+    # Load the dedicated conflict resolution system prompt
+    fix_conflicts_sys_prompt = load_prompt("coding/system_prompts/solve_conflicts.md", include_general_context=False)
+
+    modelHandler.set_tools(tools)
+    modelHandler.setup_config("LOW", fix_conflicts_sys_prompt, tools=tools)
+
+    max_conflicts_per_request = 10
+
+    for file_path, conflicts in conflicts_by_file.items():
+        print(f"File: {file_path}")
+        print("Cleaning chat history for this file...")
+        modelHandler.clean_chat_history()
+
+        # IMPORTANT: Process conflicts in REVERSE order (highest conflict_num first)
+        # This prevents renumbering issues when resolving multiple conflicts
+        conflicts_reversed = sorted(conflicts, key=lambda c: c['conflict_num'], reverse=True)
+
+        len_conflicts = len(conflicts_reversed)
+        if len_conflicts > max_conflicts_per_request:
+            print("A lot of conflicts, splitting them into batches of 10")
+            num_blocks = math.ceil(len_conflicts / max_conflicts_per_request)
+            print(f"Number of blocks: {num_blocks} because we have {len_conflicts} conflicts and we can handle {max_conflicts_per_request} at once")
+        else:
+            num_blocks = 1
+            print("Less than max conflicts per request, so we can handle all in one call")
+
+        for i in range(num_blocks):
+            start_idx = i * max_conflicts_per_request
+            end_idx = min(start_idx + max_conflicts_per_request, len_conflicts)
+            conflicts_block = conflicts_reversed[start_idx:end_idx]
+            
+            # Format conflicts for the prompt in a readable way
+            conflicts_formatted = []
+            for conflict in conflicts_block:
+                conflicts_formatted.append({
+                    'conflict_num': conflict['conflict_num'],
+                    'option_a': conflict['option_a'],
+                    'option_b': conflict['option_b']
+                })
+                print(f"Conflict #{conflict['conflict_num']}:")
+                print(f"  Option A: {conflict['option_a']}")
+                print(f"  Option B: {conflict['option_b']}")
+            
+            # Build prompt with ALL required info including patch_path
+            prompt = (
+                f"## Patch file: `{path_to_problematic_patch}`\n"
+                f"## File with conflicts: `{file_path}`\n\n"
+                f"### Conflicts to resolve (resolve from HIGHEST conflict_num to LOWEST):\n"
+                f"{conflicts_formatted}\n\n"
+                f"Resolve ALL conflicts using the `resolve_conflict` tool. "
+                f"Remember: patch_path='{path_to_problematic_patch}', file_path='{file_path}'"
+            )
+            print("Sending prompt to model...")
+            resp = modelHandler.generate_response(
+                prompt=prompt,
+                use_tools=True,
+                use_history=True,
+            )
+            print("\n[RETURNED]:\n", resp, "\n")
+        
+    print("Completed merge handling, checking for conflicts again...")
+    remaining_conflicts = get_all_conflicts(path_to_problematic_patch)
+    
+    if len(remaining_conflicts) > 0:
+        print("Conflicts still exist, please fix them manually")
+        print("Conflicts: ", remaining_conflicts)
+        raise Exception("Conflicts still exist, please fix them manually")
+    else:
+        print("No conflicts found, continuing...")
+
+def main_version_control_interactive():
+    load_dotenv()
+    check_integrity()
+    action_logger.start_session(visual=True)
+    
+    vc = VersionControl()
+
+    # Merge two patches
+    success, result = vc.merge_patches(
+        base_backup_path="__game_backups",      # Folder containing the backup
+        patch_a_path="__patches/CatMergedChaos.json",
+        patch_b_path="__patches/kamehameha.json",
+        output_path="merged_patch.json"         # Optional, defaults to "merged_patch.json"
+    )
+
+    if success:
+        print(f"Merged successfully: {result}")
+    else:
+        print(f"Merge issues: {result}")
+        # If there were conflicts, show them
+        print(get_all_conflicts("merged_patch.json"))
+        
+        #vc.resolve_conflicts_interactive("merged_patch.json")
+    
+    action_logger.end_session()
+
 if __name__ == "__main__":
-    #print(run_all_tests())
+    print(run_all_tests())
+
+    #main_version_control_interactive()
+    #auto_fix_conflicts("merged_patch.json")
+    #main_version_control(file_containing_patches="merged_patch.json")
+
     #print(get_file_outline("GameFolder/weapons/GAME_weapon.py"))
     #results = run_all_tests()
     #print("Results: ", results)
@@ -187,6 +316,7 @@ if __name__ == "__main__":
     #handler.restore_backup("20260104025335_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
     #main_manual_repl()
-    main_version_control(file_containing_patches="__patches/ChaosEngine.json")
+    #main_version_control(file_containing_patches="__patches/GlitchWeapon.json")
+    #main_version_control(file_containing_patches="merged_patch.json")
     #print(gather_context_planning())
     #print(gather_context_coding())

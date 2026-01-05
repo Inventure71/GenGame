@@ -59,6 +59,8 @@ class GenericHandler:
         Progressively summarizes only the work done since the last summary.
         Maintains a chain of summaries for better context preservation.
         """
+        # We ignore the first item in the chat_history because it is the first user prompt that normally is really big
+        # Also we want to summarize the things done by the agent not the user instructions
         # We summarize based on the chat_history which now contains:
         # User prompts, Model Text, Tool Calls (sans outputs, sans thoughts).
         
