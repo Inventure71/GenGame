@@ -62,7 +62,7 @@ def test_storm_cloud_damage_and_slow():
     
     # Update arena. StormCloud damage in Arena is (damage * 40) with 10% chance.
     # Let's run it many times to ensure we hit the 10% chance eventually or just check slow.
-    for _ in range(20):
+    for _ in range(100):
         arena.handle_collisions(0.1)
     
     assert char.speed_multiplier == 0.4, "Character should be slowed by StormCloud"
