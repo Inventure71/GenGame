@@ -5,9 +5,11 @@ import ast
 import glob
 import difflib
 from typing import Tuple, List, Dict, Optional
+from merge3 import Merge3
 from coding.non_callable_tools.backup_handling import BackupHandler
-from coding.tools.modify_inline import modify_file_inline, _apply_unified_diff_safe
+from coding.tools.modify_inline import modify_file_inline, _apply_unified_diff_safe, _validate_python_code
 from coding.non_callable_tools.action_logger import ActionLogger
+from coding.non_callable_tools.helpers import open_file
 
 def extract_successful_tools(action_logger):
     all_tools_used = action_logger.actions
@@ -68,10 +70,10 @@ class VersionControl:
             return False
 
     def load_from_extension_file(self, file_path: str):
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-            name_of_backup = data["name_of_backup"]
-            changes = data["changes"]
+        content = open_file(file_path)
+        data = json.loads(content)
+        name_of_backup = data["name_of_backup"]
+        changes = data["changes"]
         if os.path.exists(file_path.replace('.json', '_metadata.json')):
             with open(file_path.replace('.json', '_metadata.json'), 'r') as f:
                 metadata = json.load(f)
@@ -91,6 +93,9 @@ class VersionControl:
         success_count = 0
         any_fixed = False
         name_of_backup, changes, metadata = self.load_from_extension_file(file_containing_patches)
+        
+        errors = {} # key: file_path, value: error_msg
+        
         for change in changes:
             file_path = change["path"]
             print(f"Applying patch to {file_path}...")
@@ -114,13 +119,15 @@ class VersionControl:
                         change["diff"] = repaired_diff
                         any_fixed = True
                         # Retry immediately with the fixed diff
-                        success, result = self.valid_apply(file_path, repaired_diff)
+                        success, result = self.valid_apply(file_path, repaired_diff)    
                         if success:
                             print(f"    ✓ Applied successfully")
                             success_count += 1
                         else:
+                            errors[file_path] = result
                             print(f"    ✗ Failed Repaired Patching: {result}")
                     else:
+                        errors[file_path] = result
                         print(f"    ✗ Failed Acquiring Repaired Patch: {result}")
 
         if any_fixed:
@@ -128,12 +135,12 @@ class VersionControl:
             with open(file_containing_patches, 'w') as f:
                 json.dump({"name_of_backup": name_of_backup, "changes": changes}, f)
 
-        return success_count == len(changes), success_count, len(changes)
+        return success_count == len(changes), success_count, len(changes), errors
 
     def merge_all_changes(self, needs_rebase: bool = False, path_to_BASE_backup: str = None, file_containing_patches: str = None):
         if file_containing_patches is None:
             print("ERROR: File containing patches is not provided")
-            return False
+            return False, "File containing patches is not provided"
 
         name_of_backup, changes, metadata = self.load_from_extension_file(file_containing_patches)
 
@@ -143,7 +150,7 @@ class VersionControl:
                 print("Name of backup to find: ", name_of_backup)
                 if name_of_backup is None or name_of_backup == "":
                     print("ERROR: No name of backup provided in the patches file, cannot rebase")
-                    return False
+                    return False, "No name of backup provided in the patches file, cannot rebase"
 
                 base_backup_handler = BackupHandler(path_to_BASE_backup)
                 available_backups = base_backup_handler.list_backups()
@@ -151,19 +158,19 @@ class VersionControl:
                     print("ERROR: No base backup found, cannot rebase")
                     print("Available backups: ", available_backups)
                     print("Name of backup to find: ", name_of_backup)
-                    return False
+                    return False, "No base backup found, cannot rebase"
                 base_backup_handler.restore_backup(name_of_backup, target_path="GameFolder")
                 print("Restored to base code")
                 input("Press Enter to continue...")
             else:
                 print("ERROR:No base backup provided but needs rebase, cannot rebase")
-                return False
+                return False, "No base backup provided but needs rebase, cannot rebase"
 
         print("Creating temporary backup")
         self.security_backup_handler.create_backup("GameFolder", auto_naming=False)
 
         print("Applying all changes")
-        success, count, total_changes =self.apply_patches(file_containing_patches)
+        success, count, total_changes, errors =self.apply_patches(file_containing_patches)
 
         print(f"Applied {count}/{total_changes} changes successfully")
 
@@ -172,14 +179,15 @@ class VersionControl:
             self.security_backup_handler.restore_backup("GameFolder", target_path="GameFolder")
             print("Restored, removing temporary backup")
             self.security_backup_handler.delete_entire_backup_folder()
-            return False
-        
+            return False, errors
+
+            
         print("All changes applied successfully")
         print("Removing temporary backup")
         self.security_backup_handler.delete_entire_backup_folder()
         
         print("All changes applied successfully")
-        return True
+        return True, None
 
     # =========================================================================
     # 3-WAY MERGE
@@ -323,7 +331,8 @@ class VersionControl:
     
     def _three_way_merge(self, base: str, version_a: str, version_b: str) -> Tuple[str, bool]:
         """
-        Performs a 3-way merge between base, version_a, and version_b.
+        Performs a 3-way merge using the battle-tested merge3 library.
+        This is based on the algorithm used by Bazaar/Breezy version control.
         Returns (merged_content, has_conflicts).
         """
         # Handle empty base (new file case)
@@ -340,157 +349,28 @@ class VersionControl:
                 merged = "<<<<<<< PATCH_A\n" + version_a + "\n=======\n" + version_b + "\n>>>>>>> PATCH_B\n"
                 return merged.rstrip('\n'), has_conflicts
         
-        base_lines = base.splitlines(keepends=True)
-        a_lines = version_a.splitlines(keepends=True)
-        b_lines = version_b.splitlines(keepends=True)
+        # Use merge3 library for robust 3-way merge
+        m3 = Merge3(
+            base.splitlines(True),      # base with line endings
+            version_a.splitlines(True), # version A with line endings  
+            version_b.splitlines(True)  # version B with line endings
+        )
         
-        # Ensure all lines end with newline for consistent comparison
-        if base_lines and not base_lines[-1].endswith('\n'):
-            base_lines[-1] += '\n'
-        if a_lines and not a_lines[-1].endswith('\n'):
-            a_lines[-1] += '\n'
-        if b_lines and not b_lines[-1].endswith('\n'):
-            b_lines[-1] += '\n'
+        # Get merged lines with conflict markers
+        merged_lines = list(m3.merge_lines(
+            name_a='PATCH_A',
+            name_b='PATCH_B',
+            start_marker='<<<<<<< ',
+            mid_marker='=======\n',
+            end_marker='>>>>>>> '
+        ))
         
-        # Use difflib to find changes from base to each version
-        matcher_a = difflib.SequenceMatcher(None, base_lines, a_lines)
-        matcher_b = difflib.SequenceMatcher(None, base_lines, b_lines)
+        merged = ''.join(merged_lines).rstrip('\n')
         
-        # Build change lists with intervals: (start_base, end_base, removed_lines, new_lines)
-        changes_a = self._extract_changes_list(matcher_a, a_lines, base_lines)
-        changes_b = self._extract_changes_list(matcher_b, b_lines, base_lines)
+        # Check for conflicts by looking for conflict markers
+        has_conflicts = any('<<<<<<< ' in line for line in merged_lines)
         
-        # Track which changes have been processed
-        used_a = set()
-        used_b = set()
-        
-        merged = []
-        has_conflicts = False
-        i = 0  # Current position in base
-        
-        while i < len(base_lines):
-            # Find changes that start at or cover position i
-            change_a, idx_a = self._find_change_at(changes_a, i, used_a)
-            change_b, idx_b = self._find_change_at(changes_b, i, used_b)
-            
-            # Also check if there's an overlapping change from the other side
-            if change_a is not None and change_b is None:
-                change_b, idx_b = self._find_overlapping_change(changes_b, change_a, used_b)
-            elif change_b is not None and change_a is None:
-                change_a, idx_a = self._find_overlapping_change(changes_a, change_b, used_a)
-            
-            if change_a is None and change_b is None:
-                # No changes at this position
-                merged.append(base_lines[i])
-                i += 1
-            elif change_a is not None and change_b is None:
-                # Only A changed this region
-                merged.extend(change_a['new_lines'])
-                used_a.add(idx_a)
-                # For INSERT (start == end), no base lines consumed - don't skip any
-                # For REPLACE/DELETE, skip past consumed base lines
-                if change_a['end_base'] > change_a['start_base']:
-                    i = change_a['end_base']
-                # else: INSERT - i stays same, next iteration writes base_lines[i]
-            elif change_b is not None and change_a is None:
-                # Only B changed this region
-                merged.extend(change_b['new_lines'])
-                used_b.add(idx_b)
-                # For INSERT (start == end), no base lines consumed - don't skip any
-                # For REPLACE/DELETE, skip past consumed base lines
-                if change_b['end_base'] > change_b['start_base']:
-                    i = change_b['end_base']
-                # else: INSERT - i stays same, next iteration writes base_lines[i]
-            else:
-                # Both changed - mark both as used
-                used_a.add(idx_a)
-                used_b.add(idx_b)
-                
-                if change_a['new_lines'] == change_b['new_lines']:
-                    merged.extend(change_a['new_lines'])
-                else:
-                    # Both patches modified the same region with different results
-                    has_conflicts = True
-                    
-                    # Check if both are INSERT operations (start_base == end_base, no lines removed)
-                    is_insert_a = change_a['start_base'] == change_a['end_base']
-                    is_insert_b = change_b['start_base'] == change_b['end_base']
-                    
-                    if is_insert_a and is_insert_b:
-                        # Both patches INSERT at the same position
-                        # Add conflict with both insertions
-                        merged.append("<<<<<<< PATCH_A\n")
-                        merged.extend(change_a['new_lines'])
-                        merged.append("=======\n")
-                        merged.extend(change_b['new_lines'])
-                        merged.append(">>>>>>> PATCH_B\n")
-                        # For INSERT, we still need to write base_lines[i]
-                        # Don't advance i - the next iteration will write it
-                        # But we've used up these changes
-                        i = i  # Stay at current position to write base line next iteration
-                        continue  # Skip the i = max(...) below
-                    else:
-                        # At least one is a REPLACE/DELETE - true conflict
-                        merged.append("<<<<<<< PATCH_A\n")
-                        merged.extend(change_a['new_lines'])
-                        merged.append("=======\n")
-                        merged.extend(change_b['new_lines'])
-                        merged.append(">>>>>>> PATCH_B\n")
-                
-                # Advance past consumed base lines (use max of end_base values)
-                # Don't add +1 since end_base already points past consumed lines
-                max_end = max(change_a['end_base'], change_b['end_base'])
-                if max_end > i:
-                    i = max_end
-                else:
-                    # Both were INSERTs at same position, don't advance
-                    # (this case should have been handled above with continue)
-                    pass
-        
-        return ''.join(merged).rstrip('\n'), has_conflicts
-    
-    def _extract_changes_list(self, matcher: difflib.SequenceMatcher, new_lines: List[str], base_lines: List[str]) -> List[Dict]:
-        """Extracts a list of changes with their intervals from a SequenceMatcher.
-        Also stores removed lines to detect accidental removals during merge."""
-        changes = []
-        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-            if tag == 'equal':
-                continue
-            # i1:i2 is the range in base, j1:j2 is range in new
-            changes.append({
-                'start_base': i1,
-                'end_base': i2,
-                'removed_lines': base_lines[i1:i2],  # Track what was removed
-                'new_lines': new_lines[j1:j2],
-                'tag': tag  # 'replace', 'delete', or 'insert'
-            })
-        return changes
-    
-    def _find_change_at(self, changes: List[Dict], pos: int, used: set) -> Tuple[Optional[Dict], Optional[int]]:
-        """Find a change that covers or starts at position pos."""
-        for idx, change in enumerate(changes):
-            if idx in used:
-                continue
-            # Check if pos is within the change's base range
-            if change['start_base'] <= pos < change['end_base']:
-                return change, idx
-            # Also check for insertions (start == end) at this position
-            if change['start_base'] == change['end_base'] == pos:
-                return change, idx
-        return None, None
-    
-    def _find_overlapping_change(self, changes: List[Dict], other_change: Dict, used: set) -> Tuple[Optional[Dict], Optional[int]]:
-        """Find a change that overlaps with other_change's base range."""
-        other_start = other_change['start_base']
-        other_end = other_change['end_base']
-        
-        for idx, change in enumerate(changes):
-            if idx in used:
-                continue
-            # Check for any overlap between ranges
-            if change['start_base'] < other_end and change['end_base'] > other_start:
-                return change, idx
-        return None, None
+        return merged, has_conflicts
     
     def _validate_merge_content(self, base: str, version_a: str, version_b: str, merged: str) -> List[str]:
         """
@@ -628,19 +508,10 @@ class VersionControl:
         # 2. Syntax validation for all Python files
         py_files = glob.glob(os.path.join(folder_path, "**/*.py"), recursive=True)
         for py_file in py_files:
-            try:
-                with open(py_file, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                # Check for syntax errors
-                ast.parse(content)
-                                
-            except SyntaxError as e:
-                issues.append(f"SYNTAX ERROR in {py_file}: Line {e.lineno}: {e.msg}")
-            except UnicodeDecodeError:
-                issues.append(f"ENCODING ERROR in {py_file}: Not valid UTF-8")
-            except Exception as e:
-                issues.append(f"ERROR reading {py_file}: {str(e)}")
+            file_content = open_file(py_file)
+            is_valid, issue_msg = _validate_python_code(file_content)
+            if not is_valid:
+                issues.append(issue_msg)
         
         is_valid = len(issues) == 0
         return is_valid, issues

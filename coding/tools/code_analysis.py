@@ -2,6 +2,7 @@ import os
 import ast
 import re
 from pathlib import Path
+from coding.non_callable_tools.helpers import open_file
 from coding.tools.security import is_file_allowed, is_directory_allowed
 
 def find_function_usages(function_name: str, directory_path: str):
@@ -83,8 +84,7 @@ def get_function_source(file_path: str, function_name: str):
         return result
     
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            source = f.read()
+        source = open_file(file_path)
             
         tree = ast.parse(source)
         
@@ -136,8 +136,7 @@ def get_file_outline(file_path: str):
         return result
     
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            source = f.read()
+        source = open_file(file_path)
             
         tree = ast.parse(source)
         output = []

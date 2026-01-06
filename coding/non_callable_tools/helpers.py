@@ -1,10 +1,13 @@
-from coding.non_callable_tools.version_control import VersionControl
+import os
 
 
 def open_file(file_path: str) -> str:
-    # opens an .md file and returns the content
-    with open(file_path, 'r') as f:
-        return f.read()
+    if not os.path.exists(file_path):
+        return ""
+    # opens an .md or .py ecc file and returns the content
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    return content
 
 def load_prompt(prompt_file: str, include_general_context: bool = True) -> str:
     prompt = open_file(prompt_file)
@@ -14,6 +17,7 @@ def load_prompt(prompt_file: str, include_general_context: bool = True) -> str:
     return prompt
 
 def check_integrity():
+    from coding.non_callable_tools.version_control import VersionControl
     vc = VersionControl()
     is_valid, issues = vc.validate_folder_integrity("GameFolder")
     if not is_valid:

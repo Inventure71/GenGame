@@ -38,7 +38,7 @@ def _strip_diff_prefix(line: str) -> str:
 
 
 def _is_conflict_start(line: str) -> bool:
-    return _strip_diff_prefix(line).startswith('<<<<<<< PATCH_A')
+    return _strip_diff_prefix(line).startswith('<<<<<<< ')
 
 
 def _is_conflict_separator(line: str) -> bool:
@@ -46,7 +46,7 @@ def _is_conflict_separator(line: str) -> bool:
 
 
 def _is_conflict_end(line: str) -> bool:
-    return _strip_diff_prefix(line).startswith('>>>>>>> PATCH_B')
+    return _strip_diff_prefix(line).startswith('>>>>>>> ')
 
 
 def _parse_conflicts_from_diff(diff: str) -> List[Dict]:
@@ -108,7 +108,7 @@ def get_all_conflicts(patch_path: str) -> Dict[str, List[Dict]]:
     result = {}
     for change in changes:
         diff = change.get('diff', '')
-        if '<<<<<<< PATCH_A' not in diff:
+        if '<<<<<<< ' not in diff:
             continue
         
         conflicts = _parse_conflicts_from_diff(diff)
@@ -211,7 +211,7 @@ def resolve_conflicts_interactive(patch_path: str) -> bool:
     conflicts_by_file = {}
     for change in changes:
         diff = change.get('diff', '')
-        if '<<<<<<< PATCH_A' not in diff:
+        if '<<<<<<< ' not in diff:
             continue
         conflicts = _parse_conflicts_from_diff(diff)
         if conflicts:
@@ -256,7 +256,7 @@ def resolve_conflicts_interactive(patch_path: str) -> bool:
     # Check if any conflicts remain
     name, changes = load_patch_file(patch_path)
     for change in changes:
-        if '<<<<<<< PATCH_A' in change.get('diff', ''):
+        if '<<<<<<< ' in change.get('diff', ''):
             return False
     return True
 

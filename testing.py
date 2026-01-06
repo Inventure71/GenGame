@@ -8,19 +8,20 @@ from coding.tools.modify_inline import modify_file_inline
 from coding.tools.code_analysis import find_function_usages, get_function_source, list_functions_in_file
 from coding.non_callable_tools.action_logger import action_logger
 from coding.tools.testing import run_all_tests, parse_test_results
-from coding.non_callable_tools.gather_context import gather_context_fix
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.helpers import check_integrity, load_prompt
-from coding.tools.conflict_resolution import get_all_conflicts, resolve_conflict, resolve_conflicts_interactive
-from coding.tools.code_analysis import get_file_outline
+from coding.tools.conflict_resolution import get_all_conflicts, resolve_conflict
 
 def main_version_control(file_containing_patches: str = "patches.json"):
     load_dotenv()
     check_integrity()
     action_logger.start_session(visual=True)
     version_control = VersionControl(action_logger, path_to_security_backup="__TEMP_SECURITY_BACKUP")
-    version_control.merge_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches=file_containing_patches)
-
+    result, errors = version_control.merge_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches=file_containing_patches)
+    print("\n" * 10)
+    print("-----    ERRORS    -----")
+    print(errors)
+    
 def main_manual_repl():
     load_dotenv()
     check_integrity()
@@ -280,7 +281,7 @@ def main_version_control_interactive():
     # Merge two patches
     success, result = vc.merge_patches(
         base_backup_path="__game_backups",      # Folder containing the backup
-        patch_a_path="__patches/CatMergedChaos.json",
+        patch_a_path="__patches/RainingCats.json",
         patch_b_path="__patches/kamehameha.json",
         output_path="merged_patch.json"         # Optional, defaults to "merged_patch.json"
     )
@@ -297,11 +298,11 @@ def main_version_control_interactive():
     action_logger.end_session()
 
 if __name__ == "__main__":
-    print(run_all_tests())
+    #print(run_all_tests())
 
     #main_version_control_interactive()
     #auto_fix_conflicts("merged_patch.json")
-    #main_version_control(file_containing_patches="merged_patch.json")
+    main_version_control(file_containing_patches="merged_patch.json")
 
     #print(get_file_outline("GameFolder/weapons/GAME_weapon.py"))
     #results = run_all_tests()

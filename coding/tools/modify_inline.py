@@ -6,6 +6,7 @@ import tempfile
 import traceback
 from pathlib import Path
 from typing import List, Optional, Tuple
+from coding.non_callable_tools.helpers import open_file
 from coding.tools.security import is_file_allowed
 from coding.non_callable_tools.action_logger import action_logger
 
@@ -137,8 +138,7 @@ def modify_file_inline(file_path: str = None, diff_text: str = None, **kwargs) -
 
         # --- 2. Safe Read ---
         try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                original_content = f.read()
+            original_content = open_file(file_path)
         except UnicodeDecodeError:
             result = f"Error: File '{file_path}' is binary or not valid UTF-8 text. Cannot apply text diffs."
             print(f"[TOOL LOG] modify_file_inline output: {result}")
@@ -169,8 +169,8 @@ def modify_file_inline(file_path: str = None, diff_text: str = None, **kwargs) -
             is_valid, error_msg = _validate_python_code(new_content)
             if not is_valid:
                 result = (
-                    f"Error: syntax check failed. The patch would result in invalid Python code.\n"
-                    f"Details: {error_msg}\n"
+                    f"Error: syntax check failed. The patch would result in invalid Python code."
+                    f"Details: {error_msg}"
                     f"Action: Review your indentation and syntax in the diff."
                 )
                 print(f"[TOOL LOG] modify_file_inline output: {result}")
