@@ -260,14 +260,18 @@ class Arena:
             self.weapon_pickups.append(weapon)
 
     def manage_weapon_spawns(self, delta_time: float):
-        
+
         self.weapon_spawn_timer += delta_time
         if self.weapon_spawn_timer >= self.spawn_interval:
             self.weapon_spawn_timer = 0.0
             if self.lootpool and len(self.weapon_pickups) < max(2, len(self.characters)):
                 random.seed(self.spawn_count + 42)
                 self.spawn_count += 1
-                plat = random.choice(self.platforms[1:] if len(self.platforms) > 1 else self.platforms)
+                # Only spawn on platforms wide enough for weapon placement (need at least 40px width)
+                valid_platforms = [p for p in self.platforms if p.rect.width >= 40]
+                if not valid_platforms:
+                    return  # No suitable platforms for spawning
+                plat = random.choice(valid_platforms)
                 weapon_name = random.choice(list(self.lootpool.keys()))
                 weapon = self.lootpool[weapon_name]([random.randint(int(plat.rect.left), int(plat.rect.right-40)), self.height - plat.rect.top])
                 self.spawn_weapon(weapon)

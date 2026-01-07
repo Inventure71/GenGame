@@ -303,7 +303,7 @@ def main_version_control_interactive():
     action_logger.end_session()
 
 if __name__ == "__main__":
-    print(run_all_tests())
+    #print(run_all_tests())
 
     #main_version_control_interactive()
     #auto_fix_conflicts("merged_patch.json")
@@ -323,6 +323,6 @@ if __name__ == "__main__":
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
     #main_manual_repl()
     #main_version_control(file_containing_patches="__patches/GlitchWeapon.json")
-    #main_version_control(file_containing_patches="merged_patch.json")
+    main_version_control(file_containing_patches="patches.json")
     #print(gather_context_planning())
     #print(gather_context_coding())

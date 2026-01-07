@@ -30,3 +30,34 @@ def check_integrity():
             exit(1)
     else:
         print("✅ Folder integrity verified.")
+
+def clear_python_cache():
+    """
+    Clear Python bytecode cache (__pycache__ directories) to ensure fresh imports.
+    
+    This prevents issues where cached bytecode doesn't reflect recent source code changes,
+    especially imports like 'import math' that were added after the .pyc files were created.
+    """
+    import shutil
+    import glob
+    
+    # Find all __pycache__ directories
+    cache_dirs = glob.glob("**/__pycache__", recursive=True)
+    
+    # Also find .pyc files directly (though __pycache__ dirs are more common)
+    pyc_files = glob.glob("**/*.pyc", recursive=True)
+    
+    # Remove cache directories
+    for cache_dir in cache_dirs:
+        try:
+            shutil.rmtree(cache_dir)
+            print(f"Cleared cache: {cache_dir}")
+        except Exception as e:
+            print(f"Warning: Could not remove cache directory {cache_dir}: {e}")
+    
+    # Remove individual .pyc files (less common but possible)
+    for pyc_file in pyc_files:
+        try:
+            os.remove(pyc_file)
+        except Exception as e:
+            print(f"Warning: Could not remove .pyc file {pyc_file}: {e}")

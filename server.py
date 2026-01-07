@@ -103,45 +103,18 @@ class GameServer:
         """Start the server."""
         self.running = True
 
-        # Initialize the game arena (headless)
-        from GameFolder.arenas.GAME_arena import Arena
-        from GameFolder.characters.GAME_character import Character
-        from GameFolder.platforms.GAME_platform import Platform
-        from GameFolder.weapons.GAME_weapon import Weapon, StormBringer
-        from GameFolder.weapons.BlackHoleGun import BlackHoleGun
-        from GameFolder.weapons.OrbitalCannon import OrbitalCannon
-        from GameFolder.weapons.TornadoGun import TornadoGun
-
-        self.arena = Arena(1200, 700, headless=True)
-
-        # Add Players (these will be controlled by network clients)
-        player1 = Character(name="Player1", description="Green", image="", location=[150, 140], width=45, height=45)
-        player1.color = (50, 255, 100)
-        player1.id = "player_0"  # Fixed ID for first player
-
-        player2 = Character(name="Player2", description="Red", image="", location=[1000, 140], width=45, height=45)
-        player2.color = (255, 100, 100)
-        player2.id = "player_1"  # Fixed ID for second player
-
-        self.arena.add_character(player1)
-        self.arena.add_character(player2)
-
-        # Add Platforms
-        platforms = [
-            Platform(100, 120, 200, 20), Platform(900, 120, 200, 20),
-            Platform(250, 250, 180, 20), Platform(500, 300, 200, 20), Platform(770, 250, 180, 20),
-            Platform(150, 400, 150, 20), Platform(900, 400, 150, 20),
-            Platform(450, 500, 300, 20), Platform(300, 600, 150, 20), Platform(750, 600, 150, 20),
-        ]
-        for p in platforms: self.arena.add_platform(p)
-
-        # Setup Lootpool
-        self.arena.register_weapon_type("StormBringer", StormBringer)
-        self.arena.register_weapon_type("BlackHoleGun", BlackHoleGun)
-        self.arena.register_weapon_type("Orbital Cannon", OrbitalCannon)
-        self.arena.register_weapon_type("Tornado Launcher", TornadoGun)
-
-        self.arena.spawn_weapon(OrbitalCannon([100, 100]))
+        # Initialize the game arena using the centralized setup function
+        # with headless mode enabled (no graphics rendering on server)
+        self.arena = setup_battle_arena(width=1200, height=700, headless=True)
+        
+        # Assign network player IDs to the characters created by setup_battle_arena()
+        # setup_battle_arena() creates Player1 and Player2 - we need to assign network IDs
+        if len(self.arena.characters) >= 2:
+            self.arena.characters[0].id = "player_0"  # First player
+            self.arena.characters[1].id = "player_1"  # Second player
+        else:
+            print("Warning: setup_battle_arena() didn't create enough characters!")
+        
         self.game_start_time = time.time()
 
         # Start network thread

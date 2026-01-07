@@ -6,14 +6,22 @@ from GameFolder.weapons.BlackHoleGun import BlackHoleGun
 from GameFolder.weapons.OrbitalCannon import OrbitalCannon
 from GameFolder.weapons.TornadoGun import TornadoGun
 
-def setup_battle_arena():
+def setup_battle_arena(width: int = 1200, height: int = 700, headless: bool = False):
     """
     Initializes and sets up the entire arena with platforms, players, and lootpool.
     This can be modified here in GameFolder while main.py stays clean. 
-    This function can be modified but it needs to be named setup_battle_arena and have no arguments.
+    This function can be modified but it needs to be named setup_battle_arena.
     Most importantly this is the only function that will be called so if a separate class of arena exists, it needs to be imported here and setup here.
+    
+    Args:
+        width: Arena width in pixels (default: 1200)
+        height: Arena height in pixels (default: 700)
+        headless: If True, runs without graphics/display (default: False)
+    
+    Returns:
+        Arena: Configured arena instance ready for gameplay
     """
-    arena = Arena(1200, 700)
+    arena = Arena(width, height, headless=headless)
     
     # 1. Add Players
     player1 = Character(name="Player1", description="Green", image="", location=[150, 140], width=45, height=45)

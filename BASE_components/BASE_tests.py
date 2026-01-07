@@ -20,6 +20,7 @@ import importlib.util
 import inspect
 from typing import List, Callable, Optional, Type, Any
 from dataclasses import dataclass, field
+from coding.non_callable_tools.helpers import clear_python_cache
 
 # Set up headless mode for automated testing
 os.environ['SDL_VIDEODRIVER'] = 'dummy'
@@ -689,6 +690,8 @@ def run_all_tests(
     Returns:
         TestSuite with all test results
     """
+    clear_python_cache()
+
     runner = TestRunner()
     runner.setup_pygame_headless()
     
