@@ -45,7 +45,7 @@ class Weapon(BaseWeapon):
 
         # Create basic projectile
         projectile = Projectile(owner_x, owner_y, direction, self.projectile_speed, self.damage, owner_id)
-        return [projectile]
+        return projectile
 
     def secondary_fire(self, owner_x: float, owner_y: float, target_x: float, target_y: float, owner_id: str):
         if (time.time() - self.last_secondary_time) < self.cooldown:

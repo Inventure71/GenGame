@@ -17,13 +17,21 @@ class Arena:
     # Game tick rate
     TICK_RATE = 60  # Game simulation Hz
     
-    def __init__(self, width: int = 800, height: int = 600):
-        pygame.init()
+    def __init__(self, width: int = 800, height: int = 600, headless: bool = False):
+        self.headless = headless
         self.width = width
         self.height = height
-        self.screen = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption("GenGame Arena")
-        self.clock = pygame.time.Clock()
+
+        # Only initialize pygame/display if not headless
+        if not self.headless:
+            pygame.init()
+            self.screen = pygame.display.set_mode((self.width, self.height))
+            pygame.display.set_caption("GenGame Arena")
+            self.clock = pygame.time.Clock()
+        else:
+            self.screen = None
+            self.clock = None
+
         self.running = True
         
         # Game entities
@@ -54,8 +62,11 @@ class Arena:
         self.tick_accumulator = 0.0
         
         
-        # UI
-        self.ui = BaseUI(self.screen, self.width, self.height)
+        # UI (only initialize if not headless)
+        if not self.headless:
+            self.ui = BaseUI(self.screen, self.width, self.height)
+        else:
+            self.ui = None
         
         # Default floor
         self.platforms.append(BasePlatform(0, self.height, self.width, 20, (50, 50, 50)))
@@ -263,6 +274,9 @@ class Arena:
 
     def render(self):
         """Draw everything."""
+        if self.headless:
+            return  # No rendering in headless mode
+
         self.screen.fill((135, 206, 235))
         for plat in self.platforms: plat.draw(self.screen)
         for weapon in self.weapon_pickups: weapon.draw(self.screen, self.height)
@@ -273,10 +287,16 @@ class Arena:
 
     def step(self):
         """One frame."""
-        frame_delta = self.clock.tick(60) / 1000.0
+        if self.headless:
+            # In headless mode, we don't use pygame clock
+            import time
+            frame_delta = 1.0 / self.TICK_RATE  # Fixed timestep
+        else:
+            frame_delta = self.clock.tick(60) / 1000.0
 
-        # Capture input
-        self._capture_input()
+        # Capture input (skip in headless mode)
+        if not self.headless:
+            self._capture_input()
 
         # Update game simulation
         self.tick_accumulator += frame_delta
@@ -289,6 +309,21 @@ class Arena:
             char.update(frame_delta, self.platforms, self.height)
 
         self.render()
+
+    def update(self, delta_time: float):
+        """
+        Update game simulation (physics only, no rendering/input).
+        Used by server for headless simulation.
+        """
+        # Update game simulation
+        self.tick_accumulator += delta_time
+        while self.tick_accumulator >= self.tick_interval:
+            self._update_simulation(self.tick_interval)
+            self.tick_accumulator -= self.tick_interval
+
+        # Update all characters
+        for char in self.characters:
+            char.update(delta_time, self.platforms, self.height)
 
     def _capture_input(self):
         """Capture local player input."""

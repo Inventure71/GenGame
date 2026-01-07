@@ -1,10 +1,15 @@
 from BASE_components.BASE_projectile import BaseProjectile
+from BASE_components.BASE_network import NetworkObject
 import pygame
 import time
 import math
 
-class BaseWeapon:
+class BaseWeapon(NetworkObject):
     def __init__(self, name: str, damage: float, cooldown: float, projectile_speed: float, location: [float, float] = None):
+        # Initialize network capabilities first
+        super().__init__()
+        # Network identity is automatically set by NetworkObject.__init__
+
         self.name = name
         self.damage = damage
         self.cooldown = cooldown # Seconds between shots
@@ -18,6 +23,27 @@ class BaseWeapon:
         self.height = 20
         self.pickup_radius = 40  # Collision radius for pickup
         self.color = (100, 100, 200)  # Default blue color
+
+        # Initialize graphics (can be called later for headless mode)
+        self.init_graphics()
+
+    def init_graphics(self):
+        """
+        Initialize graphics resources.
+        Safe to call multiple times and works even if pygame is not initialized.
+        """
+        super().init_graphics()
+
+        # Only initialize pygame-dependent graphics if pygame is available
+        try:
+            # Test if pygame is initialized by checking if we can create a surface
+            pygame.display.get_surface()
+            # If we get here, pygame is initialized, so we can load graphics
+            # For weapons, we might load fonts here if needed
+            pass
+        except:
+            # Pygame not initialized or no display - skip graphics initialization
+            pass
 
     def can_shoot(self) -> bool:
         return (time.time() - self.last_shot_time) >= self.cooldown
@@ -77,17 +103,17 @@ class BaseWeapon:
         """
         Draw the weapon on the ground (only when not equipped).
         """
-        if self.is_equipped:
+        if self.is_equipped or not self._graphics_initialized:
             return
-        
+
         # Convert y-up to pygame y-down
         py_y = arena_height - self.location[1] - self.height
         weapon_rect = pygame.Rect(self.location[0], py_y, self.width, self.height)
-        
+
         # Draw weapon body
         pygame.draw.rect(screen, self.color, weapon_rect)
         pygame.draw.rect(screen, (255, 255, 255), weapon_rect, 2)  # White border
-        
+
         # Draw weapon name (small text)
         font = pygame.font.Font(None, 16)
         text = font.render(self.name[:8], True, (255, 255, 255))

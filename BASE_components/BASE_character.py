@@ -2,12 +2,17 @@ import pygame
 import uuid
 from BASE_components.BASE_weapon import BaseWeapon
 from BASE_components.BASE_projectile import BaseProjectile
+from BASE_components.BASE_network import NetworkObject
 
-class BaseCharacter:
+class BaseCharacter(NetworkObject):
     # IMMUTABLE: Life system - all players have exactly 3 lives
     MAX_LIVES = 3
 
     def __init__(self, name: str, description: str, image: str, location: [float, float], width: float = 50, height: float = 50):
+        # Initialize network capabilities first
+        super().__init__()
+        # Network identity is automatically set by NetworkObject.__init__
+
         self.id = str(uuid.uuid4())
         self.name = name
         self.description = description
@@ -74,12 +79,34 @@ class BaseCharacter:
         self.damage_multiplier = 1.0
         self.defense_multiplier = 1.0
 
+        # Initialize graphics (can be called later for headless mode)
+        self.init_graphics()
+
+    def init_graphics(self):
+        """
+        Initialize graphics resources.
+        Safe to call multiple times and works even if pygame is not initialized.
+        """
+        super().init_graphics()
+
+        # Only initialize pygame-dependent graphics if pygame is available
+        try:
+            # Test if pygame is initialized by checking if we can create a surface
+            pygame.display.get_surface()
+            # If we get here, pygame is initialized, so we can load graphics
+            # Note: In a real implementation, you'd cache and load actual images here
+            # For now, we just set a flag that graphics are ready
+            pass
+        except:
+            # Pygame not initialized or no display - skip graphics initialization
+            pass
+
     def get_rect(self) -> pygame.Rect:
         # In Pygame, y increases downwards. 
         # For our internal logic (y up), we will flip y in the Arena/Renderer.
         return pygame.Rect(self.location[0], self.location[1], self.width * self.scale_ratio, self.height * self.scale_ratio)
 
-    def shoot(self, target_pos: [float, float]) -> BaseProjectile:
+    def shoot(self, target_pos: [float, float]) -> BaseProjectile | list[BaseProjectile] | None:
         if not self.is_alive or not self.weapon:
             return None
         
@@ -89,7 +116,7 @@ class BaseCharacter:
         
         return self.weapon.shoot(start_x, start_y, target_pos[0], target_pos[1], self.id)
 
-    def secondary_fire(self, target_pos: [float, float]) -> BaseProjectile:
+    def secondary_fire(self, target_pos: [float, float]) -> BaseProjectile | list[BaseProjectile] | None:
         """Override to implement secondary fire mode"""
         if not self.is_alive or not self.weapon:
             return None
@@ -101,7 +128,7 @@ class BaseCharacter:
             return self.weapon.secondary_fire(start_x, start_y, target_pos[0], target_pos[1], self.id)
         return None
 
-    def special_fire(self, target_pos: [float, float], is_holding: bool) -> BaseProjectile:
+    def special_fire(self, target_pos: [float, float], is_holding: bool) -> BaseProjectile | list[BaseProjectile] | None:
         """Override to implement special fire/charge mode"""
         if not self.is_alive or not self.weapon:
             return None
@@ -345,13 +372,13 @@ class BaseCharacter:
 
 
     def draw(self, screen: pygame.Surface, arena_height: float):
-        if not self.is_alive:
+        if not self.is_alive or not self._graphics_initialized:
             return
-        
+
         # Map our y-up coordinates to Pygame's y-down coordinates
         py_y = arena_height - self.location[1] - (self.height * self.scale_ratio)
         py_rect = pygame.Rect(self.location[0], py_y, self.width * self.scale_ratio, self.height * self.scale_ratio)
-        
+
         # Attempt to draw image, fallback to rect
         try:
             # This is a placeholder, normally you'd load and cache images
@@ -360,7 +387,7 @@ class BaseCharacter:
             pygame.draw.rect(screen, (0, 255, 0), py_rect)
         except:
             pygame.draw.rect(screen, (0, 255, 0), py_rect)
-        
+
         # Draw health bar
         health_bar_width = self.width * self.scale_ratio
         health_ratio = self.health / self.max_health

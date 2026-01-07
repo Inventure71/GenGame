@@ -15,8 +15,8 @@ import random
 
 
 class Arena(BaseArena):
-    def __init__(self, width: int = 800, height: int = 600):
-        super().__init__(width, height)
+    def __init__(self, width: int = 800, height: int = 600, headless: bool = False):
+        super().__init__(width, height, headless)
         # Register custom weapons
         self.register_weapon_type("BlackHoleGun", BlackHoleGun)
         self.register_weapon_type("TornadoGun", TornadoGun)
@@ -30,8 +30,11 @@ class Arena(BaseArena):
         self.register_projectile_type(OrbitalStrikeMarker)
         self.register_projectile_type(OrbitalBlast)
         
-        pygame.display.set_caption(f"GenGame - Battle Arena")
-        self.ui = GameUI(self.screen, self.width, self.height)
+        if not self.headless:
+            pygame.display.set_caption(f"GenGame - Battle Arena")
+            self.ui = GameUI(self.screen, self.width, self.height)
+        else:
+            self.ui = None
 
 
 
