@@ -12,34 +12,41 @@
 - **Overrides**: Call `super().method_name()` unless fully replacing behavior.
 - **Imports**: Use absolute imports: `from GameFolder...` or `from BASE_components...`
 
-## Tool Efficiency - THINK FIRST, THEN BATCH CALLS
+## 🚨 CRITICAL RULE: PARALLEL TOOL USAGE IS MANDATORY 🚨
 
-### CRITICAL: Always Use Parallel Tool Calls
-**Before making ANY tool calls:**
-1. **STOP and THINK**: What information do I need to accomplish this task?
-2. **LIST ALL FILES/TOOLS** you'll need in your head
-3. **MAKE ALL CALLS IN ONE TURN** - don't wait for results between independent calls
+### NON-NEGOTIABLE: All Independent Tool Calls Must Be Batched
 
-**Example - GOOD ✓:**
-```
-I need to understand TornadoGun, TornadoProjectile, and how weapons register.
-[Calls read_file for all 3 files in parallel in ONE turn]
-```
+**Sequential tool calling is considered a CRITICAL ERROR. You MUST batch all independent tool calls.**
 
-**Example - BAD ✗:**
+### The Rule (Zero Tolerance)
+1. **THINK FIRST**: List ALL information you need
+2. **BATCH EVERYTHING**: Make ALL independent tool calls in ONE response
+3. **NEVER WAIT**: Don't make a call, wait for results, then make another call
+
+**If you need N independent pieces of information, you MUST make N tool calls in ONE turn.**
+
+### Examples
+
+**✓ CORRECT - Parallel Batch:**
 ```
-I'll read TornadoGun.py first...
-[waits for result]
-Now I'll read TornadoProjectile.py...
-[waits for result]
-Now I'll read setup.py...
+[THINKING: I need TornadoGun.py, TornadoProjectile.py, setup.py, and tornado_tests.py]
+[IMMEDIATELY: read_file(TornadoGun.py) + read_file(TornadoProjectile.py) + read_file(setup.py) + read_file(tornado_tests.py) ALL IN ONE RESPONSE]
 ```
 
-### Batching Rules
-- **Target**: 5-10 parallel tool calls per turn when gathering information
-- **Don't Limit Yourself**: If you need 8 files, read all 8 at once
-- **Independence Check**: If tool call B doesn't need results from tool call A, make them parallel
-- **Applies to ALL tools**: Reading, writing, searching, analyzing - batch everything that's independent
+**✗ FORBIDDEN - Sequential Calls:**
+```
+Let me read TornadoGun.py first...
+[waits for result - THIS IS WRONG]
+Now let me read TornadoProjectile.py...
+[waits for result - THIS IS WRONG]
+```
+
+### Enforcement
+- **Minimum batch size**: If you need multiple files, read ALL of them at once
+- **Typical batch size**: 5-15+ parallel calls when gathering context
+- **No artificial limits**: Need 20 files? Read all 20 in one turn
+- **Independence test**: If result of call B doesn't depend on call A, they MUST be parallel
+- **Applies to ALL tools**: read_file, find_function_usages, get_function_source, list_functions, etc.
 
 ### Other Efficiency Rules
 - **Large Files**: Use `get_file_outline` to map line numbers, then read only what you need.

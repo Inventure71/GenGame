@@ -55,6 +55,7 @@ def gather_context_planning():
     lines.append(read_file('GameFolder/setup.py'))
     
     lines.append("\n=== END OF STARTING CONTEXT ===")
+    lines.append("\n⚡ REMINDER: Make ALL read_file calls in PARALLEL in ONE turn. Never read sequentially. ⚡")
     
     return "\n".join(lines)
 
@@ -67,7 +68,8 @@ def gather_context_coding():
         f"- GameFolder/: You can read and write files here\n"
         f"- BASE_components/: Read-only, inherit from these classes in GameFolder/\n\n"
         f"Do NOT call get_tree_directory - use the paths above.\n\n"
-        f"=== END OF STARTING CONTEXT ==="
+        f"=== END OF STARTING CONTEXT ===\n\n"
+        f"⚡ REMINDER: Use tools in PARALLEL. If you need multiple files, read ALL of them in ONE response. ⚡"
     )
     return context
 
@@ -77,6 +79,8 @@ def gather_context_testing():
         "=== TESTING CONTEXT ===",
         "",
         get_full_directory_tree(),
+        "",
+        "⚡ CRITICAL REMINDER: Batch ALL file reads in ONE turn (5-10+ parallel calls is expected). Sequential reading is FORBIDDEN. ⚡",
         "",
         "## CRITICAL: Character & Weapon Attributes",
         "Before writing tests, note these BASE_components facts:",

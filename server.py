@@ -335,6 +335,10 @@ class GameServer:
         if not character:
             return
 
+        # Update arena mouse position for TronProjectile tracking
+        if 'mouse_pos' in input_data:
+            self.arena.last_mouse_world_pos = input_data['mouse_pos']
+
         # Apply movement
         if 'movement' in input_data:
             direction = input_data['movement']

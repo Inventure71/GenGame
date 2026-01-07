@@ -29,6 +29,15 @@ class ActionLogger:
         self.cumulative_output_tokens = 0
         self.request_count = 0
         
+        # Parallel call monitoring
+        self.parallel_call_stats = {
+            "total_requests": 0,
+            "single_tool_requests": 0,
+            "parallel_tool_requests": 0,
+            "sequential_read_warnings": 0
+        }
+        self.last_request_tool_names = []  # Track tools from previous request
+        
         # Visual Logger configuration
         self.visual_enabled = visual
         self.visual_uri = "ws://127.0.0.1:8765/ws"
@@ -209,6 +218,25 @@ class ActionLogger:
         self.cumulative_input_tokens += input_tokens
         self.cumulative_output_tokens += output_tokens
         
+        # Track parallel call statistics
+        self.parallel_call_stats["total_requests"] += 1
+        if tool_calls:
+            if len(tool_calls) == 1:
+                self.parallel_call_stats["single_tool_requests"] += 1
+                # Check if this looks like sequential reading pattern
+                current_tool_names = [tc["name"] for tc in tool_calls]
+                if (self.last_request_tool_names and 
+                    self.last_request_tool_names[0] == "read_file" and 
+                    current_tool_names[0] == "read_file"):
+                    self.parallel_call_stats["sequential_read_warnings"] += 1
+                    print(f"\n⚠️  WARNING: Detected sequential read_file calls. Previous request read {len(self.last_request_tool_names)} file(s), current reads 1 file.")
+                    print(f"    Consider batching file reads into a single request for better efficiency.\n")
+                self.last_request_tool_names = current_tool_names
+            elif len(tool_calls) > 1:
+                self.parallel_call_stats["parallel_tool_requests"] += 1
+                self.last_request_tool_names = [tc["name"] for tc in tool_calls]
+                print(f"✓ Parallel tool usage: {len(tool_calls)} tools called in one request")
+        
         request_data = {
             "request_id": self.request_count,
             "input_tokens": input_tokens,
@@ -377,6 +405,19 @@ class ActionLogger:
         if self.start_time and self.end_time:
             duration = (self.end_time - self.start_time).total_seconds()
             print(f"  Duration: {duration:.1f}s")
+        
+        # Parallel usage statistics
+        stats = self.parallel_call_stats
+        if stats["total_requests"] > 0:
+            print(f"\n  PARALLEL TOOL USAGE:")
+            print("-"*60)
+            print(f"  Total requests: {stats['total_requests']}")
+            print(f"  Single-tool requests: {stats['single_tool_requests']}")
+            print(f"  Parallel-tool requests: {stats['parallel_tool_requests']}")
+            if stats['sequential_read_warnings'] > 0:
+                print(f"  ⚠️  Sequential read warnings: {stats['sequential_read_warnings']}")
+            parallel_pct = (stats['parallel_tool_requests'] / stats['total_requests'] * 100) if stats['total_requests'] > 0 else 0
+            print(f"  Parallel efficiency: {parallel_pct:.1f}%")
         
         # Tool calls summary
         print(f"\n  ACTIONS ({len(self.actions)} total):")

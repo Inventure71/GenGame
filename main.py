@@ -179,6 +179,9 @@ def main(player_id: str = "", server_host: str = "127.0.0.1", server_port: int =
             # Send input to server (throttled to reduce network traffic)
             if current_time - last_input_time > 0.016:  # ~60 FPS input rate
                 input_data = {}
+                
+                # ALWAYS send mouse position for TronProjectile tracking
+                input_data['mouse_pos'] = [world_mx, world_my]
 
                 # Movement input
                 direction = [0, 0]
@@ -211,8 +214,8 @@ def main(player_id: str = "", server_host: str = "127.0.0.1", server_port: int =
                     input_data['special_fire_holding'] = False
                     special_fire_holding = False
 
-                if input_data:
-                    network_client.send_input(input_data, entity_manager)
+                # Always send input (at least mouse position)
+                network_client.send_input(input_data, entity_manager)
 
                 last_input_time = current_time
 
