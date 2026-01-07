@@ -2,6 +2,7 @@ import pygame
 import uuid
 from BASE_components.BASE_weapon import BaseWeapon
 from BASE_components.BASE_projectile import BaseProjectile
+from BASE_components.network_protocol import CharacterState, char_flags_pack, char_flags_unpack
 
 class BaseCharacter:
     # IMMUTABLE: Life system - all players have exactly 3 lives
@@ -38,7 +39,14 @@ class BaseCharacter:
         self.is_moving_up = False # Input flag for moving up (jumping/flying)
         self.hover_time = 0.0 # current hover time
         self.max_hover_time = 0.0 # max time it can hover for
-
+        
+        # Flight Mechanic
+        self.max_flight_time = 3.0
+        self.flight_time_remaining = self.max_flight_time
+        self.needs_recharge = False
+        self.is_currently_flying = False
+        self.physics_inverted = False # Can be used for status effects
+        
         """Combat"""
         self.weapon = None  # No weapon by default - must pick up
 
@@ -82,6 +90,30 @@ class BaseCharacter:
         
         return self.weapon.shoot(start_x, start_y, target_pos[0], target_pos[1], self.id)
 
+    def secondary_fire(self, target_pos: [float, float]) -> BaseProjectile:
+        """Override to implement secondary fire mode"""
+        if not self.is_alive or not self.weapon:
+            return None
+        
+        start_x = self.location[0] + (self.width * self.scale_ratio) / 2
+        start_y = self.location[1] + (self.height * self.scale_ratio) / 2
+        
+        if hasattr(self.weapon, 'secondary_fire'):
+            return self.weapon.secondary_fire(start_x, start_y, target_pos[0], target_pos[1], self.id)
+        return None
+
+    def special_fire(self, target_pos: [float, float], is_holding: bool) -> BaseProjectile:
+        """Override to implement special fire/charge mode"""
+        if not self.is_alive or not self.weapon:
+            return None
+            
+        start_x = self.location[0] + (self.width * self.scale_ratio) / 2
+        start_y = self.location[1] + (self.height * self.scale_ratio) / 2
+        
+        if hasattr(self.weapon, 'special_fire'):
+            return self.weapon.special_fire(start_x, start_y, target_pos[0], target_pos[1], self.id, is_holding)
+        return None
+
     """Movement"""
     def move(self, direction: [float, float], platforms: list = None):
         """
@@ -91,31 +123,43 @@ class BaseCharacter:
         if not self.can_move or not self.is_alive:
             return
 
+        # Apply status effects like inverted physics
+        actual_dir = [direction[0], direction[1]]
+        if self.physics_inverted:
+            actual_dir[0] *= -1
+            actual_dir[1] *= -1
+
         # Handle horizontal movement
-        self.location[0] += direction[0] * self.speed * self.speed_multiplier
+        self.location[0] += actual_dir[0] * self.speed * self.speed_multiplier
 
         # Handle vertical movement
         # Update flags
-        self.is_dropping = (direction[1] < -0.5)
-        self.is_moving_up = (direction[1] > 0)
+        self.is_dropping = (actual_dir[1] < -0.5)
+        self.is_moving_up = (actual_dir[1] > 0)
 
-        if direction[1] > 0:
+        # Integrated flight logic
+        if not self.on_ground and self.is_moving_up and self.flight_time_remaining > 0 and not self.needs_recharge:
+            self.can_fly = True
+            self.is_currently_flying = True
+        else:
+            self.can_fly = False # Reset if not meeting conditions
+            self.is_currently_flying = False
+
+        if actual_dir[1] > 0:
             if self.on_ground:
                 if self.can_jump:
                     self.jump()
             elif self.can_fly:
-                self.location[1] += direction[1] * self.speed * self.speed_multiplier
+                self.location[1] += actual_dir[1] * self.speed * self.speed_multiplier
                 self.vertical_velocity = 0
-        elif direction[1] < 0:
+        elif actual_dir[1] < 0:
             if self.can_fly:
-                self.location[1] += direction[1] * self.speed * self.speed_multiplier
+                self.location[1] += actual_dir[1] * self.speed * self.speed_multiplier
                 self.vertical_velocity = 0 # Cancel gravity
                 
                 # Prevent going below floor
                 if self.location[1] < 0:
                     self.location[1] = 0
-
-            # If not flying, down input just sets is_dropping flag (handled in move start)
 
     def jump(self):
         if not self.can_jump or not self.is_alive:
@@ -185,7 +229,7 @@ class BaseCharacter:
 
     """Vitals & Combat"""
     def take_damage(self, amount: float):
-        if not self.is_alive:
+        if not self.is_alive or amount <= 0:
             return
         
         # Simple defense calculation
@@ -221,25 +265,19 @@ class BaseCharacter:
     def die(self):
         """
         Handle character death.
-        If lives remain, mark for respawn. If no lives remain, eliminate from game.
         """
         self.is_alive = False
         self.lives -= 1
         
         if self.lives > 0:
             print(f"{self.name} has died. Lives remaining: {self.lives}")
-            # Will respawn - Arena should handle the respawn logic
         else:
             self.is_eliminated = True
             print(f"{self.name} has been eliminated from the game!")
 
     def respawn(self, respawn_location: [float, float] = None):
-        """
-        Respawn the character at the given location.
-        If no location provided, use the spawn_location.
-        """
         if self.is_eliminated:
-            return  # Cannot respawn if eliminated
+            return
         
         if respawn_location:
             self.location = respawn_location.copy()
@@ -252,6 +290,7 @@ class BaseCharacter:
         self.is_alive = True
         self.vertical_velocity = 0.0
         self.on_ground = False
+        self.flight_time_remaining = self.max_flight_time
         
         # Drop weapon on death
         self.weapon = None
@@ -259,21 +298,13 @@ class BaseCharacter:
         print(f"{self.name} has respawned!")
 
     def pickup_weapon(self, weapon):
-        """
-        Pick up a weapon. Can only pick up if not already holding one.
-        Returns True if pickup successful, False otherwise.
-        """
         if self.weapon is not None:
-            return False  # Already holding a weapon
+            return False
         
         self.weapon = weapon
         return True
 
     def drop_weapon(self):
-        """
-        Drop the current weapon.
-        Returns the dropped weapon (if any).
-        """
         dropped_weapon = self.weapon
         self.weapon = None
         return dropped_weapon
@@ -283,9 +314,88 @@ class BaseCharacter:
         if not self.is_alive:
             return
         
+        # Flight recharge logic
+        if self.on_ground:
+            self.flight_time_remaining = min(self.max_flight_time, self.flight_time_remaining + delta_time * 1.5)
+            if self.flight_time_remaining >= self.max_flight_time:
+                self.needs_recharge = False
+        
+        # Fuel consumption
+        if self.is_currently_flying and not self.on_ground:
+            self.flight_time_remaining -= delta_time
+            if self.flight_time_remaining <= 0:
+                self.flight_time_remaining = 0
+                self.needs_recharge = True
+                self.can_fly = False
+                self.is_currently_flying = False
+
         self.apply_gravity(arena_height, platforms)
-        # Regenerate a bit of stamina per frame
         self.regenerate_stamina(self.agility * 0.1 * delta_time)
+
+        # Gradually recover multipliers
+        recovery_speed = 0.5 * delta_time
+        if self.speed_multiplier < 1.0:
+            self.speed_multiplier = min(1.0, self.speed_multiplier + recovery_speed)
+        elif self.speed_multiplier > 1.0:
+            self.speed_multiplier = max(1.0, self.speed_multiplier - recovery_speed)
+
+        if self.jump_height_multiplier < 1.0:
+            self.jump_height_multiplier = min(1.0, self.jump_height_multiplier + recovery_speed)
+        elif self.jump_height_multiplier > 1.0:
+            self.jump_height_multiplier = max(1.0, self.jump_height_multiplier - recovery_speed)
+
+    # =========================================================================
+    # NETWORK SYNC
+    # =========================================================================
+
+    def get_network_state(self, player_id: int, weapon_id: int) -> CharacterState:
+        """Create a state packet for this character."""
+        flags = char_flags_pack(
+            self.is_alive,
+            self.is_eliminated,
+            self.on_ground,
+            self.is_currently_flying
+        )
+        return CharacterState(
+            player_id=player_id,
+            x=self.location[0],
+            y=self.location[1],
+            vel_y=self.vertical_velocity,
+            health=self.health,
+            lives=self.lives,
+            flags=flags,
+            weapon_id=weapon_id
+        )
+
+    def apply_network_state(self, state: CharacterState, is_local: bool, weapon_spawner=None):
+        """Apply a state packet to this character."""
+        # 1. Position & Physics
+        if is_local:
+            # Drift correction
+            dx = abs(self.location[0] - state.x)
+            dy = abs(self.location[1] - state.y)
+            if dx > 15 or dy > 15:
+                self.location[0] = state.x
+                self.location[1] = state.y
+                self.vertical_velocity = state.vel_y
+        else:
+            self.location[0] = state.x
+            self.location[1] = state.y
+            self.vertical_velocity = state.vel_y
+        
+        # 2. Vitals & Flags
+        self.health = state.health
+        self.lives = state.lives
+        
+        was_alive = self.is_alive
+        self.is_alive, self.is_eliminated, self.on_ground, is_flying = char_flags_unpack(state.flags)
+        self.is_currently_flying = is_flying
+        
+        # 3. Weapon
+        if weapon_spawner and state.weapon_id > 0:
+            weapon_spawner(self, state.weapon_id)
+        elif state.weapon_id == 0:
+            self.weapon = None
 
     def draw(self, screen: pygame.Surface, arena_height: float):
         if not self.is_alive:
@@ -309,4 +419,3 @@ class BaseCharacter:
         health_ratio = self.health / self.max_health
         pygame.draw.rect(screen, (255, 0, 0), (self.location[0], py_y - 10, health_bar_width, 5))
         pygame.draw.rect(screen, (0, 255, 0), (self.location[0], py_y - 10, health_bar_width * health_ratio, 5))
-

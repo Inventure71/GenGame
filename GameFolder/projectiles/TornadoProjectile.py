@@ -7,6 +7,7 @@ class TornadoProjectile(Projectile):
     def __init__(self, x, y, direction, damage, owner_id):
         # Tornado is large and moves relatively slowly but consistently
         super().__init__(x, y, direction, speed=3.0, damage=damage, owner_id=owner_id, width=500, height=400)
+        self.is_persistent = True
         self.pull_radius = 250 # Maximum pull radius at the top
         self.pull_strength = 4.0
         self.duration = 6.0

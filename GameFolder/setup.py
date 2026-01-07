@@ -1,4 +1,3 @@
-from ast import Or
 from GameFolder.arenas.GAME_arena import Arena
 from GameFolder.characters.GAME_character import Character
 from GameFolder.platforms.GAME_platform import Platform
@@ -17,10 +16,10 @@ def setup_battle_arena():
     arena = Arena(1200, 700)
     
     # 1. Add Players
-    player1 = Character(name="Player 1", description="Green", image="", location=[150, 140], width=45, height=45)
+    player1 = Character(name="Player1", description="Green", image="", location=[150, 140], width=45, height=45)
     player1.color = (50, 255, 100)
     
-    player2 = Character(name="Player 2", description="Red", image="", location=[1000, 140], width=45, height=45)
+    player2 = Character(name="Player2", description="Red", image="", location=[1000, 140], width=45, height=45)
     player2.color = (255, 100, 100)
     
     arena.add_character(player1)

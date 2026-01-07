@@ -28,7 +28,7 @@ class StormCloud(Projectile):
         self.is_raining = False
         self.rain_duration = 6.0
         self.rain_timer = 0.0
-        self.persistent = True
+        self.is_persistent = True
         self.damage = 0.2
         self.width = 80
         self.height = 40

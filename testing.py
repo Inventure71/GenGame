@@ -19,9 +19,14 @@ def main_version_control(file_containing_patches: str = "patches.json"):
     version_control = VersionControl(action_logger, path_to_security_backup="__TEMP_SECURITY_BACKUP")
     result, errors = version_control.merge_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches=file_containing_patches)
     print("\n" * 10)
-    print("-----    ERRORS    -----")
-    print(errors)
-    
+    if result:
+        print("-----    SUCCESS    -----")
+        print("All changes applied successfully")
+    else:
+        print("-----    FAILED    -----")
+        print("Some changes failed to apply")
+        print(errors)
+
 def main_manual_repl():
     load_dotenv()
     check_integrity()
@@ -302,7 +307,7 @@ if __name__ == "__main__":
 
     #main_version_control_interactive()
     #auto_fix_conflicts("merged_patch.json")
-    main_version_control(file_containing_patches="merged_patch.json")
+    main_version_control(file_containing_patches="merged_patch_err.json")
 
     #print(get_file_outline("GameFolder/weapons/GAME_weapon.py"))
     #results = run_all_tests()

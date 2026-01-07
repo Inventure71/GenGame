@@ -70,10 +70,9 @@ def test_projectile_trajectory_and_collision():
     arena.projectiles.append(laser)
     
     
-    # Update arena until collision. Laser speed is 1200.
-    # Distance to plat x=300 is 200. Time = 200/1200 = 0.166s.
+    # Update world instead of just handle_collisions to process transitions
     for _ in range(20):
-        arena.handle_collisions(0.01)
+        arena.update_world(0.01)
         
     # Check if marker spawned
     markers = [p for p in arena.projectiles if isinstance(p, OrbitalStrikeMarker)]
@@ -91,16 +90,15 @@ def test_orbital_blast_integration_damage():
     arena.characters.append(victim)
     initial_hp = victim.health
     
-    # 1. Warmup transition
-    marker.update(1.1)
-    arena.handle_collisions(0.01) # Process the transition in handle_collisions (which spawns new projs)
+    # 1. Warmup transition - update world to handle transition
+    arena.update_world(1.1)
     
     blasts = [p for p in arena.projectiles if isinstance(p, OrbitalBlast)]
     assert len(blasts) == 1
     
     # 2. Damage calculation
     # Damage is 800 per second, reduced by 5 defense. Update 0.1s -> 75 damage.
-    arena.handle_collisions(0.1)
+    arena.update_world(0.1)
 
     # Character has 100 health normally.
     expected_hp = initial_hp - 75

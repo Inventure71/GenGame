@@ -49,8 +49,8 @@ def test_targeting_laser_collision_impact():
     plat = Platform(110, 250, 50, 100) # Rect(110, 250, 50, 100) covers world-y 300
     arena.platforms.append(plat)
     
-    # Run collision handling
-    arena.handle_collisions(0.05) # Moves laser by 60 pixels, reaching x=160
+    # Run update world instead of just handle_collisions to process transitions
+    arena.update_world(0.05)
     
     # Laser should be gone, Marker should be present
     assert laser not in arena.projectiles
@@ -88,7 +88,7 @@ def test_targeting_laser_fast_collision():
     
     # Update with large delta_time to "skip" the platform
     # 1200 * 0.1 = 120 pixels. New X = 220.
-    arena.handle_collisions(0.1)
+    arena.update_world(0.1)
     
     assert not laser.active
     markers = [p for p in arena.projectiles if isinstance(p, OrbitalStrikeMarker)]
@@ -106,12 +106,8 @@ def test_marker_to_blast_transition():
     marker = OrbitalStrikeMarker(400, 100, "player1")
     arena.projectiles.append(marker)
     
-    # Update marker past its 1.0s duration
-    marker.update(1.1)
-    assert not marker.active
-    
-    # Run arena collision handling to process transitions
-    arena.handle_collisions(0.016)
+    # Run arena update to process transitions
+    arena.update_world(1.1)
     
     # Marker should be gone, Blast should be present at same X
     assert marker not in arena.projectiles
@@ -223,10 +219,10 @@ def test_orbital_cannon_gameplay_integration():
     laser = lasers[0]
     assert laser.owner_id == "attacker"
 
-    # Run collision handling until laser hits something or reaches max distance
+    # Run update_world until laser hits something or reaches max distance
     # Laser speed is 1200, distance to victim is ~400 units, so should hit quickly
     for _ in range(30):  # Run enough frames for laser to reach target
-        arena.handle_collisions(0.016)  # ~60 FPS
+        arena.update_world(0.016)  # ~60 FPS
         lasers_check = [p for p in arena.projectiles if isinstance(p, TargetingLaser)]
         if len(lasers_check) == 0:
             break  # Laser is gone
@@ -243,7 +239,7 @@ def test_orbital_cannon_gameplay_integration():
     # Wait for marker warmup (1 second at 60 FPS = 60 frames)
     # The blast gets created when the marker becomes inactive
     for _ in range(65):  # A bit more than 1 second
-        arena.handle_collisions(0.016)
+        arena.update_world(0.016)
 
     # Marker should be gone and blast should be created
     markers_after = [p for p in arena.projectiles if isinstance(p, OrbitalStrikeMarker)]
@@ -259,7 +255,7 @@ def test_orbital_cannon_gameplay_integration():
     health_before_damage = victim.health
 
     # Run blast for exactly 0.1 seconds to deal controlled damage
-    arena.handle_collisions(0.1)
+    arena.update_world(0.1)
 
     # Check what damage was actually dealt in this final call
     damage_this_frame = health_before_damage - victim.health

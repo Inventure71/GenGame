@@ -12,6 +12,7 @@ class BlackHoleProjectile(Projectile):
         self.timer = 0.0
         self.target_pos = (target_x, target_y)
         self.is_stationary = False
+        self.is_persistent = True
 
     def update(self, delta_time):
         if not self.active:

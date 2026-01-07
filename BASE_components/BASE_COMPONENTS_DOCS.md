@@ -4,119 +4,87 @@ This document serves as the official API reference for the core GenGame engine. 
 
 ---
 
-## 🌍 Global Constants & Systems
+## 🌍 Global Systems & Architecture
+
+### Networking & Client/Server (IMMUTABLE)
+GenGame uses a deterministic step-based networking model.
+- **NEVER** modify `BASE_components/BASE_network.py` or the networking sections of `BASE_components/BASE_arena.py`.
+- **NEVER** change how the client sends inputs (`run_client` method).
+- **Control Flow**: 
+    1. Clients capture raw inputs (keys, mouse) and send them to the Server.
+    2. Server aggregates all player inputs into `self.latest_moves_dics`.
+    3. Server broadcasts the aggregated inputs back to all clients.
+    4. Both Server and Clients execute the exact same logic using `self.latest_moves_dics`.
+
+### Input Handling
+Inputs are received as a list of "moves" for each player ID.
+- Access moves via `self.latest_moves_dics[player_id]`.
+- Each move is a list: `[key_name, extra_data...]`.
+- Standard keys: `"up"`, `"down"`, `"left"`, `"right"`, `"q"`.
+- Mouse move: `["M_1", [world_x, world_y], left_pressed, middle_pressed, right_pressed]`.
 
 ### Coordinate Systems
-The game uses two different coordinate systems. Mixing them is the #1 cause of bugs.
-- **World Coordinates (Logic)**: Y-axis points **UP**. `[0, 0]` is the bottom-left. Used for physics, gravity, and object locations.
-- **Screen Coordinates (Pygame)**: Y-axis points **DOWN**. `[0, 0]` is the top-left. Used for rendering and `pygame.Rect` objects.
-- **Conversion Formula**: `screen_y = arena_height - world_y - object_height`
-
-### Common Pitfalls
-- **Vertical Velocity**: Use `self.vertical_velocity` (a float scalar). Do **NOT** use `self.velocity` (which doesn't exist).
-- **Health**: Use `self.health`. Do **NOT** use `self.hp`.
-- **Attribute Discovery**: If you aren't sure an attribute exists on a child class, use `getattr(obj, 'attr_name', default_value)`.
+- **World Coordinates (Logic)**: Y-axis points **UP**. `[0, 0]` is bottom-left. Used for physics and object locations.
+- **Screen Coordinates (Pygame)**: Y-axis points **DOWN**. `[0, 0]` is top-left. Used for rendering.
+- **Conversion Methods**: Use `self.screen_to_world(x, y)` and `self.world_to_screen(x, y)` in the Arena class.
 
 ---
 
 ## 1. Character (`BaseCharacter`)
 **File**: `BASE_components/BASE_character.py`
 
-The base class for all players and NPCs.
-
 ### Key Attributes
 - `self.location`: `[x, y]` in **World Coordinates**.
-- `self.vertical_velocity`: Float scalar for up/down movement.
-- `self.health` / `self.max_health`: Current and max HP (default 100.0).
+- `self.health` / `self.max_health`: Current/Max HP (default 100.0).
 - `self.lives`: Fixed at 3 (Immutable).
-- `self.scale_ratio`: Multiplier for visual size and collision box (default 1.0).
+- `self.weapon`: The currently equipped `BaseWeapon` or `None`.
 - `self.on_ground`: Boolean flag updated by physics.
-- `self.weapon`: The currently equipped `BaseWeapon` instance or `None`.
+- **Flight System**: `self.flight_time_remaining`, `self.needs_recharge`, `self.is_currently_flying`.
+- **Status Effects**: `self.physics_inverted`, `self.speed_multiplier`, `self.jump_height_multiplier`.
 
 ### Critical Methods
-- `update(delta_time, platforms, arena_height)`: Called every frame. Handles gravity and stamina regeneration.
-- `apply_gravity(arena_height, platforms)`: Core physics logic. **Note**: Checks `plat.is_solid` if it exists on the platform.
-- `take_damage(amount)`: Reduces health after applying `defense` logic. Triggers `die()` if health <= 0.
-- `jump()`: Sets `vertical_velocity` to `jump_height`. Only works if `on_ground` is True.
-- `shoot(target_pos)`: Centers the projectile spawn on the character and calls `weapon.shoot()`.
+- `move(direction, platforms)`: Updates position. Handles jumping, flying, and status effects.
+- `update(delta_time, platforms, arena_height)`: Handles gravity, flight recharge, and multiplier recovery.
+- `shoot(target_pos)` / `secondary_fire(target_pos)` / `special_fire(target_pos, is_holding)`: Spawning logic for different fire modes.
 
 ---
 
-## 2. Weapon (`BaseWeapon`)
-**File**: `BASE_components/BASE_weapon.py`
+## 2. Weapon & Projectile
+**Files**: `BASE_components/BASE_weapon.py`, `BASE_components/BASE_projectile.py`
 
-The base class for all equippable items.
+### Weapon Methods
+- `shoot(...)`: Standard fire. **MUST OVERRIDE** to return custom projectiles.
+- `secondary_fire(...)`: Optional override for alternate fire.
+- `special_fire(...)`: Optional override for channeled or special abilities.
 
-### Key Attributes
-- `self.damage`: Base damage dealt by projectiles.
-- `self.cooldown`: Time in seconds between shots.
-- `self.projectile_speed`: Speed of spawned projectiles.
-- `self.is_equipped`: Flag for whether it's held or on the ground.
-
-### Critical Methods
-- `can_shoot()`: Returns True if the cooldown has elapsed. Uses `time.time()`.
-- `shoot(owner_x, owner_y, target_x, target_y, owner_id)`: **MUST OVERRIDE** in the GAME version to return specific projectile classes. The base implementation returns a generic `BaseProjectile`.
-- `draw(screen, arena_height)`: Renders the weapon as a pickup when on the ground.
-
----
-
-## 3. Projectile (`BaseProjectile`)
-**File**: `BASE_components/BASE_projectile.py`
-
-### Key Attributes
+### Projectile Attributes
 - `self.location`: `[x, y]` in **World Coordinates**.
-- `self.direction`: Normalized `[x, y]` vector.
-- `self.active`: Boolean. If False, the Arena removes it in the next frame.
-- `self.owner_id`: ID of the character who fired it (to prevent self-harm).
-
-### Critical Methods
-- `update(delta_time)`: Moves the projectile based on `speed` and `direction`.
-- `draw(screen, arena_height)`: Handles the World -> Screen conversion for rendering.
+- `self.active`: If False, it is removed in the next frame.
+- `self.owner_id`: ID of the character who fired it.
 
 ---
 
-## 4. Platform (`BasePlatform`)
-**File**: `BASE_components/BASE_platform.py`
-
-### Key Attributes
-- `self.rect`: A `pygame.Rect` in **Screen Coordinates**.
-- `self.health`: Platforms can be destructible.
-- `self.is_destroyed`: If True, it is ignored by physics and rendering.
-
-### Critical Methods
-- `take_damage(amount)`: Reduces health and sets `is_destroyed`.
-- **Note for GAME version**: If you want characters to fall through a platform (e.g. "Glitched Platform"), add an `is_solid` attribute to your `Platform` class. The physics engine in `BaseCharacter` checks for this.
-
----
-
-## 5. Arena (`BaseArena`)
+## 3. Arena (`BaseArena`)
 **File**: `BASE_components/BASE_arena.py`
 
-The main game controller.
+The Arena is refactored into distinct steps. Override these in `GameFolder/arenas/GAME_arena.py` to insert custom logic.
 
-### Key Attributes
-- `self.characters`: List of all active players.
-- `self.platforms`: List of all platforms (Index 0 is usually the floor).
-- `self.projectiles`: List of active projectiles.
-- `self.lootpool`: Dictionary mapping weapon names to classes/factories.
+### Step-based Execution
+1. `collect_inputs()`: Fetches network/local inputs.
+2. `apply_inputs()`: Processes `latest_moves_dics`. **OVERRIDE THIS** to handle custom keys (E, F, Right Click).
+3. `update_world(delta_time)`: Runs physics, collisions, and state checks.
+4. `render()`: Draws the scene.
+5. `finalize_frame()`: Broadcasts sync data and clears moves.
 
-### Critical Methods
-- `handle_collisions(delta_time)`: The most complex method. Handles:
-    1. Projectile vs Character damage.
-    2. Projectile vs Platform destruction.
-    3. Character vs Weapon pickup.
-- `register_weapon_type(name, weapon_provider)`: Adds a weapon to the spawn list.
-- `manage_weapon_spawns(delta_time)`: Periodically picks a random platform and spawns a random weapon from the lootpool.
-- **Tip for GAME version**: If your weapon has "special" projectiles (like black holes or lasers), you **MUST** override `handle_collisions` in `GAME_arena.py` to add custom collision logic for those specific types.
+### Custom Collision Logic
+If your projectiles have special behaviors (pulling, persistent beams), you **MUST** override `handle_collisions` and call `super().handle_collisions(delta_time)` first.
 
 ---
 
-## 6. UI (`BaseUI`)
+## 4. UI (`BaseUI`)
 **File**: `BASE_components/BASE_ui.py`
 
-Handles the heads-up display.
-
 ### Critical Methods
-- `draw(characters, game_over, winner, respawn_timers)`: The main entry point for rendering the HUD.
-- `draw_character_info(...)`: Renders the health bar, lives, and current weapon for a player.
-
+- `draw(characters, game_over, winner, respawn_timers)`: Main entry point.
+- Renders circular health indicators in the top-right corner.
+- Colors: Green (>60%), Yellow (>30%), Red (<30%).

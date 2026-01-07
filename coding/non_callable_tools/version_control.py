@@ -175,12 +175,18 @@ class VersionControl:
         print(f"Applied {count}/{total_changes} changes successfully")
 
         if not success:
-            print("Failed to apply all changes, restoring to temporary backup")
+            print("Failed to apply all changes")
+            answer = input("An error occured, do you want to ask a model to fix the patch? Y/N: ").lower().strip()
+            if answer == "y":
+                print("Attempting fix with model")
+                raise("Not implemented yet")
+
+            print("Restoring to temporary backup")
             self.security_backup_handler.restore_backup("GameFolder", target_path="GameFolder")
             print("Restored, removing temporary backup")
             self.security_backup_handler.delete_entire_backup_folder()
             return False, errors
-
+            
             
         print("All changes applied successfully")
         print("Removing temporary backup")
