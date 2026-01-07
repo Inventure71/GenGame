@@ -21,19 +21,16 @@ def main(player_id: str = "", is_server: bool = False):
     print("  E/F: Special Fire")
     print("  Q: Drop current weapon")
     print("  ESC: Quit game")
-    print("\n🌐 NETWORK:")
-    print("  Server: Runs simulation at 60Hz, broadcasts state at 30Hz via UDP")
-    print("  Client: Sends inputs at 30Hz, renders at 60Hz with interpolation")
     print("="*70)
     print("\nStarting game...\n")
-    
+
     try:
         # Initialize and setup the arena via the child's setup function
         arena = setup_battle_arena()
-        
+
         # Set the local player ID so we can control a character
         arena.set_id(player_id)
-        
+
         print(f"✓ Created {len(arena.characters)} players")
         print(f"✓ Spawned {len(arena.platforms)} platforms")
         print(f"✓ Lootpool initialized with: {list(arena.lootpool.keys())}")
@@ -41,20 +38,7 @@ def main(player_id: str = "", is_server: bool = False):
         print("   Walk over them to pick them up!\n")
         print("Let the battle begin! 🎯\n")
 
-        if is_server:
-            print(f"[MODE] Starting as SERVER on port 5555 (UDP: 5556)")
-            arena.start_server(("0.0.0.0", 5555))
-        else:
-            print(f"[MODE] Starting as CLIENT, connecting to localhost:5555")
-            try:
-                arena.connect_to_server(("localhost", 5555))
-                print(f"✓ Connected! Assigned ID: {arena.numeric_id}")
-            except Exception as e:
-                print(f"✗ Failed to connect: {e}")
-                print("  Make sure the server is running first!")
-                sys.exit(1)
-        
-        # Start the game loop
+        # Start the local game loop
         arena.run()
         
     except Exception as e:
@@ -68,17 +52,8 @@ def main(player_id: str = "", is_server: bool = False):
 if __name__ == "__main__":
     random.seed(69)
 
-    if len(sys.argv) < 2:
-        print("Usage: python main.py server|client [name]")
-        print("  server - Start as game server (Player1)")
-        print("  client - Connect to server (Player2)")
-        sys.exit(1)
+    player_name = "Player"
+    if len(sys.argv) > 1:
+        player_name = sys.argv[1]
 
-    if sys.argv[1] == "server":
-        main(player_id="Player1", is_server=True)
-    elif sys.argv[1] == "client":
-        main(player_id="Player2", is_server=False)
-    else:
-        print(f"Unknown mode: {sys.argv[1]}")
-        print("Use 'server' or 'client'")
-        sys.exit(1)
+    main(player_id=player_name)

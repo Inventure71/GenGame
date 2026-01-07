@@ -2,7 +2,6 @@ import pygame
 import uuid
 from BASE_components.BASE_weapon import BaseWeapon
 from BASE_components.BASE_projectile import BaseProjectile
-from BASE_components.network_protocol import CharacterState, char_flags_pack, char_flags_unpack
 
 class BaseCharacter:
     # IMMUTABLE: Life system - all players have exactly 3 lives
@@ -344,58 +343,6 @@ class BaseCharacter:
         elif self.jump_height_multiplier > 1.0:
             self.jump_height_multiplier = max(1.0, self.jump_height_multiplier - recovery_speed)
 
-    # =========================================================================
-    # NETWORK SYNC
-    # =========================================================================
-
-    def get_network_state(self, player_id: int, weapon_id: int) -> CharacterState:
-        """Create a state packet for this character."""
-        flags = char_flags_pack(
-            self.is_alive,
-            self.is_eliminated,
-            self.on_ground,
-            self.is_currently_flying
-        )
-        return CharacterState(
-            player_id=player_id,
-            x=self.location[0],
-            y=self.location[1],
-            vel_y=self.vertical_velocity,
-            health=self.health,
-            lives=self.lives,
-            flags=flags,
-            weapon_id=weapon_id
-        )
-
-    def apply_network_state(self, state: CharacterState, is_local: bool, weapon_spawner=None):
-        """Apply a state packet to this character."""
-        # 1. Position & Physics
-        if is_local:
-            # Drift correction
-            dx = abs(self.location[0] - state.x)
-            dy = abs(self.location[1] - state.y)
-            if dx > 15 or dy > 15:
-                self.location[0] = state.x
-                self.location[1] = state.y
-                self.vertical_velocity = state.vel_y
-        else:
-            self.location[0] = state.x
-            self.location[1] = state.y
-            self.vertical_velocity = state.vel_y
-        
-        # 2. Vitals & Flags
-        self.health = state.health
-        self.lives = state.lives
-        
-        was_alive = self.is_alive
-        self.is_alive, self.is_eliminated, self.on_ground, is_flying = char_flags_unpack(state.flags)
-        self.is_currently_flying = is_flying
-        
-        # 3. Weapon
-        if weapon_spawner and state.weapon_id > 0:
-            weapon_spawner(self, state.weapon_id)
-        elif state.weapon_id == 0:
-            self.weapon = None
 
     def draw(self, screen: pygame.Surface, arena_height: float):
         if not self.is_alive:

@@ -6,29 +6,16 @@ from typing import Dict, List, Optional, Tuple, Set
 from BASE_components.BASE_character import BaseCharacter
 from BASE_components.BASE_platform import BasePlatform
 from BASE_components.BASE_ui import BaseUI
-from BASE_components.BASE_network import BaseNetwork
-from BASE_components.network_protocol import (
-    InputPacket, StatePacket, CharacterState, ProjectileState, WeaponPickupState,
-    EventType, keys_from_input_flags, input_flags_from_keys,
-    char_flags_pack, char_flags_unpack, game_flags_pack, game_flags_unpack,
-    INPUT_LEFT, INPUT_RIGHT, INPUT_UP, INPUT_DOWN, INPUT_MOUSE_L, INPUT_MOUSE_R, INPUT_DROP, INPUT_SPECIAL
-)
 from BASE_components.BASE_projectile import BaseProjectile
 
 
 class Arena:
     """
-    Base Arena with hybrid TCP/UDP networking.
-    
-    Server runs simulation at 60Hz, broadcasts state at 30Hz (every other frame).
-    Clients send inputs at 30Hz via UDP, interpolate received states for smooth rendering.
+    Base Arena for local single-player gameplay.
     """
-    
-    # Network tick rates
-    SERVER_TICK_RATE = 60  # Server simulation Hz
-    SERVER_BROADCAST_RATE = 30  # Server state broadcast Hz (half of tick rate)
-    CLIENT_INPUT_RATE = 30  # Client input send Hz (reduced bandwidth)
-    RENDER_DELAY_MS = 100  # Interpolation delay for smooth rendering
+
+    # Game tick rate
+    TICK_RATE = 60  # Game simulation Hz
     
     def __init__(self, width: int = 800, height: int = 600):
         pygame.init()
@@ -47,20 +34,9 @@ class Arena:
         
         # Entity maps
         self.characters_map: Dict[str, BaseCharacter] = {}  # name -> character
-        self.character_id_map: Dict[int, BaseCharacter] = {}  # numeric_id -> character
-        self.client_projectile_map: Dict[int, BaseProjectile] = {} # proj_id -> projectile instance (Client only)
-        
-        # Network
-        self.is_server = False
-        self.id: Optional[str] = None  # Player name
-        self.numeric_id: int = 0  # Assigned by server
-        self.next_network_id = 0 # For assigning IDs to projectiles
-        self.network = BaseNetwork()
         
         # Input state
         self.held_keycodes = set()
-        self.current_input: Optional[InputPacket] = None
-        self.latest_inputs: Dict[int, InputPacket] = {}  # client_id -> last input
         
         # Camera
         self.camera_offset = [0.0, 0.0]
@@ -71,15 +47,12 @@ class Arena:
         self.respawn_timer: Dict[str, float] = {}
         self.respawn_delay = 2.0
         
-        # Server timing
-        self.server_tick = 0
+        # Game timing
+        self.game_tick = 0
         self.last_tick_time = 0.0
-        self.tick_interval = 1.0 / self.SERVER_TICK_RATE
+        self.tick_interval = 1.0 / self.TICK_RATE
         self.tick_accumulator = 0.0
         
-        # Client interpolation
-        self.state_buffer: List[Tuple[int, StatePacket]] = []
-        self.interpolated_positions: Dict[int, Tuple[float, float]] = {}  # char_id -> (x, y)
         
         # UI
         self.ui = BaseUI(self.screen, self.width, self.height)
@@ -104,9 +77,9 @@ class Arena:
         self.next_proj_type_id = 1
 
     def set_id(self, player_id: str):
-        """Set the local player's name."""
+        """Set the player's name."""
         self.id = player_id
-        pygame.display.set_caption(f"GenGame - {self.id if self.id else 'Server'}")
+        pygame.display.set_caption(f"GenGame - {self.id if self.id else 'Player'}")
 
     def register_weapon_type(self, name: str, weapon_provider):
         """Register a weapon type in the lootpool."""
@@ -124,10 +97,6 @@ class Arena:
             self.projectile_id_to_type[self.next_proj_type_id] = proj_class
             self.next_proj_type_id += 1
 
-    def _assign_network_id(self, proj):
-        """Assign a unique network ID to a projectile if it doesn't have one."""
-        self.next_network_id = (self.next_network_id + 1) % 65536
-        proj.network_id = self.next_network_id
 
     # =========================================================================
     # COORDINATE CONVERSION
@@ -154,92 +123,8 @@ class Arena:
     def add_platform(self, platform: BasePlatform):
         self.platforms.append(platform)
 
-    # =========================================================================
-    # SERVER LOGIC
-    # =========================================================================
 
-    def start_server(self, addr=None):
-        """Start as a server."""
-        self.is_server = True
-        self.network.start_server(addr)
-        
-        # Assign numeric IDs to existing characters
-        for i, char in enumerate(self.characters):
-            self.character_id_map[i + 1] = char
-        
-        # If server is also playing locally, reserve client_id=1 for server
-        # and start external client IDs at 2
-        if self.id:
-            self.numeric_id = 1
-            self.network.next_client_id = 2
-            print(f"[Server] Playing as Player 1 (local)")
-        
-        self.last_tick_time = time.time()
 
-    def server_tick_update(self, delta_time: float, should_broadcast: bool):
-        """
-        Server fixed-rate simulation update (60Hz).
-        Processes inputs, runs physics, broadcasts state at 30Hz.
-        """
-        # Accept new clients
-        new_clients = self.network.accept_new_clients()
-        for client_id in new_clients:
-            if client_id <= len(self.characters):
-                self.character_id_map[client_id] = self.characters[client_id - 1]
-        
-        # Receive inputs from all clients
-        client_inputs = self.network.receive_client_inputs()
-        self.latest_inputs.update(client_inputs)
-        
-        # Apply inputs
-        self._apply_server_inputs()
-        
-        # Update world simulation
-        self._update_simulation(delta_time)
-        
-        # Increment server tick
-        self.server_tick += 1
-        
-        # Broadcast state every other frame (30Hz)
-        if should_broadcast:
-            self._broadcast_state()
-
-    def _apply_server_inputs(self):
-        """Apply received inputs to characters (server-side)."""
-        for client_id, input_packet in self.latest_inputs.items():
-            char = self.character_id_map.get(client_id)
-            if not char or not char.is_alive:
-                continue
-            
-            flags = input_packet.input_flags
-            
-            # Movement
-            move_dir = [0, 0]
-            if flags & INPUT_LEFT: move_dir[0] -= 1
-            if flags & INPUT_RIGHT: move_dir[0] += 1
-            if flags & INPUT_UP: move_dir[1] += 1
-            if flags & INPUT_DOWN: move_dir[1] -= 1
-            
-            char.move(move_dir, self.platforms)
-            
-            # Shooting
-            if flags & INPUT_MOUSE_L:
-                proj = char.shoot([input_packet.mouse_x, input_packet.mouse_y])
-                if proj:
-                    if isinstance(proj, list):
-                        for p in proj:
-                            if self.is_server: self._assign_network_id(p)
-                        self.projectiles.extend(proj)
-                    else:
-                        if self.is_server: self._assign_network_id(proj)
-                        self.projectiles.append(proj)
-            
-            # Weapon drop
-            if flags & INPUT_DROP:
-                dropped = char.drop_weapon()
-                if dropped:
-                    dropped.drop([char.location[0] + 80, char.location[1]])
-                    self.spawn_weapon(dropped)
                 
     def _update_simulation(self, delta_time: float):
         """Run one tick of physics simulation."""
@@ -253,292 +138,15 @@ class Arena:
         self.update_projectiles(delta_time)
         self.handle_collisions(delta_time)
 
-    def _broadcast_state(self):
-        """Create and broadcast state packet to all clients."""
-        # 1. Characters
-        char_states = []
-        for i, char in enumerate(self.characters):
-            weapon_id = 0
-            if char.weapon and char.weapon.name in self.weapon_name_to_id:
-                weapon_id = self.weapon_name_to_id[char.weapon.name]
-            
-            flags = char_flags_pack(
-                char.is_alive,
-                char.is_eliminated,
-                char.on_ground,
-                getattr(char, 'is_currently_flying', False)
-            )
-            
-            char_states.append(CharacterState(
-                player_id=i + 1,
-                x=char.location[0],
-                y=char.location[1],
-                vel_y=char.vertical_velocity,
-                health=char.health,
-                lives=char.lives,
-                flags=flags,
-                weapon_id=weapon_id
-            ))
-        
-        # 2. Projectiles
-        proj_states = []
-        for proj in self.projectiles[:64]: 
-            if not proj.active: continue
-            
-            # Ensure ID
-            if not hasattr(proj, 'network_id') or proj.network_id is None:
-                if self.is_server: self._assign_network_id(proj)
-                else: continue # Shouldn't happen on server
-            
-            proj_type = self.projectile_type_map.get(type(proj), 0)
-            owner_id = 0
-            for cid, char in self.character_id_map.items():
-                if char.id == proj.owner_id:
-                    owner_id = cid
-                    break
-            
-            # Use meta field if available, else 0
-            meta_val = getattr(proj, 'meta', 0)
-            
-            proj_states.append(ProjectileState(
-                proj_id=proj.network_id,
-                proj_type=proj_type,
-                x=proj.location[0],
-                y=proj.location[1],
-                dir_x=proj.direction[0],
-                dir_y=proj.direction[1],
-                owner_id=owner_id,
-                meta=meta_val
-            ))
-        
-        # 3. Weapons
-        weapon_states = []
-        for weapon in self.weapon_pickups[:16]:
-            if weapon.is_equipped: continue
-            weapon_type = self.weapon_name_to_id.get(weapon.name, 0)
-            weapon_states.append(WeaponPickupState(
-                weapon_type=weapon_type,
-                x=weapon.location[0],
-                y=weapon.location[1]
-            ))
-        
-        # Pack everything
-        game_flags = game_flags_pack(self.game_over)
-        state_packet = StatePacket(
-            sequence=self.server_tick % 65536,
-            server_tick=int(time.time() * 1000) % (2**32),
-            num_characters=len(char_states),
-            num_projectiles=len(proj_states),
-            num_weapons=len(weapon_states),
-            game_flags=game_flags,
-            characters=char_states,
-            projectiles=proj_states,
-            weapons=weapon_states
-        )
-        
-        self.network.broadcast_state_udp(state_packet)
 
-    # =========================================================================
-    # CLIENT LOGIC
-    # =========================================================================
-    
-    def connect_to_server(self, addr=None):
-        """Connect to a server as a client."""
-        self.network.connect_to_server(addr)
-        self.numeric_id = self.network.my_client_id
-        
-        # Map ALL characters so we can apply state for all players
-        for i, char in enumerate(self.characters):
-            self.character_id_map[i + 1] = char
-        
-        print(f"[Client] Assigned ID {self.numeric_id}, controlling {self.characters[self.numeric_id - 1].name if self.numeric_id <= len(self.characters) else 'Unknown'}")
 
-    def client_frame_update(self, delta_time: float):
-        """Client frame update loop."""
-        current_time = time.time()
-        
-        # Send input at 30Hz
-        if current_time - self.network.last_input_send_time >= (1.0 / self.CLIENT_INPUT_RATE):
-            self._capture_and_send_input()
-            self.network.last_input_send_time = current_time
-        
-        # Receive and apply state
-        state = self.network.receive_state_udp()
-        if state:
-            self._apply_received_state(state)
-        
-        # Local prediction
-        self._apply_local_prediction()
 
-    def _capture_and_send_input(self):
-        """Capture and send input packet."""
-        pygame.event.pump()
-        mx, my = pygame.mouse.get_pos()
-        world_mx, world_my = self.screen_to_world(mx, my)
-        pressed = pygame.mouse.get_pressed()
-        
-        flags = 0
-        if pressed[0]: flags |= INPUT_MOUSE_L
-        if pressed[2]: flags |= INPUT_MOUSE_R
-        
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT: self.running = False
-            elif event.type == pygame.KEYDOWN: self.held_keycodes.add(event.key)
-            elif event.type == pygame.KEYUP: self.held_keycodes.discard(event.key)
-        
-        for kc in self.held_keycodes:
-            if kc == pygame.K_ESCAPE: self.running = False
-            elif kc in (pygame.K_LEFT, pygame.K_a): flags |= INPUT_LEFT
-            elif kc in (pygame.K_RIGHT, pygame.K_d): flags |= INPUT_RIGHT
-            elif kc in (pygame.K_UP, pygame.K_w, pygame.K_SPACE): flags |= INPUT_UP
-            elif kc in (pygame.K_DOWN, pygame.K_s): flags |= INPUT_DOWN
-            elif kc == pygame.K_q: flags |= INPUT_DROP
-            elif kc in (pygame.K_e, pygame.K_f): flags |= INPUT_SPECIAL
-        
-        input_packet = InputPacket(
-            player_id=self.numeric_id,
-            sequence=0,
-            input_flags=flags,
-            mouse_x=world_mx,
-            mouse_y=world_my
-        )
-        
-        self.current_input = input_packet
-        self.network.send_input_udp(input_packet)
 
-    def _apply_received_state(self, state: StatePacket):
-        """Cleanly apply all parts of the server state."""
-        # 1. Game Flags
-        self.game_over, _ = game_flags_unpack(state.game_flags)
-        
-        # 2. Sync Entities
-        self._sync_characters_from_state(state.characters)
-        self._sync_projectiles_from_state(state.projectiles)
-        self._sync_weapons_from_state(state.weapons)
 
-    def _sync_characters_from_state(self, char_states: List[CharacterState]):
-        """Sync character positions, health, and status."""
-        for char_state in char_states:
-            char = self.character_id_map.get(char_state.player_id)
-            if not char: continue
-            
-            is_alive, is_eliminated, on_ground, is_flying = char_flags_unpack(char_state.flags)
-            is_local = (char_state.player_id == self.numeric_id)
-            
-            if is_local:
-                # Correct drift
-                dx = abs(char.location[0] - char_state.x)
-                dy = abs(char.location[1] - char_state.y)
-                if dx > 15 or dy > 15:
-                    char.location[0] = char_state.x
-                    char.location[1] = char_state.y
-                    char.vertical_velocity = char_state.vel_y
-            else:
-                char.location[0] = char_state.x
-                char.location[1] = char_state.y
-                char.vertical_velocity = char_state.vel_y
-            
-            # Vitals
-            char.health = char_state.health
-            char.lives = char_state.lives
-            char.is_alive = is_alive
-            char.is_eliminated = is_eliminated
-            char.on_ground = on_ground
-            
-            # Active Weapon
-            if char_state.weapon_id > 0:
-                weapon_name = self.weapon_id_to_name.get(char_state.weapon_id)
-                if weapon_name and (not char.weapon or char.weapon.name != weapon_name):
-                    if weapon_name in self.lootpool:
-                        char.weapon = self.lootpool[weapon_name](char.location)
-                        char.weapon.pickup()
-            else:
-                char.weapon = None
 
-    def _sync_projectiles_from_state(self, proj_states: List[ProjectileState]):
-        """Sync projectiles, preserving identity and class where possible."""
-        received_ids = set()
-        
-        for p_state in proj_states:
-            pid = p_state.proj_id
-            received_ids.add(pid)
-            
-            if pid in self.client_projectile_map:
-                # Update existing
-                proj = self.client_projectile_map[pid]
-                proj.location[0] = p_state.x
-                proj.location[1] = p_state.y
-                proj.direction = [p_state.dir_x, p_state.dir_y]
-                proj.active = True # Keep alive
-                # Update meta if useful (e.g. for some projectiles)
-                if hasattr(proj, 'meta'): proj.meta = p_state.meta
-            else:
-                # Create new
-                owner_char = self.character_id_map.get(p_state.owner_id)
-                owner_id = owner_char.id if owner_char else "unknown"
-                
-                # Determine class
-                proj_class = self.projectile_id_to_type.get(p_state.proj_type, BaseProjectile)
-                
-                try:
-                    # Delegate spawning to method (can be overridden)
-                    proj = self._spawn_projectile(proj_class, p_state, owner_id)
-                    
-                    if proj:
-                        proj.network_id = pid
-                        self.client_projectile_map[pid] = proj
-                        self.projectiles.append(proj)
-                except Exception as e:
-                    print(f"Error spawning projectile type {p_state.proj_type}: {e}")
-        
-        # Remove projectiles not in the packet
-        for pid in list(self.client_projectile_map.keys()):
-            if pid not in received_ids:
-                proj = self.client_projectile_map[pid]
-                if proj in self.projectiles:
-                    self.projectiles.remove(proj)
-                del self.client_projectile_map[pid]
 
-    def _spawn_projectile(self, proj_class, p_state: ProjectileState, owner_id: str) -> BaseProjectile:
-        """Spawn a projectile instance. Override in child classes for custom types."""
-        try:
-            return proj_class(
-                x=p_state.x,
-                y=p_state.y,
-                direction=[p_state.dir_x, p_state.dir_y],
-                speed=15.0,
-                damage=10.0,
-                owner_id=owner_id
-            )
-        except TypeError:
-            return None
 
-    def _sync_weapons_from_state(self, weapon_states: List[WeaponPickupState]):
-        """Sync weapon pickups."""
-        # For simplicity, we recreate the list since weapons are static/simple
-        self.weapon_pickups = []
-        for w_state in weapon_states:
-            w_name = self.weapon_id_to_name.get(w_state.weapon_type)
-            if w_name and w_name in self.lootpool:
-                w = self.lootpool[w_name]([w_state.x, w_state.y])
-                w.is_equipped = False
-                self.weapon_pickups.append(w)
 
-    def _apply_local_prediction(self):
-        """Apply local input for immediate responsiveness."""
-        if not self.current_input: return
-        
-        char = self.character_id_map.get(self.numeric_id)
-        if not char or not char.is_alive: return
-        
-        flags = self.current_input.input_flags
-        move_dir = [0, 0]
-        if flags & INPUT_LEFT: move_dir[0] -= 1
-        if flags & INPUT_RIGHT: move_dir[0] += 1
-        if flags & INPUT_UP: move_dir[1] += 1
-        if flags & INPUT_DOWN: move_dir[1] -= 1
-        
-        char.move(move_dir, self.platforms)
 
     # =========================================================================
     # COMMON GAME LOGIC
@@ -560,9 +168,7 @@ class Arena:
         if len(alive) == 1:
             self.winner = alive[0]
             self.game_over = True
-            if self.is_server:
-                print(f"GAME OVER! {self.winner.name} WINS!")
-                self.network.broadcast_event_tcp(EventType.GAME_OVER, self.winner.name.encode())
+            print(f"GAME OVER! {self.winner.name} WINS!")
         elif len(alive) == 0:
             self.game_over = True
 
@@ -579,8 +185,6 @@ class Arena:
                 if proj in self.projectiles: self.projectiles.remove(proj)
         
         if new_projectiles:
-            for p in new_projectiles:
-                if self.is_server: self._assign_network_id(p)
             self.projectiles.extend(new_projectiles)
 
     def handle_collisions(self, delta_time: float = 0.016):
@@ -645,7 +249,6 @@ class Arena:
             self.weapon_pickups.append(weapon)
 
     def manage_weapon_spawns(self, delta_time: float):
-        if not self.is_server: return # Client spawns only via sync
         
         self.weapon_spawn_timer += delta_time
         if self.weapon_spawn_timer >= self.spawn_interval:
@@ -671,57 +274,79 @@ class Arena:
     def step(self):
         """One frame."""
         frame_delta = self.clock.tick(60) / 1000.0
-        
-        if self.is_server:
-            if self.id: self._capture_local_server_input()
-            
-            self.tick_accumulator += frame_delta
-            while self.tick_accumulator >= self.tick_interval:
-                should_broadcast = (self.server_tick % 2) == 0
-                self.server_tick_update(self.tick_interval, should_broadcast)
-                self.tick_accumulator -= self.tick_interval
-        else:
-            self.client_frame_update(frame_delta)
-            for char in self.characters:
-                char.update(frame_delta, self.platforms, self.height)
-            # Update client projectiles for animations
-            for proj in self.projectiles:
-                # We can't update position here as it fights with server sync
-                # But we might want to update animation state if any
-                pass
-        
+
+        # Capture input
+        self._capture_input()
+
+        # Update game simulation
+        self.tick_accumulator += frame_delta
+        while self.tick_accumulator >= self.tick_interval:
+            self._update_simulation(self.tick_interval)
+            self.tick_accumulator -= self.tick_interval
+
+        # Update all characters
+        for char in self.characters:
+            char.update(frame_delta, self.platforms, self.height)
+
         self.render()
 
-    def _capture_local_server_input(self):
-        """Capture input when server is playing."""
+    def _capture_input(self):
+        """Capture local player input."""
         pygame.event.pump()
         mx, my = pygame.mouse.get_pos()
         world_mx, world_my = self.screen_to_world(mx, my)
         pressed = pygame.mouse.get_pressed()
-        
-        flags = 0
-        if pressed[0]: flags |= INPUT_MOUSE_L
-        if pressed[2]: flags |= INPUT_MOUSE_R
-        
+
+        # Handle events
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: self.running = False
-            elif event.type == pygame.KEYDOWN: self.held_keycodes.add(event.key)
-            elif event.type == pygame.KEYUP: self.held_keycodes.discard(event.key)
-        
-        for kc in self.held_keycodes:
-            if kc == pygame.K_ESCAPE: self.running = False
-            elif kc in (pygame.K_LEFT, pygame.K_a): flags |= INPUT_LEFT
-            elif kc in (pygame.K_RIGHT, pygame.K_d): flags |= INPUT_RIGHT
-            elif kc in (pygame.K_UP, pygame.K_w, pygame.K_SPACE): flags |= INPUT_UP
-            elif kc in (pygame.K_DOWN, pygame.K_s): flags |= INPUT_DOWN
-            elif kc == pygame.K_q: flags |= INPUT_DROP
-            elif kc in (pygame.K_e, pygame.K_f): flags |= INPUT_SPECIAL
-        
-        self.latest_inputs[1] = InputPacket(1, 0, flags, world_mx, world_my)
+            if event.type == pygame.QUIT:
+                self.running = False
+            elif event.type == pygame.KEYDOWN:
+                self.held_keycodes.add(event.key)
+            elif event.type == pygame.KEYUP:
+                self.held_keycodes.discard(event.key)
+
+        # Process held keys for the first character (local player)
+        if self.characters:
+            char = self.characters[0]
+            if char.is_alive:
+                # Movement
+                move_dir = [0, 0]
+                for kc in self.held_keycodes:
+                    if kc == pygame.K_ESCAPE:
+                        self.running = False
+                    elif kc in (pygame.K_LEFT, pygame.K_a):
+                        move_dir[0] -= 1
+                    elif kc in (pygame.K_RIGHT, pygame.K_d):
+                        move_dir[0] += 1
+                    elif kc in (pygame.K_UP, pygame.K_w, pygame.K_SPACE):
+                        move_dir[1] += 1
+                    elif kc in (pygame.K_DOWN, pygame.K_s):
+                        move_dir[1] -= 1
+                    elif kc == pygame.K_q:
+                        # Drop weapon
+                        dropped = char.drop_weapon()
+                        if dropped:
+                            dropped.drop([char.location[0] + 80, char.location[1]])
+                            self.spawn_weapon(dropped)
+                    elif kc in (pygame.K_e, pygame.K_f):
+                        # Special action
+                        pass
+
+                char.move(move_dir, self.platforms)
+
+                # Shooting
+                if pressed[0]:  # Left mouse button
+                    proj = char.shoot([world_mx, world_my])
+                    if proj:
+                        if isinstance(proj, list):
+                            self.projectiles.extend(proj)
+                        else:
+                            self.projectiles.append(proj)
+
 
     def run(self):
-        while self.running: 
+        while self.running:
             self.step()
-        self.network.cleanup()
         pygame.quit()
         sys.exit()

@@ -9,10 +9,6 @@ from GameFolder.projectiles.GAME_projectile import StormCloud
 from GameFolder.projectiles.BlackHoleProjectile import BlackHoleProjectile
 from GameFolder.projectiles.TornadoProjectile import TornadoProjectile
 from GameFolder.projectiles.OrbitalProjectiles import TargetingLaser, OrbitalStrikeMarker, OrbitalBlast
-from BASE_components.network_protocol import (
-    InputPacket, INPUT_MOUSE_L, INPUT_MOUSE_R, INPUT_SPECIAL, INPUT_DROP,
-    INPUT_LEFT, INPUT_RIGHT, INPUT_UP, INPUT_DOWN, ProjectileState
-)
 from BASE_components.BASE_projectile import BaseProjectile
 import pygame
 import random
@@ -37,135 +33,7 @@ class Arena(BaseArena):
         pygame.display.set_caption(f"GenGame - Battle Arena")
         self.ui = GameUI(self.screen, self.width, self.height)
 
-    def _spawn_projectile(self, proj_class, p_state: ProjectileState, owner_id: str) -> BaseProjectile:
-        """Spawn a projectile instance. Override in child classes for custom types."""
-        if proj_class.__name__ == "BlackHoleProjectile":
-            # BlackHoleProjectile(x, y, target_x, target_y, owner_id)
-            # Use current pos + dir as target (it will be overridden by sync anyway)
-            target_x = p_state.x + p_state.dir_x * 100
-            target_y = p_state.y + p_state.dir_y * 100
-            return proj_class(p_state.x, p_state.y, target_x, target_y, owner_id)
-            
-        elif proj_class.__name__ == "TornadoProjectile":
-            # TornadoProjectile(x, y, direction, damage, owner_id)
-            return proj_class(p_state.x, p_state.y, [p_state.dir_x, p_state.dir_y], 10, owner_id)
-            
-        elif proj_class.__name__ == "TargetingLaser":
-            # TargetingLaser(x, y, direction, owner_id, max_dist)
-            return proj_class(p_state.x, p_state.y, [p_state.dir_x, p_state.dir_y], owner_id, 1200)
-            
-        elif proj_class.__name__ == "OrbitalStrikeMarker":
-            # OrbitalStrikeMarker(x, y, owner_id)
-            return proj_class(p_state.x, p_state.y, owner_id)
-            
-        elif proj_class.__name__ == "OrbitalBlast":
-            # OrbitalBlast(x, owner_id)
-            return proj_class(p_state.x, owner_id)
-            
-        elif proj_class.__name__ == "StormCloud":
-            # StormCloud(x, y, target_pos, owner_id)
-            return proj_class(p_state.x, p_state.y, [p_state.x, p_state.y], owner_id)
-            
-        else:
-            # Default for standard projectiles (like simple bullets)
-            return super()._spawn_projectile(proj_class, p_state, owner_id)
 
-    def _apply_server_inputs(self):
-        """
-        Override to add custom fire modes (Right click, E, F) on top of base input processing.
-        """
-        for client_id, input_packet in self.latest_inputs.items():
-            char = self.character_id_map.get(client_id)
-            if not char or not char.is_alive:
-                continue
-            
-            flags = input_packet.input_flags
-            mouse_pos = [input_packet.mouse_x, input_packet.mouse_y]
-            
-            # Movement
-            move_dir = [0, 0]
-            if flags & INPUT_LEFT:
-                move_dir[0] -= 1
-            if flags & INPUT_RIGHT:
-                move_dir[0] += 1
-            if flags & INPUT_UP:
-                move_dir[1] += 1
-            if flags & INPUT_DOWN:
-                move_dir[1] -= 1
-            
-            char.move(move_dir, self.platforms)
-            
-            # Primary Fire (Left Click)
-            if flags & INPUT_MOUSE_L:
-                proj = char.shoot(mouse_pos)
-                if proj:
-                    if isinstance(proj, list):
-                        for p in proj:
-                            if self.is_server: self._assign_network_id(p)
-                        self.projectiles.extend(proj)
-                    else:
-                        if self.is_server: self._assign_network_id(proj)
-                        self.projectiles.append(proj)
-            
-            # Secondary Fire (Right Click)
-            if flags & INPUT_MOUSE_R:
-                proj = char.secondary_fire(mouse_pos)
-                if proj:
-                    if isinstance(proj, list):
-                        for p in proj:
-                            if self.is_server: self._assign_network_id(p)
-                        self.projectiles.extend(proj)
-                    else:
-                        if self.is_server: self._assign_network_id(proj)
-                        self.projectiles.append(proj)
-            
-            # Special Fire (E or F key)
-            if flags & INPUT_SPECIAL:
-                proj = char.special_fire(mouse_pos, is_holding=True)
-                if proj:
-                    if isinstance(proj, list):
-                        for p in proj:
-                            if self.is_server: self._assign_network_id(p)
-                        self.projectiles.extend(proj)
-                    else:
-                        if self.is_server: self._assign_network_id(proj)
-                        self.projectiles.append(proj)
-            
-            # Weapon Drop (Q key)
-            if flags & INPUT_DROP:
-                dropped = char.drop_weapon()
-                if dropped:
-                    dropped.drop([char.location[0] + 80, char.location[1]])
-                    self.spawn_weapon(dropped)
-
-    def _apply_local_prediction(self):
-        """
-        Override to add custom fire modes for client-side prediction.
-        """
-        if not self.current_input:
-            return
-        
-        char = self.character_id_map.get(self.numeric_id)
-        if not char or not char.is_alive:
-            return
-        
-        flags = self.current_input.input_flags
-        mouse_pos = [self.current_input.mouse_x, self.current_input.mouse_y]
-        
-        # Movement prediction
-        move_dir = [0, 0]
-        if flags & INPUT_LEFT:
-            move_dir[0] -= 1
-        if flags & INPUT_RIGHT:
-            move_dir[0] += 1
-        if flags & INPUT_UP:
-            move_dir[1] += 1
-        if flags & INPUT_DOWN:
-            move_dir[1] -= 1
-        
-        char.move(move_dir, self.platforms)
-        
-        # Note: We don't predict shooting on client - server is authoritative for combat
 
     def handle_collisions(self, delta_time: float = 0.016):
         """
@@ -215,9 +83,8 @@ class Arena(BaseArena):
                 
                 if hit:
                     proj.active = False
-                    # Create marker and assign ID on server
+                    # Create marker
                     marker = OrbitalStrikeMarker(proj.location[0], proj.location[1], proj.owner_id)
-                    if self.is_server: self._assign_network_id(marker)
                     self.projectiles.append(marker)
 
             # Storm logic

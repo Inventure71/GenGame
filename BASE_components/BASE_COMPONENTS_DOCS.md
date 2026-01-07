@@ -6,22 +6,20 @@ This document serves as the official API reference for the core GenGame engine. 
 
 ## 🌍 Global Systems & Architecture
 
-### Networking & Client/Server (IMMUTABLE)
-GenGame uses a deterministic step-based networking model.
-- **NEVER** modify `BASE_components/BASE_network.py` or the networking sections of `BASE_components/BASE_arena.py`.
-- **NEVER** change how the client sends inputs (`run_client` method).
-- **Control Flow**: 
-    1. Clients capture raw inputs (keys, mouse) and send them to the Server.
-    2. Server aggregates all player inputs into `self.latest_moves_dics`.
-    3. Server broadcasts the aggregated inputs back to all clients.
-    4. Both Server and Clients execute the exact same logic using `self.latest_moves_dics`.
+### Local Single-Player Gameplay
+GenGame runs as a local single-player game with direct input handling.
+- **Input Handling**: Direct keyboard and mouse input processing.
+- **Control Flow**:
+    1. Capture local inputs (keys, mouse) from pygame events.
+    2. Apply inputs directly to the local character.
+    3. Update game simulation and physics.
+    4. Render the scene.
 
 ### Input Handling
-Inputs are received as a list of "moves" for each player ID.
-- Access moves via `self.latest_moves_dics[player_id]`.
-- Each move is a list: `[key_name, extra_data...]`.
-- Standard keys: `"up"`, `"down"`, `"left"`, `"right"`, `"q"`.
-- Mouse move: `["M_1", [world_x, world_y], left_pressed, middle_pressed, right_pressed]`.
+Inputs are captured directly from pygame events.
+- Standard keys: Arrow keys/WASD for movement, Space for jump, Q for drop weapon.
+- Mouse: Left click for shooting, position for aim direction.
+- Special keys: E/F for special abilities.
 
 ### Coordinate Systems
 - **World Coordinates (Logic)**: Y-axis points **UP**. `[0, 0]` is bottom-left. Used for physics and object locations.
@@ -67,14 +65,13 @@ Inputs are received as a list of "moves" for each player ID.
 ## 3. Arena (`BaseArena`)
 **File**: `BASE_components/BASE_arena.py`
 
-The Arena is refactored into distinct steps. Override these in `GameFolder/arenas/GAME_arena.py` to insert custom logic.
+The Arena handles the main game loop. Override methods in `GameFolder/arenas/GAME_arena.py` to insert custom logic.
 
-### Step-based Execution
-1. `collect_inputs()`: Fetches network/local inputs.
-2. `apply_inputs()`: Processes `latest_moves_dics`. **OVERRIDE THIS** to handle custom keys (E, F, Right Click).
-3. `update_world(delta_time)`: Runs physics, collisions, and state checks.
+### Game Loop Execution
+1. `step()`: Main game loop method called every frame.
+2. `_capture_input()`: Captures local keyboard and mouse input.
+3. `_update_simulation(delta_time)`: Updates physics, projectiles, and game state.
 4. `render()`: Draws the scene.
-5. `finalize_frame()`: Broadcasts sync data and clears moves.
 
 ### Custom Collision Logic
 If your projectiles have special behaviors (pulling, persistent beams), you **MUST** override `handle_collisions` and call `super().handle_collisions(delta_time)` first.
