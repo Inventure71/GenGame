@@ -164,7 +164,8 @@ class BaseCharacter(NetworkObject):
         self.is_moving_up = (actual_dir[1] > 0)
 
         # Integrated flight logic
-        if not self.on_ground and self.is_moving_up and self.flight_time_remaining > 0 and not self.needs_recharge:
+        # Allow flight when airborne, falling (or at peak), and have flight energy
+        if not self.on_ground and self.vertical_velocity <= 0 and self.flight_time_remaining > 0 and not self.needs_recharge and (self.is_moving_up or actual_dir[1] < 0):
             self.can_fly = True
             self.is_currently_flying = True
         else:
@@ -204,7 +205,8 @@ class BaseCharacter(NetworkObject):
         if not self.is_alive:
             return
 
-        if self.can_fly and self.vertical_velocity == 0:
+        # Don't apply gravity if actively flying
+        if self.is_currently_flying:
             return
 
         # Update position based on vertical velocity

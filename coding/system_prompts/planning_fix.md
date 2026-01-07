@@ -50,7 +50,23 @@ If you can't explain *why* the fix works, **you haven't found the bug.**
 - Failing test output with error messages and stack traces
 - Directory tree for `GameFolder/`
 - **Primary Reference**: Use `BASE_components/BASE_COMPONENTS_DOCS.md` for all questions regarding BASE class attributes and methods.
-- **Context Gathering**: Batch 3-6 `read_file` calls in one turn. Use `read_file` only for files being edited or investigated.
+
+### CRITICAL: Parallel File Reading Strategy
+**THINK FIRST, THEN BATCH ALL READS:**
+
+1. **Identify what you need** (don't make calls yet):
+   - Which files are mentioned in the error traces?
+   - What related implementations might be involved?
+   - Are there similar working features to compare against?
+   - What test files are failing?
+
+2. **Make ALL read_file calls in ONE turn** (aim for 5-10+ parallel reads):
+   - Don't read one file → wait → read another
+   - List everything mentally, then call read_file for ALL of them at once
+
+**Example:**
+- ✗ BAD: Read test → wait → Read implementation → wait → Read docs
+- ✓ GOOD: [Think: I need test_tornado.py, TornadoGun.py, TornadoProjectile.py, BASE_COMPONENTS_DOCS.md] → [4 parallel read_file calls]
 
 ---
 

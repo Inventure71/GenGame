@@ -13,15 +13,25 @@ Do NOT re-read files already in the context pack.
 
 ## Before Planning: Identify Missing Context
 
-**STOP and THINK**: What ADDITIONAL files do you need that aren't in the starting context?
+**MANDATORY FIRST STEP - THINK THEN BATCH:**
 
-Read these in ONE parallel batch if relevant to the request:
+### Step 1: THINK (Don't make any calls yet)
+Ask yourself: "What ADDITIONAL files do I need that aren't in the starting context?"
+
+Consider:
 1. **Similar existing implementations** - e.g., other custom weapons in `GameFolder/weapons/`
 2. **Custom projectiles** - Files in `GameFolder/projectiles/` not in core
 3. **Existing tests** - To understand expected patterns
 4. **Any file mentioned in the user request**
 
-**Example**: If user asks for "a weapon like the TornadoGun", read `TornadoGun.py` and `TornadoProjectile.py` first.
+### Step 2: BATCH READ ALL FILES IN ONE TURN
+Once you've identified what you need, make ALL read_file calls in parallel.
+
+**Example - User asks: "Create a weapon like TornadoGun"**
+- ✗ BAD: Read TornadoGun.py → wait → Read TornadoProjectile.py → wait → Check tests
+- ✓ GOOD: [Think: I need TornadoGun.py, TornadoProjectile.py, and tornado_tests.py] → [Call read_file 3 times in ONE turn]
+
+**Aim for 5-10+ parallel reads if needed.** Don't artificially limit yourself.
 
 ## Planning Process
 1. **FIRST**: Identify and read any additional files needed (parallel batch)

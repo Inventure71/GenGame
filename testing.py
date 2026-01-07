@@ -303,11 +303,11 @@ def main_version_control_interactive():
     action_logger.end_session()
 
 if __name__ == "__main__":
-    #print(run_all_tests())
+    print(run_all_tests())
 
     #main_version_control_interactive()
     #auto_fix_conflicts("merged_patch.json")
-    main_version_control(file_containing_patches="merged_patch_err.json")
+    #main_version_control(file_containing_patches="merged_patch_err.json")
 
     #print(get_file_outline("GameFolder/weapons/GAME_weapon.py"))
     #results = run_all_tests()

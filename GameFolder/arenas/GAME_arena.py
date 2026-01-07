@@ -36,6 +36,10 @@ class Arena(BaseArena):
         else:
             self.ui = None
 
+    def update_world(self, delta_time: float):
+        """Update the world simulation (alias for update method for test compatibility)."""
+        self.update(delta_time)
+
 
 
     def handle_collisions(self, delta_time: float = 0.016):
@@ -44,7 +48,7 @@ class Arena(BaseArena):
         """
         # 1. Capture special projectiles BEFORE base collision logic removes inactive ones
         special_projs = [p for p in self.projectiles if isinstance(p, (
-            BlackHoleProjectile, TornadoProjectile, TargetingLaser, 
+            BlackHoleProjectile, TornadoProjectile, TargetingLaser,
             OrbitalStrikeMarker, OrbitalBlast, StormCloud
         ))]
 

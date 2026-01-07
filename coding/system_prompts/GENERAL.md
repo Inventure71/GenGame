@@ -12,10 +12,37 @@
 - **Overrides**: Call `super().method_name()` unless fully replacing behavior.
 - **Imports**: Use absolute imports: `from GameFolder...` or `from BASE_components...`
 
-## Tool Efficiency
+## Tool Efficiency - THINK FIRST, THEN BATCH CALLS
+
+### CRITICAL: Always Use Parallel Tool Calls
+**Before making ANY tool calls:**
+1. **STOP and THINK**: What information do I need to accomplish this task?
+2. **LIST ALL FILES/TOOLS** you'll need in your head
+3. **MAKE ALL CALLS IN ONE TURN** - don't wait for results between independent calls
+
+**Example - GOOD ✓:**
+```
+I need to understand TornadoGun, TornadoProjectile, and how weapons register.
+[Calls read_file for all 3 files in parallel in ONE turn]
+```
+
+**Example - BAD ✗:**
+```
+I'll read TornadoGun.py first...
+[waits for result]
+Now I'll read TornadoProjectile.py...
+[waits for result]
+Now I'll read setup.py...
+```
+
+### Batching Rules
+- **Target**: 5-10 parallel tool calls per turn when gathering information
+- **Don't Limit Yourself**: If you need 8 files, read all 8 at once
+- **Independence Check**: If tool call B doesn't need results from tool call A, make them parallel
+- **Applies to ALL tools**: Reading, writing, searching, analyzing - batch everything that's independent
+
+### Other Efficiency Rules
 - **Large Files**: Use `get_file_outline` to map line numbers, then read only what you need.
-- **Batch Calls**: Call 3-6 tools per turn in parallel when possible.
-- **Read Limits**: Max 6 read tools per turn; max 6 write tools per turn.
 - **Don't Re-read**: After `modify_file_inline`, use the returned context; only `read_file` if you need other sections.
 - **Don't Repeat**: Context provided at the start of each task includes the directory tree. Only refresh with `get_tree_directory` after creating new files.
 
