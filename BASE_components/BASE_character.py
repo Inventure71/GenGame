@@ -165,7 +165,7 @@ class BaseCharacter(NetworkObject):
 
         # Integrated flight logic
         # Allow flight when airborne, falling (or at peak), and have flight energy
-        if not self.on_ground and self.vertical_velocity <= 0 and self.flight_time_remaining > 0 and not self.needs_recharge and (self.is_moving_up or actual_dir[1] < 0):
+        if not self.on_ground and self.vertical_velocity <= 0 and self.flight_time_remaining > 0 and not self.needs_recharge and self.is_moving_up:
             self.can_fly = True
             self.is_currently_flying = True
         else:
