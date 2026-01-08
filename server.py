@@ -22,26 +22,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from GameFolder.setup import setup_battle_arena
 
 
-def cleanup_old_logs():
-    """Remove old log files, keeping only the most recent server.log."""
-    try:
-        # Find all server log files
-        server_logs = glob.glob("server*.log")
-
-        if len(server_logs) > 1:
-            # Sort by modification time, keep the newest one
-            server_logs.sort(key=os.path.getmtime, reverse=True)
-
-            # Remove all but the most recent
-            for old_log in server_logs[1:]:
-                try:
-                    os.remove(old_log)
-                    print(f"Removed old server log: {old_log}")
-                except OSError as e:
-                    print(f"Failed to remove {old_log}: {e}")
-
-    except Exception as e:
-        print(f"Log cleanup failed: {e}")
 
 
 class GameServer:
@@ -284,6 +264,202 @@ class GameServer:
                     self.clients[player_id].send(length_bytes + data)
                 except:
                     pass
+        elif msg_type == 'file_request':
+            # Client requesting a file
+            self._handle_file_request(player_id, message)
+        elif msg_type == 'file_chunk':
+            # Client sending a file chunk
+            self._handle_file_chunk(player_id, message)
+        elif msg_type == 'file_ack':
+            # Client acknowledging file receipt
+            success = message.get('success', True)
+            error = message.get('error', '')
+            if success:
+                print(f"{player_id} successfully received file: {message['file_path']}")
+            else:
+                print(f"{player_id} failed to receive file {message['file_path']}: {error}")
+
+    def _handle_file_request(self, player_id: str, message: dict):
+        """Handle a file request from a client."""
+        file_path = message.get('file_path')
+
+        if not file_path:
+            print(f"Invalid file request from {player_id}: no file_path")
+            return
+
+        # Security check: ensure the file is within allowed directories
+        allowed_dirs = ['GameFolder', 'BASE_components']
+        if not any(file_path.startswith(dir_name + '/') for dir_name in allowed_dirs):
+            print(f"File request denied for {player_id}: {file_path} (not in allowed directories)")
+            # Send error response
+            response = {
+                'type': 'file_complete',
+                'file_path': file_path,
+                'success': False,
+                'error': 'Access denied'
+            }
+            self._send_message_to_client(player_id, response)
+            return
+
+        # Check if file exists
+        full_path = os.path.join(os.path.dirname(__file__), file_path)
+        full_path = os.path.abspath(full_path)
+
+        # Security check: ensure it's within the project directory
+        project_dir = os.path.abspath(os.path.dirname(__file__))
+        if not full_path.startswith(project_dir):
+            print(f"File request denied for {player_id}: {file_path} (outside project directory)")
+            response = {
+                'type': 'file_complete',
+                'file_path': file_path,
+                'success': False,
+                'error': 'Access denied'
+            }
+            self._send_message_to_client(player_id, response)
+            return
+
+        if not os.path.exists(full_path):
+            print(f"File not found for {player_id}: {file_path}")
+            response = {
+                'type': 'file_complete',
+                'file_path': file_path,
+                'success': False,
+                'error': 'File not found'
+            }
+            self._send_message_to_client(player_id, response)
+            return
+
+        # Send file in chunks
+        try:
+            file_size = os.path.getsize(full_path)
+            chunk_size = 64 * 1024  # 64KB chunks
+            total_chunks = (file_size + chunk_size - 1) // chunk_size
+
+            with open(full_path, 'rb') as f:
+                for chunk_num in range(total_chunks):
+                    chunk_data = f.read(chunk_size)
+
+                    chunk_message = {
+                        'type': 'file_chunk',
+                        'file_path': file_path,
+                        'chunk_num': chunk_num,
+                        'total_chunks': total_chunks,
+                        'data': chunk_data
+                    }
+
+                    self._send_message_to_client(player_id, chunk_message)
+
+            print(f"Sent file {file_path} to {player_id} ({total_chunks} chunks)")
+
+        except Exception as e:
+            print(f"Failed to send file {file_path} to {player_id}: {e}")
+            response = {
+                'type': 'file_complete',
+                'file_path': file_path,
+                'success': False,
+                'error': str(e)
+            }
+            self._send_message_to_client(player_id, response)
+
+    def _handle_file_chunk(self, player_id: str, message: dict):
+        """Handle a file chunk received from a client."""
+        file_path = message.get('file_path')
+        chunk_num = message.get('chunk_num')
+        total_chunks = message.get('total_chunks')
+        chunk_data = message.get('data')
+
+        if not all([file_path, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
+            print(f"Invalid file chunk from {player_id}")
+            return
+
+        # Initialize file transfer tracking if needed
+        if not hasattr(self, 'client_file_transfers'):
+            self.client_file_transfers = {}
+
+        client_key = f"{player_id}:{file_path}"
+        if client_key not in self.client_file_transfers:
+            self.client_file_transfers[client_key] = {
+                'chunks': {},
+                'total_chunks': total_chunks,
+                'received_chunks': 0
+            }
+
+        transfer = self.client_file_transfers[client_key]
+
+        # Store chunk if not already received
+        if chunk_num not in transfer['chunks']:
+            transfer['chunks'][chunk_num] = chunk_data
+            transfer['received_chunks'] += 1
+
+        # Check if file is complete
+        if transfer['received_chunks'] == total_chunks:
+            self._assemble_client_file(player_id, file_path)
+
+    def _assemble_client_file(self, player_id: str, file_path: str):
+        """Assemble a complete file from client chunks."""
+        client_key = f"{player_id}:{file_path}"
+        transfer = self.client_file_transfers[client_key]
+
+        try:
+            # Security check: ensure the target path is safe
+            allowed_dirs = ['uploads', 'temp']
+            target_dir = allowed_dirs[0] if 'uploads' in allowed_dirs else 'temp'
+
+            # Create target directory if it doesn't exist
+            full_dir = os.path.join(os.path.dirname(__file__), target_dir)
+            os.makedirs(full_dir, exist_ok=True)
+
+            # Create safe filename
+            safe_filename = os.path.basename(file_path).replace('..', '').replace('/', '_').replace('\\', '_')
+            full_path = os.path.join(full_dir, f"{player_id}_{safe_filename}")
+
+            # Write file by combining chunks in order
+            with open(full_path, 'wb') as f:
+                for chunk_num in range(transfer['total_chunks']):
+                    if chunk_num in transfer['chunks']:
+                        f.write(transfer['chunks'][chunk_num])
+                    else:
+                        raise ValueError(f"Missing chunk {chunk_num}")
+
+            # Send success acknowledgment
+            response = {
+                'type': 'file_complete',
+                'file_path': file_path,
+                'success': True,
+                'saved_path': full_path
+            }
+            self._send_message_to_client(player_id, response)
+
+            print(f"Received and saved file from {player_id}: {full_path}")
+
+        except Exception as e:
+            print(f"Failed to assemble file from {player_id}: {e}")
+            response = {
+                'type': 'file_complete',
+                'file_path': file_path,
+                'success': False,
+                'error': str(e)
+            }
+            self._send_message_to_client(player_id, response)
+
+        finally:
+            # Clean up transfer state
+            if client_key in self.client_file_transfers:
+                del self.client_file_transfers[client_key]
+
+    def _send_message_to_client(self, player_id: str, message: dict):
+        """Send a message to a specific client."""
+        if player_id not in self.clients:
+            return
+
+        try:
+            data = pickle.dumps(message)
+            length_bytes = len(data).to_bytes(4, byteorder='big')
+            self.clients[player_id].send(length_bytes + data)
+        except Exception as e:
+            print(f"Failed to send message to {player_id}: {e}")
+            # Client might have disconnected
+            self._remove_client(player_id)
 
     def _game_loop(self):
         """Main game simulation loop."""

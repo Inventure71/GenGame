@@ -5,41 +5,19 @@ import traceback
 import pygame
 import argparse
 import importlib
-import glob
-import os
-from network_client import NetworkClient, EntityManager, sync_game_files
-from BASE_components.BASE_character import BaseCharacter
-from BASE_components.BASE_projectile import BaseProjectile
-from BASE_components.BASE_weapon import BaseWeapon
-from BASE_components.BASE_platform import BasePlatform
-from BASE_components.BASE_ui import BaseUI
+from coding.non_callable_tools.helpers import cleanup_old_logs
+from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
+from BASE_files.BASE_menu import BaseMenu
 
+# TODO: Remember to call client.update() regularly in your main loop to process incoming messages and send outgoing ones.")
 
-def cleanup_old_client_logs():
-    """Remove old client log files, keeping only the most recent one."""
-    try:
-        # Find all client log files (client.log, client1.log, client2.log, etc.)
-        client_logs = glob.glob("client*.log")
+def run_menu():
+    menu = BaseMenu()
+    menu.run_menu_loop()
 
-        if len(client_logs) > 1:
-            # Sort by modification time, keep the newest one
-            client_logs.sort(key=os.path.getmtime, reverse=True)
-
-            # Remove all but the most recent
-            for old_log in client_logs[1:]:
-                try:
-                    os.remove(old_log)
-                    print(f"Removed old client log: {old_log}")
-                except OSError as e:
-                    print(f"Failed to remove {old_log}: {e}")
-
-    except Exception as e:
-        print(f"Client log cleanup failed: {e}")
-
-
-def main(player_id: str = "", server_host: str = "127.0.0.1", server_port: int = 5555):
+def run_client(network_client: NetworkClient, player_id: str = ""):
     # Clean up old client log files before starting
-    cleanup_old_client_logs()
+    cleanup_old_logs()
 
     print("="*70)
     print(" "*20 + "GENGAME - MULTIPLAYER CLIENT")
@@ -59,7 +37,7 @@ def main(player_id: str = "", server_host: str = "127.0.0.1", server_port: int =
     print("  Q: Drop current weapon")
     print("  ESC: Quit game")
     print("="*70)
-    print(f"\nConnecting to server at {server_host}:{server_port}...\n")
+    print(f"\nConnecting to server at {network_client.host}:{network_client.port}...\n")
 
     try:
         # Initialize Pygame
@@ -71,7 +49,6 @@ def main(player_id: str = "", server_host: str = "127.0.0.1", server_port: int =
         print("⚠️  IMPORTANT: Click on the game window to enable keyboard input for movement!")
 
         # Initialize network client and entity manager
-        network_client = NetworkClient(server_host, server_port)
         entity_manager = EntityManager()
 
         # Set up network callbacks
@@ -90,7 +67,12 @@ def main(player_id: str = "", server_host: str = "127.0.0.1", server_port: int =
                     import GameFolder.setup as game_setup
                     importlib.reload(game_setup)  # Ensure we get the latest version
 
-                    print("✓ Game files synchronized")
+                    # Import game-specific classes for modularity
+                    nonlocal ui, Character
+                    ui = game_setup.GameUI(screen, width, height)
+                    Character = game_setup.Character
+
+                    print("✓ Game files synchronized and classes loaded")
                     network_client.acknowledge_file_sync()
 
                 except Exception as e:
@@ -126,15 +108,11 @@ def main(player_id: str = "", server_host: str = "127.0.0.1", server_port: int =
         network_client.on_character_assigned = on_character_assigned
         network_client.on_disconnected = on_disconnected
 
-        # Connect to server
-        if not network_client.connect(player_id):
-            print("Failed to connect to server!")
-            return
-
         # Initialize local state
         game_over = False
         winner = None
-        ui = BaseUI(screen, width, height)
+        ui = None  # Will be created after file sync
+        Character = None  # Will be loaded after file sync
 
         # Input state
         held_keys = set()
@@ -229,8 +207,9 @@ def main(player_id: str = "", server_host: str = "127.0.0.1", server_port: int =
             entity_manager.draw_all(screen, height)
 
             # Draw UI
-            characters = entity_manager.get_entities_by_type(BaseCharacter)
-            ui.draw(characters, game_over, winner, {})
+            if Character and ui:
+                characters = entity_manager.get_entities_by_type(Character)
+                ui.draw(characters, game_over, winner, {})
 
             pygame.display.flip()
 
@@ -257,4 +236,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    main(player_id=args.player, server_host=args.host, server_port=args.port)
+    #network_client = NetworkClient(args.host, args.port)
+    #run_client(network_client, player_id=args.player)
+    run_menu()

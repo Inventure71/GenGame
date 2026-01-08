@@ -17,7 +17,7 @@ import select
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from BASE_components.BASE_network import NetworkObject
+from BASE_files.BASE_network import NetworkObject
 
 
 class NetworkClient:
@@ -45,10 +45,15 @@ class NetworkClient:
         self.on_game_state_received = None
         self.on_character_assigned = None
         self.on_disconnected = None
+        self.on_file_received = None
+        self.on_file_transfer_progress = None
 
         # Lag compensation
         self.last_server_time = 0.0
         self.latency = 0.0
+
+        # File transfer state
+        self.file_transfers = {}  # file_path -> {'chunks': {}, 'total_chunks': 0, 'received_chunks': 0}
 
     def connect(self, player_id: str) -> bool:
         """Connect to the server."""
@@ -130,6 +135,82 @@ class NetworkClient:
 
         self.outgoing_queue.append(message)
 
+    def request_file(self, file_path: str) -> bool:
+        """
+        Request a file from the server.
+
+        Args:
+            file_path: Path of the file to request from server
+
+        Returns:
+            bool: True if request was sent successfully
+        """
+        if not self.connected:
+            return False
+
+        message = {
+            'type': 'file_request',
+            'file_path': file_path,
+            'player_id': self.player_id
+        }
+
+        self.outgoing_queue.append(message)
+        return True
+
+    def send_file(self, file_path: str, target_path: str = None) -> bool:
+        """
+        Send a file to the server.
+
+        Args:
+            file_path: Local path of the file to send
+            target_path: Path where the file should be stored on server (optional)
+
+        Returns:
+            bool: True if file transfer was initiated successfully
+        """
+        if not self.connected:
+            return False
+
+        try:
+            # Check if file exists and get its size
+            if not os.path.exists(file_path):
+                print(f"File not found: {file_path}")
+                return False
+
+            file_size = os.path.getsize(file_path)
+            file_name = os.path.basename(file_path)
+            target_path = target_path or file_name
+
+            # Read file in chunks to avoid memory issues
+            chunk_size = 64 * 1024  # 64KB chunks
+            total_chunks = (file_size + chunk_size - 1) // chunk_size
+
+            with open(file_path, 'rb') as f:
+                for chunk_num in range(total_chunks):
+                    chunk_data = f.read(chunk_size)
+
+                    message = {
+                        'type': 'file_chunk',
+                        'file_path': target_path,
+                        'chunk_num': chunk_num,
+                        'total_chunks': total_chunks,
+                        'data': chunk_data,
+                        'player_id': self.player_id
+                    }
+
+                    self.outgoing_queue.append(message)
+
+                    # Call progress callback if available
+                    if self.on_file_transfer_progress:
+                        progress = (chunk_num + 1) / total_chunks
+                        self.on_file_transfer_progress(target_path, progress, 'sending')
+
+            return True
+
+        except Exception as e:
+            print(f"Failed to send file {file_path}: {e}")
+            return False
+
     def update(self):
         """Update network client (call this regularly)."""
         if not self.connected:
@@ -208,6 +289,96 @@ class NetworkClient:
         elif msg_type == 'character_assignment':
             if self.on_character_assigned:
                 self.on_character_assigned(message)
+        elif msg_type == 'file_chunk':
+            self._handle_file_chunk(message)
+        elif msg_type == 'file_complete':
+            if self.on_file_received:
+                self.on_file_received(message['file_path'], message.get('success', True))
+
+    def _handle_file_chunk(self, message: dict):
+        """Handle incoming file chunk."""
+        file_path = message['file_path']
+        chunk_num = message['chunk_num']
+        total_chunks = message['total_chunks']
+        chunk_data = message['data']
+
+        # Initialize file transfer if this is the first chunk
+        if file_path not in self.file_transfers:
+            self.file_transfers[file_path] = {
+                'chunks': {},
+                'total_chunks': total_chunks,
+                'received_chunks': 0,
+                'start_time': time.time()
+            }
+
+        transfer = self.file_transfers[file_path]
+
+        # Store the chunk
+        if chunk_num not in transfer['chunks']:
+            transfer['chunks'][chunk_num] = chunk_data
+            transfer['received_chunks'] += 1
+
+            # Call progress callback if available
+            if self.on_file_transfer_progress:
+                progress = transfer['received_chunks'] / total_chunks
+                self.on_file_transfer_progress(file_path, progress, 'receiving')
+
+        # Check if file is complete
+        if transfer['received_chunks'] == total_chunks:
+            self._assemble_file(file_path)
+
+    def _assemble_file(self, file_path: str):
+        """Assemble received chunks into a complete file."""
+        transfer = self.file_transfers[file_path]
+
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+            # Write file by combining chunks in order
+            with open(file_path, 'wb') as f:
+                for chunk_num in range(transfer['total_chunks']):
+                    if chunk_num in transfer['chunks']:
+                        f.write(transfer['chunks'][chunk_num])
+                    else:
+                        raise ValueError(f"Missing chunk {chunk_num} for file {file_path}")
+
+            # Send acknowledgment to server
+            message = {
+                'type': 'file_ack',
+                'file_path': file_path,
+                'player_id': self.player_id,
+                'success': True
+            }
+            self.outgoing_queue.append(message)
+
+            # Call completion callback
+            if self.on_file_received:
+                self.on_file_received(file_path, True)
+
+            print(f"File received successfully: {file_path}")
+
+        except Exception as e:
+            print(f"Failed to assemble file {file_path}: {e}")
+
+            # Send failure acknowledgment
+            message = {
+                'type': 'file_ack',
+                'file_path': file_path,
+                'player_id': self.player_id,
+                'success': False,
+                'error': str(e)
+            }
+            self.outgoing_queue.append(message)
+
+            # Call completion callback with failure
+            if self.on_file_received:
+                self.on_file_received(file_path, False)
+
+        finally:
+            # Clean up transfer state
+            if file_path in self.file_transfers:
+                del self.file_transfers[file_path]
 
 
 class ClientPrediction:

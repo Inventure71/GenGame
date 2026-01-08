@@ -1,5 +1,5 @@
 import pygame
-from BASE_components.BASE_network import NetworkObject
+from BASE_files.BASE_network import NetworkObject
 
 class BasePlatform(NetworkObject):
     def __init__(self, x: float, y: float, width: float, height: float, color=(100, 100, 100), health: float = 100.0):

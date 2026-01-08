@@ -1,3 +1,4 @@
+import glob
 import os
 
 
@@ -61,3 +62,24 @@ def clear_python_cache():
             os.remove(pyc_file)
         except Exception as e:
             print(f"Warning: Could not remove .pyc file {pyc_file}: {e}")
+
+def cleanup_old_logs():
+    """Remove old log files, keeping only the most recent server.log."""
+    try:
+        # Find all server log files
+        server_logs = glob.glob("server*.log")
+
+        if len(server_logs) > 1:
+            # Sort by modification time, keep the newest one
+            server_logs.sort(key=os.path.getmtime, reverse=True)
+
+            # Remove all but the most recent
+            for old_log in server_logs[1:]:
+                try:
+                    os.remove(old_log)
+                    print(f"Removed old server log: {old_log}")
+                except OSError as e:
+                    print(f"Failed to remove {old_log}: {e}")
+
+    except Exception as e:
+        print(f"Log cleanup failed: {e}")

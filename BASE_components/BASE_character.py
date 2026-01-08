@@ -2,7 +2,7 @@ import pygame
 import uuid
 from BASE_components.BASE_weapon import BaseWeapon
 from BASE_components.BASE_projectile import BaseProjectile
-from BASE_components.BASE_network import NetworkObject
+from BASE_files.BASE_network import NetworkObject
 
 class BaseCharacter(NetworkObject):
     # IMMUTABLE: Life system - all players have exactly 3 lives

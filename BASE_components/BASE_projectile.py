@@ -1,6 +1,6 @@
 import pygame
 import math
-from BASE_components.BASE_network import NetworkObject
+from BASE_files.BASE_network import NetworkObject
 
 class BaseProjectile(NetworkObject):
     def __init__(self, x: float, y: float, direction: [float, float], speed: float, damage: float, owner_id: str, width: float = 10, height: float = 10):

@@ -1,5 +1,5 @@
 from BASE_components.BASE_projectile import BaseProjectile
-from BASE_components.BASE_network import NetworkObject
+from BASE_files.BASE_network import NetworkObject
 import pygame
 import time
 import math

@@ -1,6 +1,7 @@
 from GameFolder.arenas.GAME_arena import Arena
 from GameFolder.characters.GAME_character import Character
 from GameFolder.platforms.GAME_platform import Platform
+from GameFolder.ui.GAME_ui import GameUI
 from GameFolder.weapons.GAME_weapon import Weapon, StormBringer
 from GameFolder.weapons.BlackHoleGun import BlackHoleGun
 from GameFolder.weapons.OrbitalCannon import OrbitalCannon
