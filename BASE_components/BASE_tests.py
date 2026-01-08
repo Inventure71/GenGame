@@ -22,9 +22,7 @@ from typing import List, Callable, Optional, Type, Any
 from dataclasses import dataclass, field
 from coding.non_callable_tools.helpers import clear_python_cache
 
-# Set up headless mode for automated testing
-#os.environ['SDL_VIDEODRIVER'] = 'dummy'
-
+# Set up headless mode for automated testing (only when run directly)
 import pygame
 
 
@@ -163,14 +161,37 @@ class TestRunner:
     
     def setup_pygame_headless(self):
         """Initialize pygame in headless mode for testing."""
-        if not self.pygame_initialized:
-            try:
-                pygame.init()
-                # Create a minimal dummy surface
-                pygame.display.set_mode((1, 1))
+        if self.pygame_initialized:
+            return
+
+        # FIX: Assume pygame is already initialized when running from menu
+        # This prevents any pygame API calls from background threads which can cause deadlocks
+        try:
+            import threading
+            if threading.current_thread() != threading.main_thread():
+                # We're in a background thread, assume pygame is already set up by main thread
                 self.pygame_initialized = True
-            except Exception as e:
-                print(f"Warning: Could not initialize pygame: {e}")
+                print("Pygame already initialized, skipping initialization")
+                return
+        except:
+            pass
+
+        # Only check pygame status from main thread
+        if pygame.get_init():
+            self.pygame_initialized = True
+            print("Pygame already initialized, skipping initialization")
+            return
+
+        try:
+            # Set headless mode for testing (only if no display exists)
+            import os
+            os.environ['SDL_VIDEODRIVER'] = 'dummy'
+            pygame.init()
+            # Create a minimal dummy surface
+            pygame.display.set_mode((1, 1))
+            self.pygame_initialized = True
+        except Exception as e:
+            print(f"Warning: Could not initialize pygame: {e}")
     
     def run_test_with_args(self, test_func: Callable, args: List[Any], source_file: str = "BASE_tests.py") -> TestResult:
         """
@@ -700,11 +721,15 @@ def run_all_tests(
     Returns:
         TestSuite with all test results
     """
+    # DISABLED: clear_python_cache() causes thread safety issues and freezes
+    # The cache clearing was causing deadlocks when running from background threads
     clear_python_cache()
+
+    time.sleep(1)
 
     runner = TestRunner()
     runner.setup_pygame_headless()
-    
+
     combined_suite = TestSuite()
     
     # If no classes provided, try to import from GameFolder
@@ -715,7 +740,7 @@ def run_all_tests(
         except ImportError:
             if verbose:
                 print("Warning: Could not import Character from GameFolder")
-    
+
     if platform_class is None:
         try:
             from GameFolder.platforms.GAME_platform import Platform
@@ -723,7 +748,7 @@ def run_all_tests(
         except ImportError:
             if verbose:
                 print("Warning: Could not import Platform from GameFolder")
-    
+
     if weapon_class is None:
         try:
             from GameFolder.weapons.GAME_weapon import Weapon
@@ -731,7 +756,7 @@ def run_all_tests(
         except ImportError:
             if verbose:
                 print("Warning: Could not import Weapon from GameFolder")
-    
+
     if projectile_class is None:
         try:
             from GameFolder.projectiles.GAME_projectile import Projectile

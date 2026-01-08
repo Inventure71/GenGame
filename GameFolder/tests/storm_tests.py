@@ -45,7 +45,7 @@ def test_storm_cloud_movement():
 
 def test_storm_cloud_damage_and_slow():
     """Verify StormCloud deals damage and slows characters in the Arena."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     # Cloud at (200, 400). It's raining.
     cloud = StormCloud(200, 400, [200, 400], "attacker")
     cloud.is_raining = True

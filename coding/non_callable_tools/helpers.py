@@ -35,33 +35,64 @@ def check_integrity():
 def clear_python_cache():
     """
     Clear Python bytecode cache (__pycache__ directories) to ensure fresh imports.
-    
+
     This prevents issues where cached bytecode doesn't reflect recent source code changes,
     especially imports like 'import math' that were added after the .pyc files were created.
     """
     import shutil
     import glob
-    
-    # Find all __pycache__ directories
-    cache_dirs = glob.glob("**/__pycache__", recursive=True)
-    
-    # Also find .pyc files directly (though __pycache__ dirs are more common)
-    pyc_files = glob.glob("**/*.pyc", recursive=True)
-    
-    # Remove cache directories
-    for cache_dir in cache_dirs:
-        try:
-            shutil.rmtree(cache_dir)
-            print(f"Cleared cache: {cache_dir}")
-        except Exception as e:
-            print(f"Warning: Could not remove cache directory {cache_dir}: {e}")
-    
-    # Remove individual .pyc files (less common but possible)
-    for pyc_file in pyc_files:
-        try:
-            os.remove(pyc_file)
-        except Exception as e:
-            print(f"Warning: Could not remove .pyc file {pyc_file}: {e}")
+    import time
+
+    start_time = time.time()
+    timeout = 2.0  # Very short timeout to avoid hanging
+
+    # Only clear cache in specific directories that matter for our game
+    # Be very conservative - only clear if we're in the main thread
+    import threading
+    if threading.current_thread() != threading.main_thread():
+        print("Skipping cache clearing from background thread")
+        return
+
+    target_dirs = ["GameFolder"]  # Only clear GameFolder cache to minimize conflicts
+
+    for target_dir in target_dirs:
+        if time.time() - start_time > timeout:
+            print("Cache clearing timed out - continuing with tests")
+            return
+
+        if not os.path.exists(target_dir):
+            continue
+
+        # Find __pycache__ directories in this target directory
+        cache_dirs = glob.glob(f"{target_dir}/**/__pycache__", recursive=True)
+
+        # Remove cache directories
+        for cache_dir in cache_dirs:
+            if time.time() - start_time > timeout:
+                break
+            try:
+                shutil.rmtree(cache_dir)
+                print(f"Cleared cache: {cache_dir}")
+            except Exception as e:
+                # Silently ignore cache clearing errors - not critical for testing
+                pass
+
+        # Find .pyc files in this target directory
+        pyc_files = glob.glob(f"{target_dir}/**/*.pyc", recursive=True)
+
+        # Remove individual .pyc files (limit to first 50 to avoid hanging)
+        for i, pyc_file in enumerate(pyc_files[:50]):
+            if time.time() - start_time > timeout:
+                break
+            try:
+                os.remove(pyc_file)
+            except Exception as e:
+                # Silently ignore - not critical for testing
+                pass
+
+    # Critical: Add delay to let file system operations complete before imports
+    time.sleep(1.0)
+    print("Cache clearing completed - waiting for file system to settle")
 
 def cleanup_old_logs():
     """Remove old log files, keeping only the most recent server.log."""

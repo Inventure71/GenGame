@@ -8,7 +8,8 @@ from coding.tools.file_handling import get_tree_directory, read_file, create_fil
 from coding.tools.modify_inline import modify_file_inline
 from coding.tools.code_analysis import find_function_usages, get_function_source, list_functions_in_file
 from coding.non_callable_tools.action_logger import action_logger
-from coding.tools.testing import run_all_tests, parse_test_results
+from coding.tools.testing import parse_test_results
+from BASE_components.BASE_tests import run_all_tests
 from coding.non_callable_tools.helpers import load_prompt
 from coding.non_callable_tools.helpers import check_integrity
 
@@ -157,8 +158,27 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
         generate_tests(prompt, modelHandler, todo_list)
     else:
         print("Skipping tests generation in fix mode")
-    
-    results = run_all_tests()
+
+    suite = run_all_tests(verbose=False)
+    # Convert TestSuite to dict format expected by parse_test_results
+    results = {
+        "success": suite.all_passed,
+        "total_tests": suite.total_tests,
+        "passed_tests": suite.passed_tests,
+        "failed_tests": suite.failed_tests,
+        "duration": suite.total_duration,
+        "summary": suite.get_summary(),
+        "failures": [
+            {
+                "test_name": result.test_name,
+                "source_file": result.source_file,
+                "error_msg": result.error_msg,
+                "traceback": result.error_traceback,
+                "duration": result.duration
+            }
+            for result in suite.results if not result.passed
+        ]
+    }
     print("Tests results: ", results)
 
     issues_to_fix = parse_test_results(results)
@@ -196,9 +216,37 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
     if show_diffs == 'y':
         action_logger.print_diffs()
 
-def new_main(start_from_base: str = None):
+def new_main(prompt: str = None, start_from_base: str = None):
     load_dotenv()
     check_integrity()
+
+    print("Running tests...")
+    suite = run_all_tests()
+    # Convert TestSuite to dict format expected by parse_test_results
+    results = {
+        "success": suite.all_passed,
+        "total_tests": suite.total_tests,
+        "passed_tests": suite.passed_tests,
+        "failed_tests": suite.failed_tests,
+        "duration": suite.total_duration,
+        "summary": suite.get_summary(),
+        "failures": [
+            {
+                "test_name": result.test_name,
+                "source_file": result.source_file,
+                "error_msg": result.error_msg,
+                "traceback": result.error_traceback,
+                "duration": result.duration
+            }
+            for result in suite.results if not result.passed
+        ]
+    }
+    print("Tests results: ", results)
+
+    issues_to_fix = parse_test_results(results)
+
+    
+    """
     handler = BackupHandler("__game_backups")
     if start_from_base is None:
         backup_path, backup_name = handler.create_backup("GameFolder") 
@@ -217,9 +265,12 @@ def new_main(start_from_base: str = None):
     
     todo_list = TodoList()
 
-    prompt = input("Enter your prompt: ")
+    if prompt is None:
+        prompt = input("Enter your prompt: ")
+    else:
+        print("Using prompt: ", prompt)
     full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True)
-
+    """
     """
     REMEMBER
     - Fix mode avoids cleaning up chat history and avoids creating tests

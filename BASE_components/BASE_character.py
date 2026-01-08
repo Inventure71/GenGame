@@ -86,12 +86,20 @@ class BaseCharacter(NetworkObject):
         """
         Initialize graphics resources.
         Safe to call multiple times and works even if pygame is not initialized.
+        Thread-safe for testing scenarios.
         """
         super().init_graphics()
 
-        # Only initialize pygame-dependent graphics if pygame is available
+        # Skip pygame operations if we're in a thread other than the main thread
+        # or if pygame operations might cause issues (like during testing)
         try:
-            # Test if pygame is initialized by checking if we can create a surface
+            import threading
+            if threading.current_thread() != threading.main_thread():
+                # We're in a background thread, skip pygame operations to avoid thread safety issues
+                return
+
+            # Only initialize pygame-dependent graphics if pygame is available
+            # and we're in the main thread
             pygame.display.get_surface()
             # If we get here, pygame is initialized, so we can load graphics
             # Note: In a real implementation, you'd cache and load actual images here

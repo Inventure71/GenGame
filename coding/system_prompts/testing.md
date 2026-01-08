@@ -92,7 +92,7 @@ Must read (in ONE parallel batch):
 ```python
 # REQUIRED: Every weapon test must verify damage
 def test_weapon_deals_damage():
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     shooter = Character("Shooter", "", "", [100, 100])
     target = Character("Target", "", "", [200, 100])
     arena.add_character(shooter)

@@ -36,7 +36,7 @@ def test_orbital_cannon_shooting():
 def test_targeting_laser_collision_impact():
     """Verify TargetingLaser spawns an OrbitalStrikeMarker upon hitting a platform."""
     width, height = 800, 600
-    arena = Arena(width, height)
+    arena = Arena(width, height, headless=True)
     # Laser at (100, 300) moving right
     laser = TargetingLaser(100, 300, [1, 0], "player1", 1000)
     arena.projectiles.append(laser)
@@ -76,7 +76,7 @@ def test_targeting_laser_tracking():
 
 def test_targeting_laser_fast_collision():
     """Verify TargetingLaser hits a thin platform even at high speeds (segment collision)."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     # Laser at (100, 300) moving right.
     laser = TargetingLaser(100, 300, [1, 0], "player1", 1000)
     arena.projectiles.append(laser)
@@ -97,12 +97,12 @@ def test_targeting_laser_fast_collision():
 
 def test_lootpool_registration():
     """Verify that Orbital Cannon is in the lootpool."""
-    arena = setup_battle_arena()
+    arena = setup_battle_arena(headless=True)
     assert "Orbital Cannon" in arena.lootpool, "Orbital Cannon was not registered in the lootpool"
 
 def test_marker_to_blast_transition():
     """Verify OrbitalStrikeMarker spawns an OrbitalBlast after warmup."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     marker = OrbitalStrikeMarker(400, 100, "player1")
     arena.projectiles.append(marker)
     
@@ -117,7 +117,7 @@ def test_marker_to_blast_transition():
 
 def test_orbital_blast_damage():
     """Verify OrbitalBlast deals damage to characters in range."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     # Blast centered at X=400. Range is [350, 450] (width 100)
     blast = OrbitalBlast(400, "attacker")
     arena.projectiles.append(blast)
@@ -164,7 +164,7 @@ def test_orbital_blast_duration():
 
 def test_orbital_blast_vertical_coverage():
     """Verify OrbitalBlast damages characters regardless of their Y position."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     blast = OrbitalBlast(400, "attacker")
     arena.projectiles.append(blast)
 
@@ -182,7 +182,7 @@ def test_orbital_blast_vertical_coverage():
 def test_orbital_cannon_gameplay_integration():
     """Integration test simulating real gameplay: player shoots at enemy with orbital cannon."""
     # Setup arena with two characters
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
 
     # Attacker character with orbital cannon at position (200, 300)
     attacker = Character("Attacker", "", "", [200, 300])

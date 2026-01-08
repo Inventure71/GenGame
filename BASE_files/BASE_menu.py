@@ -253,6 +253,14 @@ class BaseMenu:
             pygame.init()
             print("Pygame initialized by BaseMenu.")
 
+        # Initialize clipboard support
+        try:
+            if hasattr(pygame.scrap, 'init'):
+                pygame.scrap.init()
+            print("Clipboard support initialized.")
+        except:
+            print("Warning: Clipboard support not available.")
+
         # Game menu
         self.on_start()
         
@@ -267,7 +275,7 @@ class BaseMenu:
         self.running = True
 
         # Menu state
-        self.current_menu = "main"  # main, create_room, join_room, library, room
+        self.current_menu = "main"  # main, create_room, join_room, library, room, agent
         self.menu_background_color = (20, 20, 30)
         self.menu_text_color = (255, 255, 255)
 
@@ -306,6 +314,27 @@ class BaseMenu:
         self.room_code = ""
         self.available_games = []
         self.patch_to_apply = None
+
+        # Agent menu state
+        self.agent_prompt = ""
+        self.agent_prompt_focused = False
+        self.agent_running = False
+        self.agent_results = None
+        self.show_fix_prompt = False
+
+        # Patch saving state
+        self.patch_name = ""
+        self.patch_name_focused = False
+        self.patch_cursor_pos = 0
+        self.patch_selection_start = 0
+        self.patch_selection_end = 0
+        self.patch_scroll_offset = 0
+
+        # Text input state for agent prompt
+        self.agent_cursor_pos = 0
+        self.agent_selection_start = 0
+        self.agent_selection_end = 0
+        self.agent_scroll_offset = 0
 
         self.client = None
         self.server_thread = None
@@ -445,17 +474,24 @@ class BaseMenu:
         if self.check_button_click(library_rect):
             self.on_library_click()
 
+        # Agent Content Button
+        agent_rect = self.draw_button("Agent Content", center_x - self.button_width//2, button_y + button_spacing * 3,
+                                     self.button_width, self.button_height,
+                                     self.check_button_hover(center_x - self.button_width//2, button_y + button_spacing * 3, self.button_width, self.button_height))
+        if self.check_button_click(agent_rect):
+            self.on_agent_content_click()
+
         # Settings Button
-        settings_rect = self.draw_button("Settings", center_x - self.button_width//2, button_y + button_spacing * 3,
+        settings_rect = self.draw_button("Settings", center_x - self.button_width//2, button_y + button_spacing * 4,
                                         self.button_width, self.button_height,
-                                        self.check_button_hover(center_x - self.button_width//2, button_y + button_spacing * 3, self.button_width, self.button_height))
+                                        self.check_button_hover(center_x - self.button_width//2, button_y + button_spacing * 4, self.button_width, self.button_height))
         if self.check_button_click(settings_rect):
             self.on_settings_click()
 
         # Quit Button
-        quit_rect = self.draw_button("Quit", center_x - self.button_width//2, button_y + button_spacing * 4,
+        quit_rect = self.draw_button("Quit", center_x - self.button_width//2, button_y + button_spacing * 5,
                                     self.button_width, self.button_height,
-                                    self.check_button_hover(center_x - self.button_width//2, button_y + button_spacing * 4, self.button_width, self.button_height))
+                                    self.check_button_hover(center_x - self.button_width//2, button_y + button_spacing * 5, self.button_width, self.button_height))
         if self.check_button_click(quit_rect):
             self.on_quit_click()
 
@@ -621,6 +657,131 @@ class BaseMenu:
         if self.check_button_click(back_rect):
             self.on_library_back_click()
 
+    def render_agent_menu(self):
+        """Render the agent content creation menu."""
+        self.screen.fill(self.menu_background_color)
+
+        # Title
+        self.draw_text("Agent Content Creation", 700, 30, self.menu_font, center=True)
+
+        # Prompt text field
+        prompt_y = 80
+        prompt_width = 1000
+        prompt_height = 250
+
+        # Draw prompt label
+        self.draw_text("Paste your content request:", 700, prompt_y - 30, self.button_font, center=True)
+
+        # Draw prompt text field background
+        prompt_rect = pygame.Rect(700 - prompt_width//2, prompt_y, prompt_width, prompt_height)
+        pygame.draw.rect(self.screen, (40, 40, 50), prompt_rect)
+        pygame.draw.rect(self.screen, (100, 100, 120), prompt_rect, 2)
+
+        # Handle clicking on the prompt field
+        if self.check_button_click(prompt_rect) and not self.agent_running:
+            self.agent_prompt_focused = True
+            # Calculate cursor position from mouse click
+            self.update_cursor_from_mouse_click(prompt_rect, prompt_y)
+        elif self.mouse_clicked and not prompt_rect.collidepoint(self.mouse_pos):
+            self.agent_prompt_focused = False
+
+        # Draw focus border
+        if self.agent_prompt_focused:
+            pygame.draw.rect(self.screen, (150, 150, 180), prompt_rect, 3)
+
+        # Draw prompt text with selection and cursor
+        self.draw_text_input(prompt_rect, prompt_y, prompt_width, prompt_height)
+
+        # Webserver URL display
+        url_y = prompt_y + prompt_height + 15
+        self.draw_text("Agent Monitor: http://127.0.0.1:8765", 700, url_y, self.small_font, center=True)
+
+        # Paste and Send buttons
+        send_y = url_y + 35
+
+        # Paste Clipboard button
+        paste_button_width = 100
+        paste_rect = self.draw_button("Paste", 700 - self.button_width//2 - paste_button_width - 20, send_y,
+                                     paste_button_width, self.button_height,
+                                     self.check_button_hover(700 - self.button_width//2 - paste_button_width - 20, send_y, paste_button_width, self.button_height))
+        if self.check_button_click(paste_rect) and not self.agent_running:
+            self.paste_clipboard()
+
+        # Send button
+        send_button_text = "Running Agent..." if self.agent_running else "Send to Agent"
+        send_rect = self.draw_button(send_button_text, 700 - self.button_width//2, send_y,
+                                    self.button_width, self.button_height,
+                                    self.check_button_hover(700 - self.button_width//2, send_y, self.button_width, self.button_height))
+        if self.check_button_click(send_rect) and not self.agent_running and self.agent_prompt.strip():
+            self.on_agent_send_click()
+
+        # Results display
+        current_y = send_y + self.button_height + 40
+        if self.agent_results:
+            self.draw_text(f"Test Results: {self.agent_results['passed']}/{self.agent_results['total']} passed",
+                          700, current_y, self.button_font, center=True)
+            current_y += 50
+
+            # Fix button (only show if there were failures)
+            if self.agent_results['passed'] < self.agent_results['total']:
+                fix_rect = self.draw_button("Fix Issues?", 700 - self.button_width//2, current_y,
+                                           self.button_width, self.button_height,
+                                           self.check_button_hover(700 - self.button_width//2, current_y, self.button_width, self.button_height))
+                if self.check_button_click(fix_rect):
+                    self.on_agent_fix_click()
+                current_y += self.button_height + 30
+
+            # Patch saving section
+            # Draw label
+            self.draw_text("Patch Name:", 700, current_y, self.button_font, center=True)
+            current_y += 35
+
+            # Patch name input field
+            patch_name_width = 400
+            patch_name_height = 40
+            patch_name_rect = pygame.Rect(700 - patch_name_width//2, current_y, patch_name_width, patch_name_height)
+            pygame.draw.rect(self.screen, (40, 40, 50), patch_name_rect)
+            pygame.draw.rect(self.screen, (100, 100, 120), patch_name_rect, 2)
+
+            # Handle clicking on patch name field
+            if self.check_button_click(patch_name_rect) and not self.agent_running:
+                self.patch_name_focused = True
+                self.agent_prompt_focused = False
+                self.update_patch_cursor_from_mouse_click(patch_name_rect, current_y)
+            elif self.mouse_clicked and not patch_name_rect.collidepoint(self.mouse_pos):
+                self.patch_name_focused = False
+
+            # Draw focus border
+            if self.patch_name_focused:
+                pygame.draw.rect(self.screen, (150, 150, 180), patch_name_rect, 3)
+
+            # Draw patch name text
+            self.draw_patch_text_input(patch_name_rect, current_y, patch_name_width, patch_name_height)
+            current_y += patch_name_height + 15
+
+            # Save patch button
+            save_patch_rect = self.draw_button("Save to Patch", 700 - self.button_width//2, current_y,
+                                             self.button_width, self.button_height,
+                                             self.check_button_hover(700 - self.button_width//2, current_y, self.button_width, self.button_height))
+            if self.check_button_click(save_patch_rect) and not self.agent_running and self.patch_name.strip():
+                self.on_agent_save_patch_click()
+
+        # Back button at the bottom
+        back_y = 820
+        back_rect = self.draw_button("Back to Menu", 700 - self.button_width//2, back_y,
+                                    self.button_width, self.button_height,
+                                    self.check_button_hover(700 - self.button_width//2, back_y, self.button_width, self.button_height))
+        if self.check_button_click(back_rect) and not self.agent_running:
+            self.on_agent_back_click()
+
+        # Handle text input for prompt field
+        if self.agent_prompt_focused:
+            self.handle_agent_text_input()
+
+        # Handle text input for patch name field
+        if self.patch_name_focused:
+            self.handle_patch_text_input()
+
     def check_button_hover(self, x: int, y: int, width: int, height: int) -> bool:
         """Check if mouse is hovering over a button."""
         button_rect = pygame.Rect(x, y, width, height)
@@ -629,13 +790,15 @@ class BaseMenu:
     def render(self):
         """Render the current menu."""
         self.frame_count += 1
-            
+
         if self.current_menu == "main":
             self.render_main_menu()
         elif self.current_menu == "room":
             self.render_room_menu()
         elif self.current_menu == "library":
             self.render_library_menu()
+        elif self.current_menu == "agent":
+            self.render_agent_menu()
 
         pygame.display.flip()
 
@@ -657,7 +820,6 @@ class BaseMenu:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1:  # Left click
                         self.mouse_clicked = True
-                        print(f"Mouse clicked at {self.mouse_pos}")
                 elif event.type == pygame.KEYDOWN:
                     self.handle_key_input(event)
 
@@ -685,7 +847,193 @@ class BaseMenu:
                 # Add printable characters
                 if event.unicode.isprintable():
                     self.player_id += event.unicode
-        
+
+        # Handle agent prompt input
+        elif self.current_menu == "agent" and self.agent_prompt_focused and not self.agent_running:
+            mods = pygame.key.get_mods()
+
+            if event.key == pygame.K_RETURN:
+                # Insert newline with Enter
+                self.insert_text('\n')
+            elif event.key == pygame.K_BACKSPACE:
+                if self.has_selection():
+                    self.delete_selection()
+                elif self.agent_cursor_pos > 0:
+                    # Delete character before cursor
+                    self.agent_prompt = self.agent_prompt[:self.agent_cursor_pos-1] + self.agent_prompt[self.agent_cursor_pos:]
+                    self.agent_cursor_pos -= 1
+                    self.agent_selection_start = self.agent_cursor_pos
+                    self.agent_selection_end = self.agent_cursor_pos
+            elif event.key == pygame.K_DELETE:
+                if self.has_selection():
+                    self.delete_selection()
+                elif self.agent_cursor_pos < len(self.agent_prompt):
+                    # Delete character after cursor
+                    self.agent_prompt = self.agent_prompt[:self.agent_cursor_pos] + self.agent_prompt[self.agent_cursor_pos+1:]
+            elif event.key == pygame.K_LEFT:
+                if mods & pygame.KMOD_SHIFT:
+                    # Extend selection
+                    if self.agent_cursor_pos > 0:
+                        self.agent_cursor_pos -= 1
+                        if self.agent_cursor_pos < self.agent_selection_start:
+                            self.agent_selection_start = self.agent_cursor_pos
+                        else:
+                            self.agent_selection_end = self.agent_cursor_pos
+                else:
+                    # Move cursor
+                    if self.has_selection():
+                        self.agent_cursor_pos = min(self.agent_selection_start, self.agent_selection_end)
+                        self.agent_selection_start = self.agent_cursor_pos
+                        self.agent_selection_end = self.agent_cursor_pos
+                    elif self.agent_cursor_pos > 0:
+                        self.agent_cursor_pos -= 1
+            elif event.key == pygame.K_RIGHT:
+                if mods & pygame.KMOD_SHIFT:
+                    # Extend selection
+                    if self.agent_cursor_pos < len(self.agent_prompt):
+                        self.agent_cursor_pos += 1
+                        if self.agent_cursor_pos > self.agent_selection_end:
+                            self.agent_selection_end = self.agent_cursor_pos
+                        else:
+                            self.agent_selection_start = self.agent_cursor_pos
+                else:
+                    # Move cursor
+                    if self.has_selection():
+                        self.agent_cursor_pos = max(self.agent_selection_start, self.agent_selection_end)
+                        self.agent_selection_start = self.agent_cursor_pos
+                        self.agent_selection_end = self.agent_cursor_pos
+                    elif self.agent_cursor_pos < len(self.agent_prompt):
+                        self.agent_cursor_pos += 1
+            elif event.key == pygame.K_UP:
+                # Move to previous line
+                line, col = self.get_line_col(self.agent_cursor_pos)
+                if line > 0:
+                    new_pos = self.get_pos_from_line_col(line - 1, col)
+                    if mods & pygame.KMOD_SHIFT:
+                        self.agent_cursor_pos = new_pos
+                        if new_pos < self.agent_selection_start:
+                            self.agent_selection_start = new_pos
+                        else:
+                            self.agent_selection_end = new_pos
+                    else:
+                        self.agent_cursor_pos = new_pos
+                        self.agent_selection_start = new_pos
+                        self.agent_selection_end = new_pos
+            elif event.key == pygame.K_DOWN:
+                # Move to next line
+                line, col = self.get_line_col(self.agent_cursor_pos)
+                lines = self.agent_prompt.split('\n')
+                if line < len(lines) - 1:
+                    new_pos = self.get_pos_from_line_col(line + 1, col)
+                    if mods & pygame.KMOD_SHIFT:
+                        self.agent_cursor_pos = new_pos
+                        if new_pos > self.agent_selection_end:
+                            self.agent_selection_end = new_pos
+                        else:
+                            self.agent_selection_start = new_pos
+                    else:
+                        self.agent_cursor_pos = new_pos
+                        self.agent_selection_start = new_pos
+                        self.agent_selection_end = new_pos
+            elif event.key == pygame.K_HOME:
+                # Move to start of line
+                line, col = self.get_line_col(self.agent_cursor_pos)
+                new_pos = self.get_pos_from_line_col(line, 0)
+                if mods & pygame.KMOD_SHIFT:
+                    self.agent_cursor_pos = new_pos
+                    if new_pos < self.agent_selection_start:
+                        self.agent_selection_start = new_pos
+                    else:
+                        self.agent_selection_end = new_pos
+                else:
+                    self.agent_cursor_pos = new_pos
+                    self.agent_selection_start = new_pos
+                    self.agent_selection_end = new_pos
+            elif event.key == pygame.K_END:
+                # Move to end of line
+                line, col = self.get_line_col(self.agent_cursor_pos)
+                lines = self.agent_prompt.split('\n')
+                if line < len(lines):
+                    new_pos = self.get_pos_from_line_col(line, len(lines[line]))
+                    if mods & pygame.KMOD_SHIFT:
+                        self.agent_cursor_pos = new_pos
+                        if new_pos > self.agent_selection_end:
+                            self.agent_selection_end = new_pos
+                        else:
+                            self.agent_selection_start = new_pos
+                    else:
+                        self.agent_cursor_pos = new_pos
+                        self.agent_selection_start = new_pos
+                        self.agent_selection_end = new_pos
+            elif event.key == pygame.K_PAGEUP:
+                # Scroll up
+                self.agent_scroll_offset = max(0, self.agent_scroll_offset - 5)
+            elif event.key == pygame.K_PAGEDOWN:
+                # Scroll down
+                max_chars_per_line = 1000 // 8  # Approximate
+                display_lines = self.wrap_text_for_display(max_chars_per_line)
+                visible_lines = 300 // 25  # Approximate
+                max_scroll = max(0, len(display_lines) - visible_lines)
+                self.agent_scroll_offset = min(max_scroll, self.agent_scroll_offset + 5)
+            elif (mods & pygame.KMOD_CTRL) and event.key == pygame.K_a:
+                # Select all
+                self.select_all()
+            elif (mods & pygame.KMOD_CTRL) and event.key == pygame.K_v:
+                # Paste
+                try:
+                    clipboard_text = pygame.scrap.get(pygame.SCRAP_TEXT).decode('utf-8')
+                    # Remove null bytes and normalize line endings
+                    clipboard_text = clipboard_text.replace('\x00', '').replace('\r\n', '\n').replace('\r', '\n')
+                    self.insert_text(clipboard_text)
+                except:
+                    pass  # Clipboard not available or empty
+            elif (mods & pygame.KMOD_CTRL) and event.key == pygame.K_c:
+                # Copy
+                if self.has_selection():
+                    try:
+                        selected_text = self.get_selected_text()
+                        pygame.scrap.put(pygame.SCRAP_TEXT, selected_text.encode('utf-8'))
+                    except:
+                        pass  # Clipboard not available
+            elif (mods & pygame.KMOD_CTRL) and event.key == pygame.K_x:
+                # Cut
+                if self.has_selection():
+                    try:
+                        selected_text = self.get_selected_text()
+                        pygame.scrap.put(pygame.SCRAP_TEXT, selected_text.encode('utf-8'))
+                        self.delete_selection()
+                    except:
+                        pass  # Clipboard not available
+            elif event.key == pygame.K_ESCAPE:
+                self.agent_prompt_focused = False
+            else:
+                # Add printable characters
+                if event.unicode and event.unicode.isprintable():
+                    self.insert_text(event.unicode)
+
+        # Handle patch name input
+        elif self.current_menu == "agent" and self.patch_name_focused and not self.agent_running:
+            if event.key == pygame.K_RETURN:
+                # Confirm patch name and save
+                self.patch_name_focused = False
+                if self.patch_name.strip():
+                    self.on_agent_save_patch_click()
+            elif event.key == pygame.K_BACKSPACE:
+                if len(self.patch_name) > 0:
+                    self.patch_name = self.patch_name[:-1]
+                    self.patch_cursor_pos = len(self.patch_name)
+                    self.patch_selection_start = self.patch_cursor_pos
+                    self.patch_selection_end = self.patch_cursor_pos
+            elif event.key == pygame.K_ESCAPE:
+                self.patch_name_focused = False
+            else:
+                # Add printable characters
+                if event.unicode and event.unicode.isprintable():
+                    self.patch_name += event.unicode
+                    self.patch_cursor_pos = len(self.patch_name)
+                    self.patch_selection_start = self.patch_cursor_pos
+                    self.patch_selection_end = self.patch_cursor_pos
+
         # Handle scrolling in room menu
         elif self.current_menu == "room":
             if event.key == pygame.K_UP:
@@ -715,12 +1063,17 @@ class BaseMenu:
 
     def on_library_click(self):
         """Handle library button click."""
-        print("Library clicked - PLACEHOLDER")
+        print("Library clicked")
         self.show_menu("library")
+
+    def on_agent_content_click(self):
+        """Handle agent content button click."""
+        print("Agent Content clicked")
+        self.show_menu("agent")
 
     def on_settings_click(self):
         """Handle settings button click."""
-        print("Settings clicked - PLACEHOLDER")
+        print("Settings clicked")
         # TODO: Show settings menu
 
     def on_quit_click(self):
@@ -745,17 +1098,10 @@ class BaseMenu:
         else:
             print("Not connected to server!")
     
-    def on_start_game_click(self):
-        """Handle start game button click."""
-        print("Start Game clicked - requesting game start")
-        if self.client and self.client.connected:
-            self.client.request_start_game()
-        else:
-            print("Not connected to server!")
 
     def on_leave_room_click(self):
         """Handle leave room button click."""
-        print("Leave Room clicked - PLACEHOLDER")
+        print("Leave Room clicked")
         self.show_menu("main")
 
     def on_back_to_menu_click(self):
@@ -783,6 +1129,527 @@ class BaseMenu:
         print("Library Back clicked")
         self.show_menu("main")
 
+    def on_agent_send_click(self):
+        """Handle agent send button click."""
+        print("Agent Send clicked")
+
+        # Focus the text field if prompt is empty
+        if not self.agent_prompt.strip():
+            self.agent_prompt_focused = True
+            return
+
+        self.agent_running = True
+        self.agent_results = None
+        self.show_fix_prompt = False
+        # Unfocus text fields
+        self.agent_prompt_focused = False
+        self.patch_name_focused = False
+
+        # Run agent in a separate thread to avoid blocking the UI
+        import threading
+        agent_thread = threading.Thread(target=self.run_agent, args=(self.agent_prompt,))
+        agent_thread.start()
+
+    def on_agent_fix_click(self):
+        """Handle agent fix button click."""
+        print("Agent Fix clicked")
+        self.agent_running = True
+        self.show_fix_prompt = False
+        # Unfocus text fields
+        self.agent_prompt_focused = False
+        self.patch_name_focused = False
+
+        # Run agent fix in a separate thread
+        import threading
+        agent_thread = threading.Thread(target=self.run_agent_fix, args=(self.agent_results,))
+        agent_thread.start()
+
+    def on_agent_save_patch_click(self):
+        """Handle agent save patch button click."""
+        print(f"Agent Save Patch clicked: {self.patch_name}")
+
+        # Save the current changes as a patch
+        import os
+        from coding.non_callable_tools.action_logger import action_logger
+
+        # Create patches directory if it doesn't exist
+        patches_dir = "__patches"
+        if not os.path.exists(patches_dir):
+            os.makedirs(patches_dir)
+
+        # Save the patch
+        patch_path = os.path.join(patches_dir, f"{self.patch_name}.json")
+        success = action_logger.save_changes_to_extension_file(patch_path, name_of_backup="GameFolder")
+
+        if success:
+            print(f"✓ Patch saved successfully: {patch_path}")
+            # Clear the patch name field
+            self.patch_name = ""
+            self.patch_name_focused = False
+        else:
+            print("✗ Failed to save patch")
+
+    def on_agent_back_click(self):
+        """Handle agent back button click."""
+        print("Agent Back clicked")
+        # Reset agent state
+        self.agent_prompt = ""
+        self.agent_prompt_focused = False
+        self.agent_running = False
+        self.agent_results = None
+        # Reset patch state
+        self.patch_name = ""
+        self.patch_name_focused = False
+        self.patch_cursor_pos = 0
+        self.patch_selection_start = 0
+        self.patch_selection_end = 0
+        self.patch_scroll_offset = 0
+        self.show_fix_prompt = False
+        self.agent_cursor_pos = 0
+        self.agent_selection_start = 0
+        self.agent_selection_end = 0
+        self.agent_scroll_offset = 0
+        self.show_menu("main")
+
+    def handle_agent_text_input(self):
+        """Handle text input for the agent prompt field."""
+        # This will be called from render_agent_menu when the field is focused
+        pass  # Text input is handled in the main event loop
+
+    def draw_text_input(self, rect, y, width, height):
+        """Draw the text input field with word wrapping, scrolling, cursor and selection."""
+        line_height = 25
+        char_width = 8
+        padding = 10
+        max_chars_per_line = (width - 2 * padding) // char_width
+        visible_lines = (height - 2 * padding) // line_height
+
+        # Wrap text into display lines
+        display_lines = self.wrap_text_for_display(max_chars_per_line)
+
+        # Calculate scrolling
+        cursor_line_idx = self.get_display_line_from_cursor(display_lines)
+        if cursor_line_idx < self.agent_scroll_offset:
+            self.agent_scroll_offset = cursor_line_idx
+        elif cursor_line_idx >= self.agent_scroll_offset + visible_lines:
+            self.agent_scroll_offset = cursor_line_idx - visible_lines + 1
+
+        # Ensure scroll offset is valid
+        max_scroll = max(0, len(display_lines) - visible_lines)
+        self.agent_scroll_offset = max(0, min(self.agent_scroll_offset, max_scroll))
+
+        # Draw visible lines
+        for i in range(visible_lines):
+            line_idx = self.agent_scroll_offset + i
+            if line_idx >= len(display_lines):
+                break
+
+            line_y = y + padding + i * line_height
+            display_line = display_lines[line_idx]
+
+            # Draw selection background if there's a selection
+            if self.has_selection():
+                sel_ranges = self.get_selection_ranges_for_display_line(display_lines, line_idx)
+                for start_col, end_col in sel_ranges:
+                    if start_col < end_col:
+                        sel_x = rect.left + padding + start_col * char_width
+                        sel_width = (end_col - start_col) * char_width
+                        pygame.draw.rect(self.screen, (100, 150, 200),
+                                       (sel_x, line_y, sel_width, line_height))
+
+            # Draw the line text
+            self.draw_text(display_line, rect.left + padding, line_y, self.small_font)
+
+            # Draw cursor if focused and on this line
+            if self.agent_prompt_focused and self.frame_count % 60 < 30:  # Blinking cursor
+                cursor_display_line, cursor_col = self.get_cursor_display_position(display_lines)
+                if cursor_display_line == line_idx:
+                    cursor_x = rect.left + padding + cursor_col * char_width
+                    pygame.draw.line(self.screen, self.menu_text_color,
+                                   (cursor_x, line_y),
+                                   (cursor_x, line_y + line_height), 2)
+
+        # Draw scroll indicators
+        if self.agent_scroll_offset > 0:
+            self.draw_text("▲", rect.right - 20, y + padding, self.small_font, color=(200, 200, 255))
+        if self.agent_scroll_offset + visible_lines < len(display_lines):
+            self.draw_text("▼", rect.right - 20, y + height - padding - line_height, self.small_font, color=(200, 200, 255))
+
+    def has_selection(self):
+        """Check if there's text selected."""
+        return self.agent_selection_start != self.agent_selection_end
+
+    def get_line_col(self, pos):
+        """Convert absolute position to line and column."""
+        lines = self.agent_prompt.split('\n')
+        current_pos = 0
+
+        for line_idx, line in enumerate(lines):
+            line_length = len(line) + 1  # +1 for newline
+            if current_pos + line_length > pos:
+                col = pos - current_pos
+                return line_idx, col
+            current_pos += line_length
+
+        # End of text
+        return len(lines) - 1, len(lines[-1])
+
+    def get_pos_from_line_col(self, line, col):
+        """Convert line and column to absolute position."""
+        lines = self.agent_prompt.split('\n')
+        pos = 0
+
+        for i in range(min(line, len(lines))):
+            pos += len(lines[i]) + 1  # +1 for newline
+
+        pos += min(col, len(lines[line]) if line < len(lines) else 0)
+        return pos
+
+    def update_cursor_from_mouse_click(self, rect, y):
+        """Update cursor position based on mouse click in wrapped text."""
+        line_height = 25
+        char_width = 8
+        padding = 10
+        max_chars_per_line = (rect.width - 2 * padding) // char_width
+
+        # Calculate which display line was clicked
+        click_y = self.mouse_pos[1] - y - padding
+        clicked_display_line = max(0, min(int(click_y // line_height), 10))  # Assume up to 10 visible lines
+
+        # Add scroll offset
+        actual_display_line = clicked_display_line + self.agent_scroll_offset
+
+        # Calculate which column was clicked
+        click_x = self.mouse_pos[0] - rect.left - padding
+        clicked_col = max(0, int(click_x // char_width))
+
+        # Get display lines to find the actual cursor position
+        display_lines = self.wrap_text_for_display(max_chars_per_line)
+
+        if actual_display_line < len(display_lines):
+            display_line = display_lines[actual_display_line]
+            clicked_col = min(clicked_col, len(display_line))
+
+            # Convert display position back to actual text position
+            self.agent_cursor_pos = self.get_text_pos_from_display_pos(display_lines, actual_display_line, clicked_col)
+        else:
+            # Clicked beyond the text
+            self.agent_cursor_pos = len(self.agent_prompt)
+
+        self.agent_selection_start = self.agent_cursor_pos
+        self.agent_selection_end = self.agent_cursor_pos
+
+    def delete_selection(self):
+        """Delete the selected text."""
+        if not self.has_selection():
+            return
+
+        start = min(self.agent_selection_start, self.agent_selection_end)
+        end = max(self.agent_selection_start, self.agent_selection_end)
+
+        self.agent_prompt = self.agent_prompt[:start] + self.agent_prompt[end:]
+        self.agent_cursor_pos = start
+        self.agent_selection_start = start
+        self.agent_selection_end = start
+
+    def get_selected_text(self):
+        """Get the currently selected text."""
+        if not self.has_selection():
+            return ""
+
+        start = min(self.agent_selection_start, self.agent_selection_end)
+        end = max(self.agent_selection_start, self.agent_selection_end)
+        return self.agent_prompt[start:end]
+
+    def insert_text(self, text):
+        """Insert text at cursor position."""
+        # Delete selection first if any
+        if self.has_selection():
+            self.delete_selection()
+
+        self.agent_prompt = self.agent_prompt[:self.agent_cursor_pos] + text + self.agent_prompt[self.agent_cursor_pos:]
+        self.agent_cursor_pos += len(text)
+        self.agent_selection_start = self.agent_cursor_pos
+        self.agent_selection_end = self.agent_cursor_pos
+
+    def select_all(self):
+        """Select all text."""
+        self.agent_selection_start = 0
+        self.agent_selection_end = len(self.agent_prompt)
+        self.agent_cursor_pos = len(self.agent_prompt)
+
+    def wrap_text_for_display(self, max_chars_per_line):
+        """Wrap text to fit within max_chars_per_line and return display lines."""
+        if not self.agent_prompt:
+            return [""]
+
+        display_lines = []
+        paragraphs = self.agent_prompt.split('\n')
+
+        for paragraph in paragraphs:
+            if not paragraph:
+                display_lines.append("")
+                continue
+
+            words = paragraph.split(' ')
+            current_line = ""
+
+            for word in words:
+                # Check if adding this word would exceed the line length
+                if current_line and len(current_line + ' ' + word) <= max_chars_per_line:
+                    current_line += ' ' + word
+                elif len(word) <= max_chars_per_line:
+                    # Start new line with this word
+                    if current_line:
+                        display_lines.append(current_line)
+                    current_line = word
+                else:
+                    # Word is too long, split it
+                    if current_line:
+                        display_lines.append(current_line)
+                        current_line = ""
+                    # Split long word
+                    for i in range(0, len(word), max_chars_per_line):
+                        display_lines.append(word[i:i + max_chars_per_line])
+
+            if current_line:
+                display_lines.append(current_line)
+
+        return display_lines if display_lines else [""]
+
+    def get_display_line_from_cursor(self, display_lines):
+        """Get the display line index where the cursor is located."""
+        cursor_pos = self.agent_cursor_pos
+        char_count = 0
+
+        for line_idx, line in enumerate(display_lines):
+            line_length = len(line) + 1  # +1 for space/newline
+            if char_count + line_length > cursor_pos:
+                return line_idx
+            char_count += line_length
+
+        return len(display_lines) - 1
+
+    def get_cursor_display_position(self, display_lines):
+        """Get the cursor position in display coordinates (line, column)."""
+        cursor_pos = self.agent_cursor_pos
+        char_count = 0
+
+        for line_idx, line in enumerate(display_lines):
+            line_length = len(line) + 1  # +1 for space/newline
+            if char_count + line_length > cursor_pos:
+                col = cursor_pos - char_count
+                return line_idx, min(col, len(line))
+            char_count += line_length
+
+        # End of text
+        last_line_idx = len(display_lines) - 1
+        return last_line_idx, len(display_lines[last_line_idx]) if display_lines else 0
+
+    def get_selection_ranges_for_display_line(self, display_lines, display_line_idx):
+        """Get selection ranges for a specific display line."""
+        if not self.has_selection():
+            return []
+
+        sel_start = min(self.agent_selection_start, self.agent_selection_end)
+        sel_end = max(self.agent_selection_start, self.agent_selection_end)
+
+        # Find the character ranges for this display line
+        char_start = 0
+        for i in range(display_line_idx):
+            char_start += len(display_lines[i]) + 1
+
+        char_end = char_start + len(display_lines[display_line_idx])
+
+        # Check if selection intersects with this line
+        line_sel_start = max(sel_start, char_start)
+        line_sel_end = min(sel_end, char_end)
+
+        if line_sel_start < line_sel_end:
+            start_col = line_sel_start - char_start
+            end_col = line_sel_end - char_start
+            return [(start_col, end_col)]
+
+        return []
+
+    def get_text_pos_from_display_pos(self, display_lines, display_line_idx, display_col):
+        """Convert display position back to actual text position."""
+        pos = 0
+
+        for i in range(display_line_idx):
+            if i < len(display_lines):
+                # Add the length of this display line plus space/newline
+                pos += len(display_lines[i]) + 1
+
+        # Add the column position within the current display line
+        if display_line_idx < len(display_lines):
+            pos += min(display_col, len(display_lines[display_line_idx]))
+
+        return min(pos, len(self.agent_prompt))
+
+    # =========================================================================
+    # PATCH NAME TEXT INPUT METHODS
+    # =========================================================================
+
+    def handle_patch_text_input(self):
+        """Handle text input for the patch name field (simplified single-line version)."""
+        pass  # Text input is handled in the main event loop
+
+    def update_patch_cursor_from_mouse_click(self, rect, y):
+        """Update cursor position based on mouse click in patch name field."""
+        if not rect.collidepoint(self.mouse_pos):
+            return
+
+        # Calculate relative x position
+        relative_x = self.mouse_pos[0] - rect.left - 10  # 10 is padding
+        char_width = 8
+
+        # Calculate character position
+        char_pos = relative_x // char_width
+        self.patch_cursor_pos = max(0, min(char_pos, len(self.patch_name)))
+        self.patch_selection_start = self.patch_cursor_pos
+        self.patch_selection_end = self.patch_cursor_pos
+
+    def draw_patch_text_input(self, rect, y, width, height):
+        """Draw the patch name text input field (simplified single-line version)."""
+        padding = 10
+        char_width = 8
+        line_height = 25
+
+        # Draw the text
+        text_x = rect.left + padding
+        text_y = y + (height - line_height) // 2 + 5
+        display_text = self.patch_name
+
+        # Draw selection background if there's a selection
+        if self.patch_selection_start != self.patch_selection_end:
+            sel_start = min(self.patch_selection_start, self.patch_selection_end)
+            sel_end = max(self.patch_selection_start, self.patch_selection_end)
+            sel_x = text_x + sel_start * char_width
+            sel_width = (sel_end - sel_start) * char_width
+            pygame.draw.rect(self.screen, (100, 150, 200),
+                           (sel_x, text_y - 2, sel_width, line_height))
+
+        # Draw the text
+        self.draw_text(display_text, text_x, text_y, self.small_font)
+
+        # Draw cursor if focused
+        if self.patch_name_focused:
+            cursor_x = text_x + self.patch_cursor_pos * char_width
+            pygame.draw.line(self.screen, (255, 255, 255),
+                           (cursor_x, text_y - 2), (cursor_x, text_y + line_height - 2), 2)
+
+    def paste_clipboard(self):
+        """Paste clipboard content into the agent prompt."""
+        import platform
+        system = platform.system().lower()
+
+        # Try platform-specific clipboard first
+        try:
+            if system == "darwin":  # macOS
+                import subprocess
+                result = subprocess.run(['pbpaste'], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and result.stdout:
+                    clipboard_text = result.stdout
+                    # Normalize line endings
+                    clipboard_text = clipboard_text.replace('\r\n', '\n').replace('\r', '\n')
+                    self.insert_text(clipboard_text)
+                    print(f"Pasted {len(clipboard_text)} characters from clipboard")
+                    return
+
+            elif system == "linux":
+                # Try xclip first, then xsel
+                for cmd in [['xclip', '-selection', 'clipboard', '-o'], ['xsel', '--clipboard', '--output']]:
+                    try:
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                        if result.returncode == 0 and result.stdout:
+                            clipboard_text = result.stdout
+                            # Normalize line endings
+                            clipboard_text = clipboard_text.replace('\r\n', '\n').replace('\r', '\n')
+                            self.insert_text(clipboard_text)
+                            print(f"Pasted {len(clipboard_text)} characters from clipboard")
+                            return
+                    except (subprocess.CalledProcessError, FileNotFoundError):
+                        continue
+
+            elif system == "windows":
+                import subprocess
+                result = subprocess.run(['powershell', 'Get-Clipboard'], capture_output=True, text=True, timeout=5)
+                if result.returncode == 0 and result.stdout:
+                    clipboard_text = result.stdout
+                    # Normalize line endings
+                    clipboard_text = clipboard_text.replace('\r\n', '\n').replace('\r', '\n')
+                    self.insert_text(clipboard_text)
+                    print(f"Pasted {len(clipboard_text)} characters from clipboard")
+                    return
+
+        except Exception as e:
+            print(f"Platform clipboard failed: {e}")
+
+        # Fallback to pygame.scrap (deprecated but might work)
+        try:
+            # Ensure pygame.scrap is initialized
+            if hasattr(pygame.scrap, 'get_init') and not pygame.scrap.get_init():
+                pygame.scrap.init()
+
+            # Try pygame.scrap
+            clipboard_text = pygame.scrap.get(pygame.SCRAP_TEXT).decode('utf-8')
+            # Remove null bytes and normalize line endings
+            clipboard_text = clipboard_text.replace('\x00', '').replace('\r\n', '\n').replace('\r', '\n')
+
+            if clipboard_text.strip():
+                self.insert_text(clipboard_text)
+                print(f"Pasted {len(clipboard_text)} characters from clipboard (pygame)")
+                return
+
+        except Exception as e:
+            pass
+
+        print("Failed to paste from clipboard - try copying text first")
+        print("Supported platforms: macOS, Linux (xclip/xsel), Windows")
+
+    def run_agent(self, prompt: str):
+        """Run the agent with the given prompt."""
+        try:
+            from agent import new_main
+            new_main(prompt=prompt)
+            # Get test results
+            from coding.tools.testing import run_all_tests
+            test_results = run_all_tests()
+
+            # Use dictionary properties directly
+            passed = test_results.get('passed_tests', 0)
+            total = test_results.get('total_tests', 0)
+
+            self.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}
+
+        except Exception as e:
+            print(f"Error running agent: {e}")
+            self.agent_results = {'passed': 0, 'total': 0, 'error': str(e)}
+        finally:
+            self.agent_running = False
+
+    def run_agent_fix(self, results):
+        """Run the agent in fix mode."""
+        try:
+            from agent import new_main
+            new_main(prompt=None, start_from_base=None)  # This will trigger fix mode internally
+            # Get updated test results
+            from coding.tools.testing import run_all_tests
+            test_results = run_all_tests()
+
+            # Use dictionary properties directly
+            passed = test_results.get('passed_tests', 0)
+            total = test_results.get('total_tests', 0)
+
+            self.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}
+
+        except Exception as e:
+            print(f"Error running agent fix: {e}")
+            self.agent_results = {'passed': 0, 'total': 0, 'error': str(e)}
+        finally:
+            self.agent_running = False
+
     # --- HELPER METHODS ---
     def file_received_callback(self, file_path: str, success: bool):
         """Callback when a file transfer is complete."""
@@ -793,9 +1660,6 @@ class BaseMenu:
             shutil.move(file_path, new_path)
 
             self.patch_to_apply = new_path
-            
-            #if new_path.endswith('.json'):
-            #    self.load_patch_from_file(new_path)
         else:
             print(f"✗ Failed to receive file: {file_path}")
 
@@ -812,9 +1676,6 @@ class BaseMenu:
         """Callback when patch file is received from server."""
         print(f"📦 Received merge patch: {patch_path}")
         print("🔧 Applying patch to GameFolder...")
-        print(f"DEBUG: Current working directory: {os.getcwd()}")
-        print(f"DEBUG: Script location: {os.path.abspath(__file__)}")
-        print(f"DEBUG: Project root would be: {os.path.dirname(os.path.dirname(os.path.abspath(__file__)))}")
 
         # CRITICAL FIX: Ensure we're applying patches from the project root directory
         # VersionControl.apply_all_changes applies patches relative to current working directory
@@ -823,15 +1684,12 @@ class BaseMenu:
 
         # Change to project root to ensure patches are applied correctly
         if os.getcwd() != project_root:
-            print(f"DEBUG: Changing working directory from {os.getcwd()} to {project_root}")
             os.chdir(project_root)
 
         try:
             # Import version control system to apply the patch
             action_logger = ActionLogger()
             version_control = VersionControl(action_logger, path_to_security_backup="__TEMP_SECURITY_BACKUP")
-            print(f"DEBUG: About to call apply_all_changes with patch_path: {patch_path}")
-            print(f"DEBUG: Working directory is now: {os.getcwd()}")
             result, errors = version_control.apply_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches=patch_path, skip_warnings=True)
 
             print("\n" * 10)
@@ -853,7 +1711,6 @@ class BaseMenu:
         finally:
             # Always restore original working directory
             if os.getcwd() != original_cwd:
-                print(f"DEBUG: Restoring working directory to {original_cwd}")
                 os.chdir(original_cwd)
 
     def patch_sync_failed_callback(self, reason: str, failed_clients: list, details: list):
@@ -918,19 +1775,12 @@ class BaseMenu:
 
         return True
 
-    def sync_patch_file(self, patch_name: str):
-        # sync the patch file from the server
-        self.client.request_file(patch_name)
 
     def create_room(self):
         # start server
         self.run_server(self.server_host, self.server_port)
         self.connect_to_server("localhost", self.server_port) # localhost is the server host and we are on the same machine
 
-    def create_new_patch(self):
-        """Create a new patch - PLACEHOLDER."""
-        print("Create new patch - PLACEHOLDER")
-        # TODO: Implement patch creation UI
     
     def start_game(self):
         """Start the game."""

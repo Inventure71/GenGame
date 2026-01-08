@@ -387,7 +387,7 @@ For ANY collision-based test (bouncing, damage, pickup):
 ```python
 # ✅ PATTERN: Loop until behavior OR max iterations
 def test_projectile_collision():
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     proj = MyProjectile(x, y, direction, speed, damage, "owner")
     arena.projectiles.append(proj)
     

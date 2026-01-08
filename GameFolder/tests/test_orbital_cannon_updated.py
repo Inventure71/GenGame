@@ -31,7 +31,7 @@ def test_orbital_strike_marker_faster_warmup():
 
 def test_orbital_cannon_shooting_corners():
     """Test shooting from all four corners and center (Mandatory Edge Cases)."""
-    arena = Arena(1000, 800) # Use a specific size for testing
+    arena = Arena(1000, 800, headless=True) # Use a specific size for testing
     gun = OrbitalCannon()
     
     test_positions = [
@@ -55,7 +55,7 @@ def test_orbital_cannon_shooting_corners():
 
 def test_projectile_trajectory_and_collision():
     """Test that TargetingLaser properly spawns a marker on collision with platform."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     # Platform in the middle. Rect(300, 350, 200, 50) in screen coords?
     # Actually Platform(x, y, w, h) in GameFolder.
     # The collision logic in GAME_arena uses plat.rect which is created in Platform.__init__.
@@ -82,7 +82,7 @@ def test_projectile_trajectory_and_collision():
 
 def test_orbital_blast_integration_damage():
     """Verify full sequence from Marker to Blast dealing high damage."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     marker = OrbitalStrikeMarker(400, 300, "attacker")
     arena.projectiles.append(marker)
     
@@ -113,5 +113,5 @@ def test_orbital_blast_integration_damage():
 
 def test_lootpool_integration():
     """Verify Orbital Cannon is registered in the lootpool."""
-    arena = setup_battle_arena()
+    arena = setup_battle_arena(headless=True)
     assert "Orbital Cannon" in arena.lootpool, "Orbital Cannon not in lootpool"
