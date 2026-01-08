@@ -2,7 +2,6 @@ import math
 import time
 from dotenv import load_dotenv
 import pygame
-from BASE_files.BASE_menu import BaseMenu
 from coding.non_callable_tools.backup_handling import BackupHandler
 from coding.generic_implementation import GenericHandler
 from coding.tools.file_handling import get_tree_directory, read_file, create_file, get_directory
@@ -19,7 +18,7 @@ def main_version_control(file_containing_patches: str = "patches.json"):
     check_integrity()
     action_logger.start_session(visual=True)
     version_control = VersionControl(action_logger, path_to_security_backup="__TEMP_SECURITY_BACKUP")
-    result, errors = version_control.merge_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches=file_containing_patches)
+    result, errors = version_control.apply_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches=file_containing_patches)
     print("\n" * 10)
     if result:
         print("-----    SUCCESS    -----")

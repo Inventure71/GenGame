@@ -49,6 +49,9 @@ class GameServer:
         self.player_name_to_id: Dict[str, str] = {}  # requested_name -> assigned_player_id
         self.player_id_to_character: Dict[str, str] = {}  # assigned_player_id -> character_id
 
+        # Pending connections (sockets waiting for player_name)
+        self.pending_clients: Dict[socket.socket, Tuple[str, int]] = {}  # socket -> (ip, port)
+
         # Game state
         self.arena = None
         self.tick_rate = 60  # 60 FPS simulation
@@ -59,6 +62,13 @@ class GameServer:
         # File synchronization
         self.game_files = {}  # filename -> content
         self._load_game_files()
+
+        # Patch synchronization for game start
+        self.clients_patch_received: Set[str] = set()  # Track which clients have received patches
+        self.clients_patch_ready: Set[str] = set()  # Track which clients have applied patches successfully
+        self.clients_patch_failed: Dict[str, str] = {}  # Track which clients failed: player_id -> error_message
+        self.waiting_for_patch_sync = False  # Flag to indicate we're waiting for patch sync
+        self.waiting_for_patch_received = False  # Flag to indicate we're waiting for patch reception
 
         print(f"Server initialized on {host}:{port}")
 
@@ -83,18 +93,8 @@ class GameServer:
         """Start the server."""
         self.running = True
 
-        # Initialize the game arena using the centralized setup function
-        # with headless mode enabled (no graphics rendering on server)
-        self.arena = setup_battle_arena(width=1200, height=700, headless=True)
-        
-        # Assign network player IDs to the characters created by setup_battle_arena()
-        # setup_battle_arena() creates Player1 and Player2 - we need to assign network IDs
-        if len(self.arena.characters) >= 2:
-            self.arena.characters[0].id = "player_0"  # First player
-            self.arena.characters[1].id = "player_1"  # Second player
-        else:
-            print("Warning: setup_battle_arena() didn't create enough characters!")
-        
+        # Arena will be created dynamically when first client requests file sync
+        # This allows us to create the arena with the correct number of connected players
         self.game_start_time = time.time()
 
         # Start network thread
@@ -138,14 +138,158 @@ class GameServer:
         """Handle a new client connection."""
         print(f"New connection from {address}")
 
-        # Assign player ID
-        player_id = f"player_{len(self.clients)}"
-        self.clients[player_id] = client_socket
-        self.client_addresses[player_id] = address
+        # Add to pending clients - wait for player_name message
+        self.pending_clients[client_socket] = address
         client_socket.setblocking(False)
 
-        # Send file synchronization data
-        self._send_file_sync(player_id)
+        print(f"Waiting for player_name from {address}")
+
+    def _recreate_arena_with_players(self):
+        """Recreate the arena with the currently connected players."""
+        # Get list of connected player names (these are already the custom names)
+        connected_player_names = list(self.clients.keys())
+        print(f"Recreating arena with players: {connected_player_names}")
+
+        # Recreate arena with actual player names
+        self.arena = setup_battle_arena(width=1200, height=700, headless=True, player_names=connected_player_names)
+
+        # Set character IDs to match player names
+        for i, character in enumerate(self.arena.characters):
+            if i < len(connected_player_names):
+                player_name = connected_player_names[i]
+                character.id = player_name
+
+    def _initiate_game_start_with_patch_sync(self):
+        """Generate merge patch and send to all clients, then wait for them to apply."""
+        print("Initiating game start with patch synchronization...")
+        
+        # Generate merge_patch.json from all patches in __patches directory
+        merge_patch_path = self._generate_merge_patch()
+        
+        if not merge_patch_path or not os.path.exists(merge_patch_path):
+            print("No patches to merge or generation failed, starting game directly")
+            self._notify_all_clients_game_start()
+            return
+        
+        # Send the merge patch to all clients
+        print(f"Sending merge patch to all clients: {merge_patch_path}")
+        self.waiting_for_patch_received = True
+        self.clients_patch_received.clear()
+        self.clients_patch_ready.clear()
+        self.clients_patch_failed.clear()
+
+        for player_id in self.clients.keys():
+            self._send_patch_file(player_id, merge_patch_path)
+    
+    def _generate_merge_patch(self) -> Optional[str]:
+        """Generate a single merge_patch.json from all patches in __patches directory.
+        
+        For now: Returns the first existing patch file found.
+        
+        TODO: Implement proper 3-way merging for multiple patches using:
+              from coding.non_callable_tools.version_control import VersionControl
+              vc = VersionControl()
+              success, output = vc.merge_patches(
+                  base_backup_path="__game_backups",
+                  patch_a_path=patch_files[0],
+                  patch_b_path=patch_files[1],
+                  output_path=os.path.join(patches_dir, "merge_patch.json")
+              )
+              For >2 patches, merge iteratively: merge(merge(A,B), C), etc.
+        """
+        patches_dir = os.path.join(os.path.dirname(__file__), "__patches")
+        
+        if not os.path.exists(patches_dir):
+            print("No __patches directory found")
+            return None
+        
+        # Find all .json patch files (excluding merge_patch.json to avoid circular logic)
+        patch_files = [f for f in glob.glob(os.path.join(patches_dir, "*.json")) 
+                       if not f.endswith("merge_patch.json")]
+        
+        if not patch_files:
+            print("No patch files found in __patches directory")
+            return None
+        
+        # FOR NOW: Just use the first patch file as-is
+        if len(patch_files) == 1:
+            print(f"Using single patch file: {os.path.basename(patch_files[0])}")
+            return patch_files[0]
+        else:
+            # Multiple patches exist - for now just use the first one
+            print(f"⚠️  Found {len(patch_files)} patches:")
+            for pf in patch_files:
+                print(f"    - {os.path.basename(pf)}")
+            print(f"⚠️  Using only first patch: {os.path.basename(patch_files[0])}")
+            print(f"⚠️  TODO: Implement proper 3-way merge using VersionControl.merge_patches()")
+            return patch_files[0]
+    
+    def _send_patch_file(self, player_id: str, patch_file_path: str):
+        """Send a patch file to a specific client."""
+        try:
+            client_socket = self.clients[player_id]
+            
+            # Read the patch file
+            with open(patch_file_path, 'rb') as f:
+                patch_content = f.read()
+            
+            # Send patch data message
+            message = {
+                'type': 'patch_file',
+                'filename': 'merge_patch.json',
+                'content': patch_content,
+                'size': len(patch_content)
+            }
+            
+            data = pickle.dumps(message)
+            length_bytes = len(data).to_bytes(4, byteorder='big')
+            client_socket.send(length_bytes + data)
+            
+            print(f"Sent merge patch to {player_id} ({len(patch_content)} bytes)")
+        except Exception as e:
+            print(f"Failed to send patch to {player_id}: {e}")
+
+    def _notify_all_clients_game_start(self):
+        """Notify all connected clients to start the game."""
+        print("Notifying all clients to start game...")
+
+        message = {
+            'type': 'game_start'
+        }
+        data = pickle.dumps(message)
+        length_bytes = len(data).to_bytes(4, byteorder='big')
+
+        for player_id, client_socket in self.clients.items():
+            try:
+                client_socket.send(length_bytes + data)
+                print(f"Sent game_start to {player_id}")
+            except Exception as e:
+                print(f"Failed to send game_start to {player_id}: {e}")
+    
+    def _notify_patch_sync_failed(self):
+        """Notify all clients that patch synchronization failed and game cannot start."""
+        print("Notifying all clients that patch sync failed...")
+        
+        # Build failure details
+        failure_details = []
+        for failed_player, error in self.clients_patch_failed.items():
+            failure_details.append(f"{failed_player}: {error}")
+        
+        message = {
+            'type': 'patch_sync_failed',
+            'reason': 'One or more clients failed to apply the merge patch',
+            'failed_clients': list(self.clients_patch_failed.keys()),
+            'details': failure_details
+        }
+        data = pickle.dumps(message)
+        length_bytes = len(data).to_bytes(4, byteorder='big')
+        
+        for player_id, client_socket in self.clients.items():
+            try:
+                client_socket.send(length_bytes + data)
+                print(f"Sent patch_sync_failed notification to {player_id}")
+            except Exception as e:
+                print(f"Failed to send patch_sync_failed to {player_id}: {e}")
 
     def _send_file_sync(self, player_id: str):
         """Send game files to client for synchronization."""
@@ -171,7 +315,8 @@ class GameServer:
 
     def _handle_client_messages(self):
         """Receive and process messages from all clients."""
-        sockets_to_check = list(self.clients.values())
+        # Check both regular clients and pending clients
+        sockets_to_check = list(self.clients.values()) + list(self.pending_clients.keys())
 
         if not sockets_to_check:
             return
@@ -181,21 +326,37 @@ class GameServer:
 
             for client_socket in readable:
                 try:
-                    # Find player_id for this socket
+                    # Find player_id for this socket (check both regular and pending clients)
                     player_id = None
+                    is_pending = False
+
+                    # Check regular clients first
                     for pid, sock in self.clients.items():
                         if sock == client_socket:
                             player_id = pid
                             break
 
+                    # If not found, check pending clients
                     if not player_id:
-                        continue
+                        if client_socket in self.pending_clients:
+                            is_pending = True
+                            player_id = "pending"  # Temporary identifier for pending clients
+                        else:
+                            continue
 
                     # Receive message
                     length_bytes = client_socket.recv(4)
                     if not length_bytes:
                         # Client disconnected
-                        self._handle_client_disconnect(player_id)
+                        if is_pending:
+                            # Pending client disconnected
+                            if client_socket in self.pending_clients:
+                                address = self.pending_clients[client_socket]
+                                del self.pending_clients[client_socket]
+                                print(f"Pending client from {address} disconnected before sending player_name")
+                        else:
+                            # Regular client disconnected
+                            self._handle_client_disconnect(player_id)
                         continue
 
                     message_length = int.from_bytes(length_bytes, byteorder='big')
@@ -210,11 +371,19 @@ class GameServer:
 
                     if len(data) == message_length:
                         message = pickle.loads(data)
-                        self._process_client_message(player_id, message)
+                        self._process_client_message(player_id, message, client_socket)
 
                 except Exception as e:
                     # Client likely disconnected
-                    self._handle_client_disconnect(player_id)
+                    if is_pending:
+                        # Pending client disconnected
+                        if client_socket in self.pending_clients:
+                            address = self.pending_clients[client_socket]
+                            del self.pending_clients[client_socket]
+                            print(f"Pending client from {address} disconnected: {e}")
+                    else:
+                        # Regular client disconnected
+                        self._handle_client_disconnect(player_id)
                     continue
 
         except Exception as e:
@@ -231,15 +400,84 @@ class GameServer:
             del self.client_addresses[player_id]
             if player_id in self.input_queues:
                 del self.input_queues[player_id]
+            # Remove from active character mapping
+            if player_id in self.player_id_to_character:
+                del self.player_id_to_character[player_id]
             print(f"Client {player_id} disconnected")
 
-    def _process_client_message(self, player_id: str, message: dict):
+    def _process_client_message(self, player_id: str, message: dict, client_socket: socket.socket = None):
         """Process a message from a client."""
         msg_type = message.get('type', 'input')
 
         if msg_type == 'input':
             # Add to input queue
             self.input_queues[player_id].append(message)
+        elif msg_type == 'request_file_sync':
+            # Client requested file synchronization
+            # If this is the first file sync request, recreate the arena with current players
+            if not hasattr(self, '_arena_initialized'):
+                self._recreate_arena_with_players()
+                self._arena_initialized = True
+
+            self._send_file_sync(player_id)
+        elif msg_type == 'request_start_game':
+            # Client requested to start the game - send merge patch to all clients
+            print(f"Player {player_id} requested to start game")
+            self._initiate_game_start_with_patch_sync()
+        elif msg_type == 'patch_received':
+            # Client acknowledged that they've received the patch
+            print(f"📦 {player_id} received the merge patch")
+
+            if self.waiting_for_patch_received:
+                self.clients_patch_received.add(player_id)
+
+                # Check if all clients have received the patch
+                all_clients = set(self.clients.keys())
+                if self.clients_patch_received == all_clients:
+                    print("✅ All clients have received the patch - now waiting for application")
+                    self.waiting_for_patch_received = False
+                    self.waiting_for_patch_sync = True
+        elif msg_type == 'patch_applied':
+            # Client acknowledged that they've applied the patch
+            patch_success = message.get('success', True)
+            error_message = message.get('error', None)
+            
+            if patch_success:
+                print(f"✅ {player_id} successfully applied the merge patch")
+                self.clients_patch_ready.add(player_id)
+            else:
+                print(f"❌ {player_id} FAILED to apply the merge patch: {error_message}")
+                self.clients_patch_failed[player_id] = error_message
+            
+            # Check if all clients have applied the patch (success or failure)
+            all_clients = set(self.clients.keys())
+            responded_clients = self.clients_patch_ready | set(self.clients_patch_failed.keys())
+
+            if self.waiting_for_patch_sync and responded_clients == all_clients:
+                print(f"\nPatch sync complete: {len(self.clients_patch_ready)} succeeded, {len(self.clients_patch_failed)} failed")
+                
+                # Only start game if ALL clients succeeded
+                if len(self.clients_patch_failed) == 0:
+                    print("✅ All clients ready - starting game!")
+                    self.waiting_for_patch_received = False
+                    self.waiting_for_patch_sync = False
+                    self.clients_patch_received.clear()
+                    self.clients_patch_ready.clear()
+                    self._notify_all_clients_game_start()
+                else:
+                    print("❌ Cannot start game - patch application failed on some clients:")
+                    for failed_player, error in self.clients_patch_failed.items():
+                        print(f"  - {failed_player}: {error}")
+                    
+                    # Notify all clients that game start was aborted
+                    self._notify_patch_sync_failed()
+                    
+                    # Reset state
+                    self.waiting_for_patch_received = False
+                    self.waiting_for_patch_sync = False
+                    self.clients_patch_received.clear()
+                    self.clients_patch_ready.clear()
+                    self.clients_patch_failed.clear()
         elif msg_type == 'file_sync_ack':
             # Client acknowledged file sync
             print(f"{player_id} acknowledged file sync")
@@ -247,23 +485,56 @@ class GameServer:
             # Client sent their requested player name
             requested_name = message.get('player_name')
             if requested_name:
+                # Check if this is a pending client
+                if player_id == "pending" and client_socket in self.pending_clients:
+                    # Promote pending client to regular client using their custom name as player_id
+                    client_address = self.pending_clients[client_socket]
+                    actual_player_id = requested_name
+
+                    # Check if this player name is already taken
+                    if actual_player_id in self.clients:
+                        print(f"Player name '{requested_name}' already taken, rejecting")
+                        # Send rejection message
+                        response = {
+                            'type': 'name_rejected',
+                            'reason': 'Name already taken'
+                        }
+                        data = pickle.dumps(response)
+                        length_bytes = len(data).to_bytes(4, byteorder='big')
+                        try:
+                            client_socket.send(length_bytes + data)
+                        except:
+                            pass
+                        return
+
+                    # Accept the client
+                    self.clients[actual_player_id] = client_socket
+                    self.client_addresses[actual_player_id] = client_address
+                    self.input_queues[actual_player_id] = []
+                    del self.pending_clients[client_socket]
+                    player_id = actual_player_id
+                    print(f"Player '{requested_name}' registered with custom ID")
+
                 self.player_name_to_id[requested_name] = player_id
-                # Map player_id to character_id
-                character_id = "player_0" if requested_name == "Player1" else "player_1"
+
+                # Use the custom name directly as character ID
+                character_id = requested_name
                 self.player_id_to_character[player_id] = character_id
+
+                print(f"Player '{requested_name}' connected as {character_id}")
 
                 # Send back the assigned character info
                 response = {
                     'type': 'character_assignment',
                     'requested_name': requested_name,
-                    'assigned_character': requested_name
+                    'assigned_character': requested_name  # Use the requested name for display
                 }
                 data = pickle.dumps(response)
                 length_bytes = len(data).to_bytes(4, byteorder='big')
                 try:
                     self.clients[player_id].send(length_bytes + data)
-                except:
-                    pass
+                except Exception as e:
+                    print(f"Failed to send character assignment: {e}")
         elif msg_type == 'file_request':
             # Client requesting a file
             self._handle_file_request(player_id, message)
@@ -615,8 +886,6 @@ class GameServer:
 
 def main():
     """Main server entry point."""
-    # Clean up old log files before starting
-    cleanup_old_logs()
 
     import argparse
 

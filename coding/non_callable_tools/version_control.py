@@ -2,6 +2,7 @@ import os
 import re
 import json
 import ast
+import time
 import glob
 import difflib
 from typing import Tuple, List, Dict, Optional
@@ -137,7 +138,7 @@ class VersionControl:
 
         return success_count == len(changes), success_count, len(changes), errors
 
-    def merge_all_changes(self, needs_rebase: bool = False, path_to_BASE_backup: str = None, file_containing_patches: str = None):
+    def apply_all_changes(self, needs_rebase: bool = False, path_to_BASE_backup: str = None, file_containing_patches: str = None, skip_warnings: bool = False):
         if file_containing_patches is None:
             print("ERROR: File containing patches is not provided")
             return False, "File containing patches is not provided"
@@ -161,7 +162,9 @@ class VersionControl:
                     return False, "No base backup found, cannot rebase"
                 base_backup_handler.restore_backup(name_of_backup, target_path="GameFolder")
                 print("Restored to base code")
-                input("Press Enter to continue...")
+                time.sleep(1)
+                if not skip_warnings:
+                    input("Press Enter to continue...")
             else:
                 print("ERROR:No base backup provided but needs rebase, cannot rebase")
                 return False, "No base backup provided but needs rebase, cannot rebase"
@@ -176,10 +179,11 @@ class VersionControl:
 
         if not success:
             print("Failed to apply all changes")
-            answer = input("An error occured, do you want to ask a model to fix the patch? Y/N: ").lower().strip()
-            if answer == "y":
-                print("Attempting fix with model")
-                raise("Not implemented yet")
+            if not skip_warnings:
+                answer = input("An error occured, do you want to ask a model to fix the patch? Y/N: ").lower().strip()
+                if answer == "y":
+                    print("Attempting fix with model")
+                    raise("Not implemented yet")
 
             print("Restoring to temporary backup")
             self.security_backup_handler.restore_backup("GameFolder", target_path="GameFolder")

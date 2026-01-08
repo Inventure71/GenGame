@@ -7,32 +7,56 @@ from GameFolder.weapons.BlackHoleGun import BlackHoleGun
 from GameFolder.weapons.OrbitalCannon import OrbitalCannon
 from GameFolder.weapons.TornadoGun import TornadoGun
 
-def setup_battle_arena(width: int = 1200, height: int = 700, headless: bool = False):
+def setup_battle_arena(width: int = 1200, height: int = 700, headless: bool = False, player_names: list = None):
     """
     Initializes and sets up the entire arena with platforms, players, and lootpool.
-    This can be modified here in GameFolder while main.py stays clean. 
+    This can be modified here in GameFolder while main.py stays clean.
     This function can be modified but it needs to be named setup_battle_arena.
     Most importantly this is the only function that will be called so if a separate class of arena exists, it needs to be imported here and setup here.
-    
+
     Args:
         width: Arena width in pixels (default: 1200)
         height: Arena height in pixels (default: 700)
         headless: If True, runs without graphics/display (default: False)
-    
+        player_names: List of player names to create characters for (default: None, uses ["Player1", "Player2"])
+
     Returns:
         Arena: Configured arena instance ready for gameplay
     """
     arena = Arena(width, height, headless=headless)
-    
+
+    # Default player names if none provided
+    if player_names is None:
+        player_names = ["Player1", "Player2"]
+
+    # Player colors and positions
+    player_configs = [
+        {"color": (50, 255, 100), "location": [150, 140], "description": "Green"},
+        {"color": (255, 100, 100), "location": [1000, 140], "description": "Red"},
+        {"color": (100, 100, 255), "location": [150, 500], "description": "Blue"},
+        {"color": (255, 255, 100), "location": [1000, 500], "description": "Yellow"},
+        {"color": (255, 100, 255), "location": [575, 320], "description": "Purple"},
+        {"color": (100, 255, 255), "location": [575, 100], "description": "Cyan"},
+    ]
+
     # 1. Add Players
-    player1 = Character(name="Player1", description="Green", image="", location=[150, 140], width=45, height=45)
-    player1.color = (50, 255, 100)
-    
-    player2 = Character(name="Player2", description="Red", image="", location=[1000, 140], width=45, height=45)
-    player2.color = (255, 100, 100)
-    
-    arena.add_character(player1)
-    arena.add_character(player2)
+    for i, player_name in enumerate(player_names):
+        if i < len(player_configs):
+            config = player_configs[i]
+            player = Character(name=player_name, description=config["description"], image="",
+                             location=config["location"], width=45, height=45)
+            player.color = config["color"]
+            arena.add_character(player)
+            print(f"Created character: {player_name} ({config['description']}) at {config['location']}")
+        else:
+            # Fallback for more than 6 players
+            x_pos = 150 + (i % 3) * 400
+            y_pos = 140 + (i // 3) * 200
+            player = Character(name=player_name, description=f"Player {i+1}", image="",
+                             location=[x_pos, y_pos], width=45, height=45)
+            player.color = (255, 255, 255)  # White as fallback
+            arena.add_character(player)
+            print(f"Created character: {player_name} (fallback) at [{x_pos}, {y_pos}]")
     
     # 2. Add Platforms
     platforms = [

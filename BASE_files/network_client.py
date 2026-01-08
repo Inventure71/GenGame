@@ -47,6 +47,10 @@ class NetworkClient:
         self.on_disconnected = None
         self.on_file_received = None
         self.on_file_transfer_progress = None
+        self.on_name_rejected = None
+        self.on_patch_received = None  # New callback for when patch is received
+        self.on_patch_sync_failed = None  # New callback for when patch sync fails
+        self.on_game_start = None
 
         # Lag compensation
         self.last_server_time = 0.0
@@ -120,6 +124,26 @@ class NetworkClient:
         message = {
             'type': 'player_name',
             'player_name': player_name
+        }
+        self.outgoing_queue.append(message)
+
+    def request_file_sync(self):
+        """Request file synchronization from server."""
+        if not self.connected:
+            return
+
+        message = {
+            'type': 'request_file_sync'
+        }
+        self.outgoing_queue.append(message)
+
+    def request_start_game(self):
+        """Request to start the game (host only)."""
+        if not self.connected:
+            return
+
+        message = {
+            'type': 'request_start_game'
         }
         self.outgoing_queue.append(message)
 
@@ -283,6 +307,17 @@ class NetworkClient:
         if msg_type == 'file_sync':
             if self.on_file_sync_received:
                 self.on_file_sync_received(message['files'])
+        elif msg_type == 'name_rejected':
+            reason = message.get('reason', 'Unknown reason')
+            print(f"Player name rejected: {reason}")
+            if self.on_name_rejected:
+                self.on_name_rejected(reason)
+            else:
+                self.disconnect()
+        elif msg_type == 'game_start':
+            print("Received game_start notification - starting game!")
+            if self.on_game_start:
+                self.on_game_start()
         elif msg_type == 'game_state':
             if self.on_game_state_received:
                 self.on_game_state_received(message)
@@ -294,6 +329,18 @@ class NetworkClient:
         elif msg_type == 'file_complete':
             if self.on_file_received:
                 self.on_file_received(message['file_path'], message.get('success', True))
+        elif msg_type == 'patch_file':
+            self._handle_patch_file(message)
+        elif msg_type == 'patch_sync_failed':
+            reason = message.get('reason', 'Unknown reason')
+            failed_clients = message.get('failed_clients', [])
+            details = message.get('details', [])
+            print(f"❌ Patch sync failed: {reason}")
+            print(f"Failed clients: {', '.join(failed_clients)}")
+            for detail in details:
+                print(f"  - {detail}")
+            if self.on_patch_sync_failed:
+                self.on_patch_sync_failed(reason, failed_clients, details)
 
     def _handle_file_chunk(self, message: dict):
         """Handle incoming file chunk."""
@@ -379,6 +426,60 @@ class NetworkClient:
             # Clean up transfer state
             if file_path in self.file_transfers:
                 del self.file_transfers[file_path]
+    
+    def _handle_patch_file(self, message: dict):
+        """Handle incoming patch file from server."""
+        filename = message.get('filename', 'merge_patch.json')
+        content = message.get('content', b'')
+
+        print(f"Received patch file: {filename} ({len(content)} bytes)")
+
+        # Save patch to local directory
+        patch_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "__patches")
+        os.makedirs(patch_dir, exist_ok=True)
+
+        patch_path = os.path.join(patch_dir, filename)
+
+        try:
+            with open(patch_path, 'wb') as f:
+                f.write(content)
+            print(f"Saved patch to: {patch_path}")
+
+            # Send acknowledgment that patch was received
+            self._send_patch_received()
+
+            # Now apply the patch
+            if self.on_patch_received:
+                self.on_patch_received(patch_path)
+        except Exception as e:
+            print(f"Error saving patch file: {e}")
+            # Send failure acknowledgment
+            self.send_patch_applied(success=False, error_message=f"Failed to receive patch file: {str(e)}")
+
+    def _send_patch_received(self):
+        """Send acknowledgment that patch file was received."""
+        message = {'type': 'patch_received', 'player_id': self.player_id}
+        self.outgoing_queue.append(message)
+        print("Sent patch_received acknowledgment to server")
+    
+    def send_patch_applied(self, success: bool = True, error_message: str = None):
+        """Send acknowledgment to server that patch has been applied.
+        
+        Args:
+            success: Whether patch was applied successfully
+            error_message: Optional error message if success is False
+        """
+        message = {
+            'type': 'patch_applied',
+            'player_id': self.player_id,
+            'success': success,
+            'error': error_message
+        }
+        self.outgoing_queue.append(message)
+        status = "successfully" if success else "with errors"
+        print(f"Sent patch_applied acknowledgment to server: {status}")
+        if error_message:
+            print(f"  Error: {error_message}")
 
 
 class ClientPrediction:
@@ -660,14 +761,15 @@ def sync_game_files(files: dict):
     Overwrites local GameFolder files with server versions.
     """
     try:
-        game_folder = os.path.join(os.path.dirname(__file__), "GameFolder")
+        # Use main GameFolder at project root level, not BASE_files/GameFolder
+        game_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), "GameFolder")
 
         for filepath, content in files.items():
             # Ensure the path is within GameFolder
             if not filepath.startswith("GameFolder/"):
                 continue
 
-            full_path = os.path.join(os.path.dirname(__file__), filepath)
+            full_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), filepath)
             full_path = os.path.abspath(full_path)  # Normalize path
 
             # Security check: ensure it's within the GameFolder
