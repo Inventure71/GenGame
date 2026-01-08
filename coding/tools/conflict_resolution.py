@@ -118,7 +118,20 @@ def get_all_conflicts(patch_path: str) -> Dict[str, List[Dict]]:
     return result
 
 
-def resolve_conflict(patch_path: str = None, file_path: str = None, 
+# Global tracker for resolutions applied during LLM process
+_resolution_tracker = {}
+
+def get_resolution_tracker():
+    """Get the global resolution tracker."""
+    global _resolution_tracker
+    return _resolution_tracker
+
+def clear_resolution_tracker():
+    """Clear the resolution tracker."""
+    global _resolution_tracker
+    _resolution_tracker = {}
+
+def resolve_conflict(patch_path: str = None, file_path: str = None,
                      conflict_num: int = None, resolution: str = None,
                      manual_content: list = None, **kwargs) -> str:
     """
@@ -191,6 +204,14 @@ def resolve_conflict(patch_path: str = None, file_path: str = None,
         new_lines = lines[:target['start_line_idx']] + replacement + lines[target['end_line_idx'] + 1:]
         change['diff'] = '\n'.join(new_lines)
         
+        # Track the resolution for caching
+        global _resolution_tracker
+        key = f"{file_path}:{conflict_num}"
+        if resolution == 'manual':
+            _resolution_tracker[key] = {"manual_content": manual_content}
+        else:
+            _resolution_tracker[key] = {"resolution": resolution}
+
         # Save the updated patch
         save_patch_file(patch_path, name, changes)
         return f"Successfully resolved conflict #{conflict_num} in '{file_path}' using '{resolution}'"

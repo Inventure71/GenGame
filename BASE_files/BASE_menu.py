@@ -15,6 +15,7 @@ import traceback
 
 from server import GameServer
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
+from BASE_files.patch_manager import PatchManager, PatchInfo
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.action_logger import ActionLogger
 
@@ -311,6 +312,13 @@ class BaseMenu:
         self.server_instance = None  # Store server instance for shutdown
         self.server_host = "127.0.0.1"
         self.server_port = 5555
+        
+        # Patch manager
+        self.patch_manager = PatchManager()
+        self.patches_ready = False  # Track if player marked patches as ready
+        self.scroll_offset = 0  # For scrollable patch list
+        self.max_visible_patches = 8  # Number of patches visible at once
+        
         print("BaseMenu initialization complete.")
 
     def draw_button(self, text: str, x: int, y: int, width: int, height: int, hovered: bool = False) -> pygame.Rect:
@@ -459,7 +467,7 @@ class BaseMenu:
             self.error_message = None
 
     def render_room_menu(self):
-        """Render the room menu."""
+        """Render the room menu with patch manager."""
         self.screen.fill(self.menu_background_color)
 
         # Try to connect if not already connected (happens when entering room)
@@ -478,26 +486,101 @@ class BaseMenu:
                     self.show_error_message("Failed to connect to room - no server found")
                     self.show_menu("main")
                     return
+        
+        # Scan patches if not done yet
+        if not self.patch_manager.available_patches:
+            self.patch_manager.scan_patches()
 
         # Title
-        self.draw_text("Game Room", 700, 80, self.menu_font, center=True)
+        self.draw_text("Game Room", 700, 40, self.menu_font, center=True)
 
         # Room status
         status_text = f"Status: {'Connected' if self.client and self.client.connected else 'Connecting...'}"
-        self.draw_text(status_text, 700, 150, self.small_font, center=True)
+        self.draw_text(status_text, 700, 90, self.small_font, center=True)
 
-        # Buttons
+        # === PATCH MANAGER UI ===
+        patch_panel_x = 150
+        patch_panel_y = 130
+        patch_panel_width = 1100
+        patch_panel_height = 450
+        
+        # Draw patch panel background
+        pygame.draw.rect(self.screen, (30, 30, 40), 
+                        (patch_panel_x, patch_panel_y, patch_panel_width, patch_panel_height))
+        pygame.draw.rect(self.screen, (100, 100, 120), 
+                        (patch_panel_x, patch_panel_y, patch_panel_width, patch_panel_height), 2)
+        
+        # Patch selection title
+        self.draw_text(f"Select Patches (0-3) - {len(self.patch_manager.selected_patches)}/3 selected", 
+                      patch_panel_x + 10, patch_panel_y + 10, self.button_font)
+        
+        # Scrollable patch list
+        list_start_y = patch_panel_y + 50
+        item_height = 45
+        
+        patches = self.patch_manager.available_patches
+        visible_patches = patches[self.scroll_offset:self.scroll_offset + self.max_visible_patches]
+        
+        for i, patch in enumerate(visible_patches):
+            actual_index = self.scroll_offset + i
+            item_y = list_start_y + i * item_height
+            
+            # Draw patch item background
+            item_color = (50, 100, 50) if patch.selected else (50, 50, 60)
+            item_rect = pygame.Rect(patch_panel_x + 10, item_y, patch_panel_width - 20, item_height - 5)
+            
+            # Check if mouse hovering
+            is_hovered = item_rect.collidepoint(self.mouse_pos)
+            if is_hovered and not patch.selected:
+                item_color = (70, 70, 80)
+            
+            pygame.draw.rect(self.screen, item_color, item_rect, border_radius=5)
+            pygame.draw.rect(self.screen, (150, 150, 180), item_rect, 2, border_radius=5)
+            
+            # Check for click
+            if self.check_button_click(item_rect):
+                self.patch_manager.toggle_selection(actual_index)
+            
+            # Draw patch info
+            checkbox = "[X]" if patch.selected else "[ ]"
+            text = f"{checkbox} {patch.name} (Base: {patch.base_backup}, Changes: {patch.num_changes})"
+            self.draw_text(text, patch_panel_x + 20, item_y + 12, self.small_font)
+        
+        # Scroll indicators
+        if self.scroll_offset > 0:
+            self.draw_text("▲ Scroll Up", patch_panel_x + patch_panel_width - 120, patch_panel_y + 10, 
+                          self.small_font, color=(200, 200, 255))
+        if self.scroll_offset + self.max_visible_patches < len(patches):
+            self.draw_text("▼ Scroll Down", patch_panel_x + patch_panel_width - 120, 
+                          patch_panel_y + patch_panel_height - 30, 
+                          self.small_font, color=(200, 200, 255))
+        
+        # Show no patches message if empty
+        if not patches:
+            self.draw_text("No patches found in __patches directory", 
+                          700, patch_panel_y + 200, self.button_font, center=True)
+
+        # === BUTTONS ===
         center_x = 700
-        button_y = 250
+        button_y = 620
         button_spacing = 80
 
-        # Start Game Button (only show if connected)
+        # Ready/Start Game Button (only show if connected)
         if self.client and self.client.connected:
-            start_rect = self.draw_button("Start Game", center_x - self.button_width//2, button_y,
-                                         self.button_width, self.button_height,
-                                         self.check_button_hover(center_x - self.button_width//2, button_y, self.button_width, self.button_height))
-            if self.check_button_click(start_rect):
-                self.on_start_game_click()
+            ready_text = "Ready!" if self.patches_ready else "Mark as Ready"
+            ready_color = self.button_hover_color if self.patches_ready else self.button_color
+            
+            ready_rect = pygame.Rect(center_x - self.button_width//2, button_y, 
+                                    self.button_width, self.button_height)
+            pygame.draw.rect(self.screen, ready_color, ready_rect, border_radius=8)
+            pygame.draw.rect(self.screen, (150, 150, 180), ready_rect, 2, border_radius=8)
+            
+            text_surf = self.button_font.render(ready_text, True, self.button_text_color)
+            text_rect = text_surf.get_rect(center=ready_rect.center)
+            self.screen.blit(text_surf, text_rect)
+            
+            if self.check_button_click(ready_rect):
+                self.on_ready_click()
             button_y += button_spacing
 
         # Leave Room Button
@@ -516,7 +599,7 @@ class BaseMenu:
 
         # Show error message if any (for a few seconds)
         if self.error_message and pygame.time.get_ticks() - self.error_message_time < 5000:  # 5 seconds
-            self.draw_text(self.error_message, 700, 550, self.small_font, color=(255, 100, 100), center=True)
+            self.draw_text(self.error_message, 700, 850, self.small_font, color=(255, 100, 100), center=True)
         elif self.error_message:
             # Clear old error message
             self.error_message = None
@@ -590,7 +673,7 @@ class BaseMenu:
         pygame.quit()
 
     def handle_key_input(self, event):
-        """Handle keyboard input for text fields."""
+        """Handle keyboard input for text fields and scrolling."""
         if self.player_id_focused:
             if event.key == pygame.K_RETURN:
                 self.player_id_focused = False
@@ -602,6 +685,14 @@ class BaseMenu:
                 # Add printable characters
                 if event.unicode.isprintable():
                     self.player_id += event.unicode
+        
+        # Handle scrolling in room menu
+        elif self.current_menu == "room":
+            if event.key == pygame.K_UP:
+                self.scroll_offset = max(0, self.scroll_offset - 1)
+            elif event.key == pygame.K_DOWN:
+                max_offset = max(0, len(self.patch_manager.available_patches) - self.max_visible_patches)
+                self.scroll_offset = min(max_offset, self.scroll_offset + 1)
 
     # Placeholder methods for menu actions
     def on_create_room_click(self):
@@ -637,6 +728,23 @@ class BaseMenu:
         print("Quit clicked")
         self.running = False
 
+    def on_ready_click(self):
+        """Handle ready button click - sends patches to server."""
+        print("Ready clicked - sending patches to server")
+        if self.client and self.client.connected:
+            # Mark as ready
+            self.patches_ready = True
+            
+            # Get selected patches info
+            selected_patches = self.patch_manager.get_selected_patches_info()
+            
+            # Send patches to server
+            self.client.send_patches_selection(selected_patches)
+            
+            print(f"Sent {len(selected_patches)} patch(es) to server")
+        else:
+            print("Not connected to server!")
+    
     def on_start_game_click(self):
         """Handle start game button click."""
         print("Start Game clicked - requesting game start")
@@ -735,12 +843,13 @@ class BaseMenu:
                 print("-----    FAILED    -----")
                 print("Some changes failed to apply")
                 print(errors)
-                self.client.send_patch_applied(success=True)
-                #self.client.send_patch_applied(success=False, error_message=errors)
+                # FIXED: Actually report failure to server
+                error_msg = str(errors) if errors else "Unknown error applying patches"
+                self.client.send_patch_applied(success=False, error_message=error_msg)
         except Exception as e:
             print(f"Error applying patch: {e}")
-            self.client.send_patch_applied(success=True)
-            #self.client.send_patch_applied(success=False, error_message=str(e))
+            # FIXED: Actually report failure to server
+            self.client.send_patch_applied(success=False, error_message=str(e))
         finally:
             # Always restore original working directory
             if os.getcwd() != original_cwd:
@@ -752,6 +861,12 @@ class BaseMenu:
         print(f"❌ Game start aborted: {reason}")
         error_msg = f"Game cannot start - Patch failed on: {', '.join(failed_clients)}"
         self.show_error_message(error_msg)
+    
+    def patch_merge_failed_callback(self, reason: str):
+        """Callback when server-side patch merge fails."""
+        print(f"❌ Patch merge failed: {reason}")
+        self.show_error_message(f"Patches incompatible: {reason}")
+        self.patches_ready = False  # Reset ready status
 
     def game_start_callback(self):
         """Callback when server notifies us to start the game."""
@@ -799,6 +914,7 @@ class BaseMenu:
         self.client.on_game_start = self.game_start_callback
         self.client.on_patch_received = self.patch_received_callback
         self.client.on_patch_sync_failed = self.patch_sync_failed_callback
+        self.client.on_patch_merge_failed = self.patch_merge_failed_callback
 
         return True
 

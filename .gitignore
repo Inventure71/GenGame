@@ -1,10 +1,7 @@
 /.DS_Store
 /.cursor
 /.env
-/_GAME_FEATURES.md
-/__GAME_START_FLOW.md
-/_MULTIPLAYER_README.md
-/__TEMP_SECURITY_BACKUP
+/__docs
 /__game_backups
 __pycache__/
 *.pyc
@@ -12,3 +9,4 @@ __pycache__/
 *.pyd
 .pytest_cache
 tt.py
+__server_patches/conflict_cache.json

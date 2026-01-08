@@ -1,5 +1,7 @@
 import math
 import time
+import hashlib
+from typing import List, Dict
 from dotenv import load_dotenv
 import pygame
 from coding.non_callable_tools.backup_handling import BackupHandler
@@ -182,13 +184,44 @@ def main_manual_repl():
     action_logger.end_session()
     print("Session ended.")
 
-def auto_fix_conflicts(path_to_problematic_patch: str):
+def auto_fix_conflicts(path_to_problematic_patch: str, patch_paths: List[str] = None, base_backup: str = None):
+    """
+    Auto-fix conflicts in a merged patch, with caching support.
+
+    Args:
+        path_to_problematic_patch: Path to the patch file with conflicts
+        patch_paths: List of original patch files (for caching)
+        base_backup: Base backup name (for caching)
+    """
+    from coding.tools.conflict_resolution import clear_resolution_tracker
+
     conflicts_by_file = get_all_conflicts(path_to_problematic_patch)
     print(f"Found conflicts in {len(conflicts_by_file)} file(s)")
 
     if len(conflicts_by_file) == 0:
         print("No conflicts found, continuing...")
         return
+
+    # Clear resolution tracker for new session
+    clear_resolution_tracker()
+
+    # Try to apply cached resolutions if we have patch information
+    cached_resolutions_applied = 0
+    if base_backup:
+        from coding.non_callable_tools.simple_conflict_cache import try_apply_cached_conflicts
+
+        cached_resolutions_applied = try_apply_cached_conflicts(path_to_problematic_patch, base_backup)
+
+        # Check if all conflicts were resolved by cache
+        remaining_conflicts = get_all_conflicts(path_to_problematic_patch)
+        if len(remaining_conflicts) == 0:
+            print(f"✅ All conflicts resolved using cache ({cached_resolutions_applied} applied)")
+            return
+
+    if cached_resolutions_applied > 0:
+        print(f"Cache resolved {cached_resolutions_applied} conflicts, {sum(len(c) for c in get_all_conflicts(path_to_problematic_patch).values())} remaining")
+    else:
+        print("No cached resolutions available, proceeding with LLM resolution...")
 
     load_dotenv()
     check_integrity()
@@ -269,13 +302,48 @@ def auto_fix_conflicts(path_to_problematic_patch: str):
         
     print("Completed merge handling, checking for conflicts again...")
     remaining_conflicts = get_all_conflicts(path_to_problematic_patch)
-    
+
     if len(remaining_conflicts) > 0:
         print("Conflicts still exist, please fix them manually")
         print("Conflicts: ", remaining_conflicts)
         raise Exception("Conflicts still exist, please fix them manually")
     else:
         print("No conflicts found, continuing...")
+
+        # Cache the successful resolutions if we have the required information
+        if base_backup and cached_resolutions_applied == 0:
+            # Only cache if we actually did LLM resolution (not just applied cache)
+            _cache_successful_resolutions(path_to_problematic_patch, base_backup, conflicts_by_file)
+
+
+def _cache_successful_resolutions(patch_path: str, base_backup: str, original_conflicts: Dict[str, List[Dict]]):
+    """
+    Cache the resolutions that were successfully applied to resolve conflicts.
+    Uses the tracked resolutions from the LLM interaction.
+    """
+    from coding.non_callable_tools.simple_conflict_cache import get_conflict_cache
+    from coding.tools.conflict_resolution import get_resolution_tracker
+
+    cache = get_conflict_cache()
+    tracker = get_resolution_tracker()
+
+    cached_count = 0
+    for file_path, conflicts in original_conflicts.items():
+        for conflict in conflicts:
+            conflict_hash = cache.get_conflict_hash(conflict["option_a"], conflict["option_b"])
+
+            # Get the actual resolution that was applied
+            key = f"{file_path}:{conflict['conflict_num']}"
+            resolution = tracker.get(key)
+
+            if resolution:
+                cache.store_resolution(conflict_hash, base_backup, resolution)
+                cached_count += 1
+
+    if cached_count > 0:
+        print(f"✅ Cached {cached_count} LLM resolutions for future reuse")
+    else:
+        print("No resolutions to cache")
 
 def main_version_control_interactive():
     load_dotenv()
@@ -305,7 +373,7 @@ def main_version_control_interactive():
 
 
 if __name__ == "__main__":
-    print(run_all_tests())
+    #print(run_all_tests())
 
     #main_version_control_interactive()
     #auto_fix_conflicts("merged_patch.json")
@@ -324,7 +392,7 @@ if __name__ == "__main__":
     #handler.restore_backup("20260104025335_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
     #main_manual_repl()
-    #main_version_control(file_containing_patches="__patches/GlitchWeapon.json")
+    main_version_control(file_containing_patches="__server_patches/merged_patch.json")
     #main_version_control(file_containing_patches="__patches/Tron.json")
     #print(gather_context_planning())
     #print(gather_context_coding())

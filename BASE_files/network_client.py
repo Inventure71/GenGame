@@ -50,6 +50,7 @@ class NetworkClient:
         self.on_name_rejected = None
         self.on_patch_received = None  # New callback for when patch is received
         self.on_patch_sync_failed = None  # New callback for when patch sync fails
+        self.on_patch_merge_failed = None  # New callback for when server merge fails
         self.on_game_start = None
 
         # Lag compensation
@@ -146,6 +147,65 @@ class NetworkClient:
             'type': 'request_start_game'
         }
         self.outgoing_queue.append(message)
+    
+    def send_patches_selection(self, patches_info: list):
+        """Send selected patches info and files to server."""
+        if not self.connected:
+            return
+        
+        # First, send the selection metadata
+        message = {
+            'type': 'patches_selection',
+            'player_id': self.player_id,
+            'patches': patches_info
+        }
+        self.outgoing_queue.append(message)
+        print(f"Sent patches selection: {[p['name'] for p in patches_info]}")
+        
+        # Then send each patch file
+        for patch_info in patches_info:
+            file_path = patch_info['file_path']
+            if os.path.exists(file_path):
+                self._send_patch_file(file_path, patch_info['name'])
+        
+        # Mark as ready ONCE after all files sent
+        self.mark_patches_ready()
+    
+    def _send_patch_file(self, file_path: str, patch_name: str):
+        """Send a patch file to server in chunks."""
+        try:
+            file_size = os.path.getsize(file_path)
+            chunk_size = 64 * 1024  # 64KB chunks
+            total_chunks = (file_size + chunk_size - 1) // chunk_size
+            
+            with open(file_path, 'rb') as f:
+                for chunk_num in range(total_chunks):
+                    chunk_data = f.read(chunk_size)
+                    
+                    message = {
+                        'type': 'patch_chunk',
+                        'patch_name': patch_name,
+                        'chunk_num': chunk_num,
+                        'total_chunks': total_chunks,
+                        'data': chunk_data,
+                        'player_id': self.player_id
+                    }
+                    
+                    self.outgoing_queue.append(message)
+            
+            print(f"Sent patch file: {patch_name} ({total_chunks} chunks)")
+            
+        except Exception as e:
+            print(f"Failed to send patch file {file_path}: {e}")
+    
+    def mark_patches_ready(self):
+        """Mark patches as ready (all files uploaded)."""
+        message = {
+            'type': 'patches_ready',
+            'player_id': self.player_id
+        }
+        self.outgoing_queue.append(message)
+        print("Marked patches as ready")
 
     def acknowledge_file_sync(self):
         """Send acknowledgment that file sync was received."""
@@ -341,6 +401,11 @@ class NetworkClient:
                 print(f"  - {detail}")
             if self.on_patch_sync_failed:
                 self.on_patch_sync_failed(reason, failed_clients, details)
+        elif msg_type == 'patch_merge_failed':
+            reason = message.get('reason', 'Unknown reason')
+            print(f"❌ Patch merge failed on server: {reason}")
+            if self.on_patch_merge_failed:
+                self.on_patch_merge_failed(reason)
 
     def _handle_file_chunk(self, message: dict):
         """Handle incoming file chunk."""

@@ -1,8 +1,11 @@
+import os
+os.environ['SDL_VIDEODRIVER'] = 'cocoa'
 import random
 import argparse
 from BASE_files.BASE_menu import BaseMenu
 
 # TODO: Remember to call client.update() regularly in your main loop to process incoming messages and send outgoing ones.")
+
 
 def run_menu():
     menu = BaseMenu()

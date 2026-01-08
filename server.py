@@ -20,6 +20,9 @@ import select
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from GameFolder.setup import setup_battle_arena
+from coding.non_callable_tools.version_control import VersionControl
+from coding.tools.conflict_resolution import get_all_conflicts
+from testing import auto_fix_conflicts
 
 
 
@@ -69,6 +72,13 @@ class GameServer:
         self.clients_patch_failed: Dict[str, str] = {}  # Track which clients failed: player_id -> error_message
         self.waiting_for_patch_sync = False  # Flag to indicate we're waiting for patch sync
         self.waiting_for_patch_received = False  # Flag to indicate we're waiting for patch reception
+        
+        # Server-side patch management
+        self.server_patches_dir = "__server_patches"
+        os.makedirs(self.server_patches_dir, exist_ok=True)
+        self.client_patches: Dict[str, List[Dict]] = {}  # player_id -> list of patch info
+        self.client_patch_files: Dict[str, Dict] = {}  # (player_id, patch_name) -> {'chunks': {}, 'total': N}
+        self.clients_ready_status: Set[str] = set()  # Track which clients marked as ready
 
         print(f"Server initialized on {host}:{port}")
 
@@ -549,6 +559,23 @@ class GameServer:
                 print(f"{player_id} successfully received file: {message['file_path']}")
             else:
                 print(f"{player_id} failed to receive file {message['file_path']}: {error}")
+        elif msg_type == 'patches_selection':
+            # Client sent their patch selection
+            patches = message.get('patches', [])
+            self.client_patches[player_id] = patches
+            print(f"{player_id} selected {len(patches)} patch(es)")
+        elif msg_type == 'patch_chunk':
+            # Client sending a patch file chunk
+            self._handle_patch_chunk(player_id, message)
+        elif msg_type == 'patches_ready':
+            # Client marked patches as ready
+            self.clients_ready_status.add(player_id)
+            print(f"{player_id} marked as ready ({len(self.clients_ready_status)}/{len(self.clients)})")
+            
+            # Check if all clients are ready
+            if self.clients_ready_status == set(self.clients.keys()):
+                print("All clients ready - initiating patch merge and distribution")
+                self._merge_and_distribute_patches()
 
     def _handle_file_request(self, player_id: str, message: dict):
         """Handle a file request from a client."""
@@ -731,7 +758,256 @@ class GameServer:
             print(f"Failed to send message to {player_id}: {e}")
             # Client might have disconnected
             self._remove_client(player_id)
+    
+    def _handle_patch_chunk(self, player_id: str, message: dict):
+        """Handle incoming patch file chunk from client."""
+        patch_name = message.get('patch_name')
+        chunk_num = message.get('chunk_num')
+        total_chunks = message.get('total_chunks')
+        chunk_data = message.get('data')
+        
+        if not all([patch_name, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
+            print(f"Invalid patch chunk from {player_id}")
+            return
+        
+        # Create tracking key
+        key = f"{player_id}:{patch_name}"
+        
+        if key not in self.client_patch_files:
+            self.client_patch_files[key] = {
+                'chunks': {},
+                'total': total_chunks,
+                'received': 0
+            }
+        
+        transfer = self.client_patch_files[key]
+        
+        # Store chunk if not already received
+        if chunk_num not in transfer['chunks']:
+            transfer['chunks'][chunk_num] = chunk_data
+            transfer['received'] += 1
+        
+        # Check if complete
+        if transfer['received'] == total_chunks:
+            self._assemble_patch_file(player_id, patch_name)
+    
+    def _assemble_patch_file(self, player_id: str, patch_name: str):
+        """Assemble complete patch file from chunks."""
+        key = f"{player_id}:{patch_name}"
+        transfer = self.client_patch_files[key]
+        
+        try:
+            # Create player's patch directory
+            player_patch_dir = os.path.join(self.server_patches_dir, player_id)
+            os.makedirs(player_patch_dir, exist_ok=True)
+            
+            # Write file
+            patch_path = os.path.join(player_patch_dir, f"{patch_name}.json")
+            with open(patch_path, 'wb') as f:
+                for chunk_num in range(transfer['total']):
+                    if chunk_num in transfer['chunks']:
+                        f.write(transfer['chunks'][chunk_num])
+                    else:
+                        raise ValueError(f"Missing chunk {chunk_num}")
+            
+            print(f"✅ Received complete patch from {player_id}: {patch_name}")
+            
+            # Clean up transfer state
+            del self.client_patch_files[key]
+            
+        except Exception as e:
+            print(f"Failed to assemble patch from {player_id}: {e}")
 
+    def _merge_and_distribute_patches(self):
+        """
+        Merge all patches from all clients with retry logic.
+        Uses auto_fix_conflicts if there are merge conflicts.
+        """
+        print("\n" + "="*60)
+        print("STARTING PATCH MERGE PROCESS")
+        print("="*60)
+        
+        # Step 1: Validate base backup compatibility
+        all_patches_info = list(self.client_patches.values())
+        compatible, error = self._validate_base_backup_compatibility(all_patches_info)
+        
+        if not compatible:
+            print(f"❌ Base backup validation failed: {error}")
+            self._notify_patch_merge_failed(f"Incompatible patches: {error}")
+            return
+        
+        print("✅ Base backup validation passed")
+        
+        # Step 2: Collect all patch file paths
+        all_patch_paths = []
+        for player_id, patches_info in self.client_patches.items():
+            for patch_info in patches_info:
+                patch_name = patch_info['name']
+                patch_path = os.path.join(self.server_patches_dir, player_id, f"{patch_name}.json")
+                if os.path.exists(patch_path):
+                    all_patch_paths.append(patch_path)
+        
+        print(f"Found {len(all_patch_paths)} patch files to merge")
+        
+        if len(all_patch_paths) == 0:
+            print("No patches to merge, starting game directly")
+            self._notify_all_clients_game_start()
+            return
+        
+        # Step 3: Merge patches with retry logic
+        output_path = os.path.join(self.server_patches_dir, "merged_patch.json")
+        success = False
+        
+        for attempt in range(3):
+            print(f"\n--- Merge Attempt {attempt + 1}/3 ---")
+            
+            # Merge all patches iteratively
+            success, result = self._merge_patches_iteratively(all_patch_paths, output_path)
+            
+            if success:
+                print(f"✅ Merge successful on attempt {attempt + 1}")
+                break
+            else:
+                print(f"⚠️  Merge had conflicts: {result}")
+                
+                # Try to auto-fix conflicts
+                print("Running auto_fix_conflicts...")
+                try:
+                    base_backup_name = all_patches_info[0][0].get('base_backup', 'Unknown')
+                    auto_fix_conflicts(output_path, patch_paths=all_patch_paths, base_backup=base_backup_name)
+                    
+                    # Check if conflicts remain
+                    remaining_conflicts = get_all_conflicts(output_path)
+                    if len(remaining_conflicts) == 0:
+                        print("✅ Auto-fix resolved all conflicts!")
+                        success = True
+                        break
+                    else:
+                        print(f"⚠️  {len(remaining_conflicts)} conflicts remain after auto-fix")
+                except Exception as e:
+                    print(f"❌ Auto-fix failed: {e}")
+        
+        # Step 4: Check final result
+        if not success:
+            print("\n❌ MERGE FAILED AFTER 3 ATTEMPTS")
+            self._notify_patch_merge_failed("Patches are incompatible - could not resolve conflicts after 3 attempts")
+            return
+        
+        print("\n✅ MERGE SUCCESSFUL - Distributing to clients")
+        
+        # Step 5: Send merged patch to all clients
+        self._initiate_game_start_with_patch_sync(output_path)
+    
+    def _validate_base_backup_compatibility(self, all_patches_info: List[List[Dict]]) -> tuple:
+        """Validate that all patches use the same base backup."""
+        all_base_backups = set()
+        
+        for client_patches in all_patches_info:
+            for patch_info in client_patches:
+                all_base_backups.add(patch_info.get('base_backup', 'Unknown'))
+        
+        if len(all_base_backups) == 0:
+            return True, None
+        
+        if len(all_base_backups) > 1:
+            return False, f"Different base backups: {', '.join(all_base_backups)}"
+        
+        return True, None
+    
+    def _merge_patches_iteratively(self, patch_paths: List[str], output_path: str) -> tuple:
+        """
+        Merge multiple patches iteratively: merge(merge(A, B), C), etc.
+        Returns (success, result_message)
+        """
+        if len(patch_paths) == 0:
+            return False, "No patches to merge"
+        
+        if len(patch_paths) == 1:
+            # Only one patch - just copy it
+            import shutil
+            shutil.copy(patch_paths[0], output_path)
+            return True, "Single patch copied"
+        
+        # Get base backup name from first patch
+        import json
+        with open(patch_paths[0], 'r') as f:
+            data = json.load(f)
+            base_backup_name = data.get('name_of_backup', 'Unknown')
+        
+        # Create version control instance
+        vc = VersionControl()
+        
+        # Start with first two patches
+        current_output = output_path
+        success, result = vc.merge_patches(
+            base_backup_path="__game_backups",
+            patch_a_path=patch_paths[0],
+            patch_b_path=patch_paths[1],
+            output_path=current_output
+        )
+        
+        if not success and "conflicts" not in result.lower():
+            return False, result
+        
+        # Merge remaining patches one by one
+        for i in range(2, len(patch_paths)):
+            temp_output = output_path + f".temp{i}"
+            
+            # Merge current result with next patch
+            success, result = vc.merge_patches(
+                base_backup_path="__game_backups",
+                patch_a_path=current_output,
+                patch_b_path=patch_paths[i],
+                output_path=temp_output
+            )
+            
+            # Move temp to current
+            import shutil
+            shutil.move(temp_output, current_output)
+            
+            if not success and "conflicts" not in result.lower():
+                return False, result
+        
+        # Check for conflicts in final result
+        conflicts = get_all_conflicts(current_output)
+        if len(conflicts) > 0:
+            return False, f"Merge completed with {len(conflicts)} file(s) having conflicts"
+        
+        return True, "Merge successful"
+    
+    def _initiate_game_start_with_patch_sync(self, patch_path: str):
+        """Send merged patch to all clients for application."""
+        print("Sending merged patch to all clients...")
+        
+        self.waiting_for_patch_received = True
+        self.clients_patch_received.clear()
+        self.clients_patch_ready.clear()
+        self.clients_patch_failed.clear()
+        
+        for player_id in self.clients.keys():
+            self._send_patch_file(player_id, patch_path)
+    
+    def _notify_patch_merge_failed(self, reason: str):
+        """Notify all clients that patch merge failed."""
+        print(f"Notifying clients: {reason}")
+        
+        message = {
+            'type': 'patch_merge_failed',
+            'reason': reason
+        }
+        data = pickle.dumps(message)
+        length_bytes = len(data).to_bytes(4, byteorder='big')
+        
+        for player_id, client_socket in self.clients.items():
+            try:
+                client_socket.send(length_bytes + data)
+            except Exception as e:
+                print(f"Failed to notify {player_id}: {e}")
+        
+        # Reset state
+        self.clients_ready_status.clear()
+        self.client_patches.clear()
+    
     def _game_loop(self):
         """Main game simulation loop."""
         print("Starting game simulation...")

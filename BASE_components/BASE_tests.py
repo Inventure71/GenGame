@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from coding.non_callable_tools.helpers import clear_python_cache
 
 # Set up headless mode for automated testing
-os.environ['SDL_VIDEODRIVER'] = 'dummy'
+#os.environ['SDL_VIDEODRIVER'] = 'dummy'
 
 import pygame
 
