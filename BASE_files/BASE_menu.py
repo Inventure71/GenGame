@@ -50,7 +50,12 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
     print(f"\nConnecting to server at {network_client.host}:{network_client.port}...\n")
 
     try:
-        # Initialize Pygame
+        # Check if client is connected
+        if not network_client or not network_client.connected:
+            print("❌ Network client not connected! Cannot start game.")
+            return
+
+        # Initialize Pygame (safe to call multiple times)
         pygame.init()
         width, height = 1200, 700  # Match server arena dimensions
         screen = pygame.display.set_mode((width, height))
@@ -228,7 +233,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
         # Cleanup
         network_client.disconnect()
-        pygame.quit()
+        # Don't quit pygame here - let the menu handle it
 
     except Exception as e:
         print("\n" + "!"*70)
@@ -577,7 +582,9 @@ class BaseMenu:
             if self.client:
                 self.client.update()
 
-            self.render()
+            # Only render if still running (in case game was started during update)
+            if self.running:
+                self.render()
 
         print("Menu loop finished.")
         pygame.quit()
@@ -813,7 +820,11 @@ class BaseMenu:
         """Start the game."""
         print("🚀 Launching game client...")
         # File sync should have already happened, patches applied
-        # Now just start the game client
+        # Now exit the menu loop and start the game client
+        self.running = False  # Exit the menu loop
+        # Don't quit pygame here - run_client will handle it
+
+        # Start the game client after menu cleanup
         run_client(network_client=self.client, player_id=self.player_id)
 
 if __name__ == "__main__":
