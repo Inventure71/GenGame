@@ -57,7 +57,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
         # Initialize Pygame (safe to call multiple times)
         pygame.init()
-        width, height = 1200, 700  # Match server arena dimensions
+        width, height = 1400, 900  # Match server arena dimensions
         screen = pygame.display.set_mode((width, height))
         pygame.display.set_caption(f"GenGame Client - {player_id}")
         clock = pygame.time.Clock()
@@ -256,7 +256,7 @@ class BaseMenu:
         self.on_start()
         
         print("Creating window...")
-        self.screen = pygame.display.set_mode((1200, 700))
+        self.screen = pygame.display.set_mode((1400, 900))
 
         print(f"Video Driver: {pygame.display.get_driver()}")
 
@@ -393,7 +393,7 @@ class BaseMenu:
         # Player ID text field at the top
         field_width = 300
         field_height = 40
-        field_x = (1200 - field_width) // 2  # Center horizontally
+        field_x = (1400 - field_width) // 2  # Center horizontally
         field_y = 20
 
         player_id_rect = self.draw_text_field(self.player_id, field_x, field_y, field_width, field_height,
@@ -406,13 +406,13 @@ class BaseMenu:
             self.player_id_focused = False
 
         # Title
-        self.draw_text("GEN GAME", 600, 120, self.menu_font, center=True)
+        self.draw_text("GEN GAME", 700, 120, self.menu_font, center=True)
 
         # Subtitle
-        self.draw_text("Multiplayer Gaming Platform", 600, 180, self.small_font, center=True)
+        self.draw_text("Multiplayer Gaming Platform", 700, 180, self.small_font, center=True)
 
         # Buttons
-        center_x = 600
+        center_x = 700
         button_y = 250  # Moved down to make room for player ID field
         button_spacing = 80
 
@@ -453,7 +453,7 @@ class BaseMenu:
 
         # Show error message if any (for a few seconds)
         if self.error_message and pygame.time.get_ticks() - self.error_message_time < 5000:  # 5 seconds
-            self.draw_text(self.error_message, 600, 550, self.small_font, color=(255, 100, 100), center=True)
+            self.draw_text(self.error_message, 700, 550, self.small_font, color=(255, 100, 100), center=True)
         elif self.error_message:
             # Clear old error message
             self.error_message = None
@@ -480,14 +480,14 @@ class BaseMenu:
                     return
 
         # Title
-        self.draw_text("Game Room", 600, 80, self.menu_font, center=True)
+        self.draw_text("Game Room", 700, 80, self.menu_font, center=True)
 
         # Room status
         status_text = f"Status: {'Connected' if self.client and self.client.connected else 'Connecting...'}"
-        self.draw_text(status_text, 600, 150, self.small_font, center=True)
+        self.draw_text(status_text, 700, 150, self.small_font, center=True)
 
         # Buttons
-        center_x = 600
+        center_x = 700
         button_y = 250
         button_spacing = 80
 
@@ -516,7 +516,7 @@ class BaseMenu:
 
         # Show error message if any (for a few seconds)
         if self.error_message and pygame.time.get_ticks() - self.error_message_time < 5000:  # 5 seconds
-            self.draw_text(self.error_message, 600, 550, self.small_font, color=(255, 100, 100), center=True)
+            self.draw_text(self.error_message, 700, 550, self.small_font, color=(255, 100, 100), center=True)
         elif self.error_message:
             # Clear old error message
             self.error_message = None
@@ -526,7 +526,7 @@ class BaseMenu:
         self.screen.fill(self.menu_background_color)
 
         # Title
-        self.draw_text("Game Library", 600, 80, self.menu_font, center=True)
+        self.draw_text("Game Library", 700, 80, self.menu_font, center=True)
 
         # Placeholder content
         self.draw_text("Available Games:", 200, 150, self.button_font)

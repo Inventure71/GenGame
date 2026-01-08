@@ -151,7 +151,7 @@ class GameServer:
         print(f"Recreating arena with players: {connected_player_names}")
 
         # Recreate arena with actual player names
-        self.arena = setup_battle_arena(width=1200, height=700, headless=True, player_names=connected_player_names)
+        self.arena = setup_battle_arena(width=1400, height=900, headless=True, player_names=connected_player_names)
 
         # Set character IDs to match player names
         for i, character in enumerate(self.arena.characters):

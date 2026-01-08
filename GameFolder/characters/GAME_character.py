@@ -164,8 +164,8 @@ class Character(BaseCharacter):
             new_x = self.location[0] + actual_dir[0] * self.speed * self.speed_multiplier
 
             # Create character rect in pygame coordinates for collision detection
-            # Assume arena height of 700 (matches setup_battle_arena)
-            arena_height = 700
+            # Assume arena height of 900 (matches setup_battle_arena)
+            arena_height = 900
             char_width = self.width * self.scale_ratio
             char_height = self.height * self.scale_ratio
             py_char_y = arena_height - self.location[1] - char_height  # Convert to pygame y-down
