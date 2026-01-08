@@ -123,22 +123,26 @@ class Character(BaseCharacter):
             py_feet_y = arena_height - self.location[1]
 
             for plat in platforms:
-                # If feet are at or below platform top, but were above it
-                # We use a small buffer (20) to catch fast falling characters
-                overlap = py_feet_y - plat.rect.top
-                if 0 <= overlap < 20:
-                    # Horizontal check
-                    if self.location[0] + char_rect.width > plat.rect.left and self.location[0] < plat.rect.right:
-                        # Land on platform
-                        self.location[1] = arena_height - plat.rect.top
-                        self.vertical_velocity = 0
-                        self.on_ground = True
-                        self.hover_time = 0
-                        break
+                # Check if character is falling towards platform
+                # Character feet should be at or slightly below platform top
+                feet_at_platform_level = abs(py_feet_y - plat.rect.top) < 20  # Balanced tolerance
+
+                # Horizontal overlap check
+                char_left = self.location[0]
+                char_right = self.location[0] + char_rect.width
+                horizontal_overlap = char_right > plat.rect.left and char_left < plat.rect.right
+
+                if feet_at_platform_level and horizontal_overlap:
+                    # Land on platform
+                    self.location[1] = arena_height - plat.rect.top
+                    self.vertical_velocity = 0
+                    self.on_ground = True
+                    self.hover_time = 0
+                    break
 
     def move(self, direction: [float, float], platforms: list = None):
         """
-        Override to remove floor boundary in flight logic.
+        Override to remove floor boundary in flight logic and add platform collision.
         """
         if not self.can_move or not self.is_alive:
             return
@@ -149,13 +153,39 @@ class Character(BaseCharacter):
             actual_dir[0] *= -1
             actual_dir[1] *= -1
 
-        # Handle horizontal movement
-        self.location[0] += actual_dir[0] * self.speed * self.speed_multiplier
-
-        # Handle vertical movement
-        # Update flags
-        self.is_dropping = (actual_dir[1] < -0.5)
+        # Update movement flags
         self.is_moving_up = (actual_dir[1] > 0)
+
+        # Dropping logic: can only drop through platforms when actively pressing down
+        self.is_dropping = (actual_dir[1] < -0.5)
+
+        # Handle horizontal movement with platform collision
+        if actual_dir[0] != 0 and platforms:
+            new_x = self.location[0] + actual_dir[0] * self.speed * self.speed_multiplier
+
+            # Create character rect in pygame coordinates for collision detection
+            # Assume arena height of 700 (matches setup_battle_arena)
+            arena_height = 700
+            char_width = self.width * self.scale_ratio
+            char_height = self.height * self.scale_ratio
+            py_char_y = arena_height - self.location[1] - char_height  # Convert to pygame y-down
+
+            # Test rectangle at new position
+            test_rect = pygame.Rect(new_x, py_char_y, char_width, char_height)
+
+            # Check horizontal collision with platforms
+            collision = False
+            for plat in platforms:
+                if test_rect.colliderect(plat.rect):
+                    collision = True
+                    break
+
+            # Only move horizontally if no collision
+            if not collision:
+                self.location[0] = new_x
+        elif actual_dir[0] != 0:
+            # No platforms to check, allow free movement
+            self.location[0] += actual_dir[0] * self.speed * self.speed_multiplier
 
         # Integrated flight logic
         # Allow flight when airborne, falling (or at peak), and have flight energy

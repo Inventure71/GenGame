@@ -179,7 +179,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 # ALWAYS send mouse position for TronProjectile tracking
                 input_data['mouse_pos'] = [world_mx, world_my]
 
-                # Movement input
+                # Movement input - always send to ensure server updates character state
                 direction = [0, 0]
                 if pygame.K_LEFT in held_keys or pygame.K_a in held_keys:
                     direction[0] = -1
@@ -190,8 +190,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 if pygame.K_DOWN in held_keys or pygame.K_s in held_keys:
                     direction[1] = -1
 
-                if direction != [0, 0]:
-                    input_data['movement'] = direction
+                # Always send movement input, even [0, 0], to update character state on server
+                input_data['movement'] = direction
 
                 # Shooting inputs
                 if mouse_pressed[0]:  # Left click
