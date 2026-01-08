@@ -6,13 +6,15 @@ import pygame
 
 class OrbitalCannon(Weapon):
     def __init__(self, location=None):
-        super().__init__(name="Orbital Cannon", damage=10, cooldown=2.0, projectile_speed=25.0, location=location)
+        super().__init__(name="Orbital Cannon", damage=10, cooldown=2.0, projectile_speed=25.0, max_ammo=8, ammo_per_shot=1, location=location)
         self.color = (50, 50, 50)  # Dark Gray
 
     def shoot(self, owner_x, owner_y, target_x, target_y, owner_id):
         if not self.can_shoot():
             return []
 
+        # Consume ammo
+        self.ammo -= self.ammo_per_shot
         self.last_shot_time = time.time()
 
         dx = target_x - owner_x

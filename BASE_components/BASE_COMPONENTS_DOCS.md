@@ -40,7 +40,13 @@ Inputs are captured directly from pygame events.
 - `self.weapon`: The currently equipped `BaseWeapon` or `None`.
 - `self.on_ground`: Boolean flag updated by physics.
 - `self.vertical_velocity`: Current upward/downward velocity (used for jumping and falling).
-- **Flight System**: 
+- **Shield System** (GAME_character.py extension):
+  - `self.shield` / `self.max_shield`: Current/Max shield points (default 50.0).
+  - `self.shield_regen_rate`: Shield regeneration per second (default 1.0).
+  - `self.last_damage_time`: Timestamp of last damage taken (for regen delay).
+  - **Damage Priority**: Shields absorb damage before health.
+  - **Regeneration**: Shields regenerate after 1 second delay from last damage.
+- **Flight System**:
   - `self.flight_time_remaining`: Current flight fuel (max 3.0 seconds).
   - `self.needs_recharge`: If True, flight is disabled until landing.
   - `self.is_currently_flying`: True when actively flying (pressing UP/DOWN while airborne).
@@ -74,10 +80,24 @@ Inputs are captured directly from pygame events.
 ## 3. Weapon & Projectile
 **Files**: `BASE_components/BASE_weapon.py`, `BASE_components/BASE_projectile.py`
 
+### Weapon Attributes
+- `self.ammo`: Current ammunition count.
+- `self.max_ammo`: Maximum ammunition capacity.
+- `self.ammo_per_shot`: Ammo consumed per shot (default: 1).
+- `self.location`: `[x, y]` position when on ground (not equipped).
+- `self.is_equipped`: True when held by character, False when on ground.
+
 ### Weapon Methods
-- `shoot(...)`: Standard fire. **MUST OVERRIDE** to return custom projectiles.
+- `shoot(...)`: Standard fire. **Automatically consumes ammo**. Returns None if insufficient ammo or cooldown active.
 - `secondary_fire(...)`: Optional override for alternate fire.
 - `special_fire(...)`: Optional override for channeled or special abilities.
+- `can_shoot()`: Returns True if cooldown elapsed AND has sufficient ammo.
+- `add_ammo(amount)`: Add ammo (capped at max_ammo). Used by ammo pickups.
+- `reload()`: Restore ammo to max_ammo.
+
+### Important Notes
+- **Ammo persists when dropped**: Weapons retain their ammo count when dropped on death.
+- **Override shoot() carefully**: If overriding, you must manually call `self.ammo -= self.ammo_per_shot` after checking `can_shoot()`.
 
 ### Projectile Attributes
 - `self.location`: `[x, y]` in **World Coordinates**.
@@ -110,7 +130,15 @@ The Arena handles the main game loop. Override methods in `GameFolder/arenas/GAM
 - `self.platforms`: List of all `BasePlatform` objects.
 - `self.projectiles`: List of all active `BaseProjectile` objects.
 - `self.weapon_pickups`: List of weapons available for pickup.
+- `self.ammo_pickups`: List of ammo pickups available for collection.
 - `self.lootpool`: Dict mapping weapon names to their factory functions.
+- `self.ammo_spawn_interval`: Time between ammo spawns (default: 5.0 seconds).
+
+### Ammo Pickup System
+- Ammo pickups spawn automatically every `ammo_spawn_interval` seconds.
+- Maximum of 3 ammo pickups active at once.
+- Characters automatically collect ammo when walking over it (if they have a weapon).
+- Use `spawn_ammo(ammo_pickup)` to manually add ammo to the arena.
 
 ### Custom Collision Logic
 **Required for special projectiles**: If your projectiles have special behaviors (pulling, persistent beams, custom damage), you **MUST**:
@@ -122,7 +150,31 @@ The Arena handles the main game loop. Override methods in `GameFolder/arenas/GAM
 
 ---
 
-## 5. UI (`BaseUI`)
+## 5. Ammo Pickup (`BaseAmmoPickup`)
+**File**: `BASE_components/BASE_ammo.py`
+
+### Key Attributes
+- `self.location`: `[x, y]` position in world coordinates.
+- `self.ammo_amount`: Amount of ammo to give when picked up.
+- `self.is_active`: True when available, False when collected.
+
+### Methods
+- `pickup()`: Mark as collected (sets `is_active = False`).
+- `get_pickup_rect(arena_height)`: Returns pygame.Rect for collision detection.
+- `draw(screen, arena_height)`: Renders the ammo pickup with "A" icon.
+
+### Usage
+```python
+from BASE_components.BASE_ammo import BaseAmmoPickup
+
+# Create ammo pickup at location with 15 ammo
+ammo = BaseAmmoPickup([300, 200], ammo_amount=15)
+arena.spawn_ammo(ammo)
+```
+
+---
+
+## 6. UI (`BaseUI`)
 **File**: `BASE_components/BASE_ui.py`
 
 ### Critical Methods

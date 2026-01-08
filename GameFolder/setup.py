@@ -64,6 +64,8 @@ def setup_battle_arena(width: int = 1200, height: int = 700, headless: bool = Fa
         Platform(250, 250, 180, 20), Platform(500, 300, 200, 20), Platform(770, 250, 180, 20),
         Platform(150, 400, 150, 20), Platform(900, 400, 150, 20),
         Platform(450, 500, 300, 20), Platform(300, 600, 150, 20), Platform(750, 600, 150, 20),
+        # Large bottom platform - 3/4 arena width (900px), centered
+        Platform(150, 650, 900, 30),
     ]
     for p in platforms: arena.add_platform(p)
     

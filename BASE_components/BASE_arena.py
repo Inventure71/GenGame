@@ -39,6 +39,7 @@ class Arena:
         self.platforms: List[BasePlatform] = []
         self.projectiles = []
         self.weapon_pickups = []
+        self.ammo_pickups = []  # List of ammo pickups
         
         # Entity maps
         self.characters_map: Dict[str, BaseCharacter] = {}  # name -> character
@@ -76,6 +77,11 @@ class Arena:
         self.weapon_spawn_timer = 0.0
         self.spawn_interval = 8.0
         self.spawn_count = 0
+        
+        # Ammo spawning
+        self.ammo_spawn_timer = 0.0
+        self.ammo_spawn_interval = 5.0  # Spawn ammo every 5 seconds
+        self.ammo_spawn_count = 0
         
         # Weapon name -> ID mapping for binary protocol
         self.weapon_name_to_id: Dict[str, int] = {}
@@ -140,6 +146,7 @@ class Arena:
     def _update_simulation(self, delta_time: float):
         """Run one tick of physics simulation."""
         self.manage_weapon_spawns(delta_time)
+        self.manage_ammo_spawns(delta_time)
         self.handle_respawns(delta_time)
         self.check_winner()
         
@@ -253,11 +260,33 @@ class Arena:
                     weapon.pickup()
                     if weapon in self.weapon_pickups: self.weapon_pickups.remove(weapon)
                     break
+        
+        # Check for ammo pickups
+        for ammo in self.ammo_pickups[:]:
+            if not ammo.is_active: continue
+            a_rect = ammo.get_pickup_rect(self.height)
+            for char in self.characters:
+                if not char.is_alive or not char.weapon: continue
+                c_rect = char.get_rect()
+                cp_rect = pygame.Rect(char.location[0], self.height - char.location[1] - c_rect.height, c_rect.width, c_rect.height)
+                if cp_rect.colliderect(a_rect):
+                    char.weapon.add_ammo(ammo.ammo_amount)
+                    ammo.pickup()
+                    if ammo in self.ammo_pickups: self.ammo_pickups.remove(ammo)
+                    break
 
     def spawn_weapon(self, weapon):
         weapon.is_equipped = False
         if weapon not in self.weapon_pickups:
             self.weapon_pickups.append(weapon)
+
+    def spawn_ammo(self, ammo_pickup):
+        """Add an ammo pickup to the arena."""
+        from BASE_components.BASE_ammo import BaseAmmoPickup
+        if isinstance(ammo_pickup, BaseAmmoPickup):
+            ammo_pickup.is_active = True
+            if ammo_pickup not in self.ammo_pickups:
+                self.ammo_pickups.append(ammo_pickup)
 
     def manage_weapon_spawns(self, delta_time: float):
 
@@ -275,6 +304,28 @@ class Arena:
                 weapon_name = random.choice(list(self.lootpool.keys()))
                 weapon = self.lootpool[weapon_name]([random.randint(int(plat.rect.left), int(plat.rect.right-40)), self.height - plat.rect.top])
                 self.spawn_weapon(weapon)
+    
+    def manage_ammo_spawns(self, delta_time: float):
+        """Spawn ammo pickups periodically on platforms."""
+        from BASE_components.BASE_ammo import BaseAmmoPickup
+        
+        self.ammo_spawn_timer += delta_time
+        if self.ammo_spawn_timer >= self.ammo_spawn_interval:
+            self.ammo_spawn_timer = 0.0
+            # Limit total ammo pickups (max 3)
+            if len(self.ammo_pickups) < 3:
+                random.seed(self.ammo_spawn_count + 100)
+                self.ammo_spawn_count += 1
+                # Only spawn on platforms wide enough
+                valid_platforms = [p for p in self.platforms if p.rect.width >= 30]
+                if not valid_platforms:
+                    return
+                plat = random.choice(valid_platforms)
+                ammo_amount = random.choice([10, 15, 20])  # Random ammo amounts
+                x_pos = random.randint(int(plat.rect.left), int(plat.rect.right - 20))
+                y_pos = self.height - plat.rect.top
+                ammo = BaseAmmoPickup([x_pos, y_pos], ammo_amount)
+                self.spawn_ammo(ammo)
 
     def render(self):
         """Draw everything."""
@@ -284,6 +335,7 @@ class Arena:
         self.screen.fill((135, 206, 235))
         for plat in self.platforms: plat.draw(self.screen)
         for weapon in self.weapon_pickups: weapon.draw(self.screen, self.height)
+        for ammo in self.ammo_pickups: ammo.draw(self.screen, self.height)
         for proj in self.projectiles: proj.draw(self.screen, self.height)
         for char in self.characters: char.draw(self.screen, self.height)
         self.ui.draw(self.characters, self.game_over, self.winner, self.respawn_timer)

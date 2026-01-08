@@ -54,8 +54,10 @@ def test_storm_cloud_damage_and_slow():
     # Character under the cloud (World-Y 300 is below 400)
     char = Character("Victim", "Desc", "", [210, 300])
     char.id = "victim"
+    # Deplete shields first so we can test health damage
+    char.shield = 0
     arena.characters.append(char)
-    
+
     # Pre-checks
     assert char.speed_multiplier == 1.0
     initial_health = char.health

@@ -6,7 +6,7 @@ from GameFolder.projectiles.TornadoProjectile import TornadoProjectile
 class TornadoGun(Weapon):
     def __init__(self, location=None):
         # High cooldown because the tornado is very disruptive
-        super().__init__("Tornado Launcher", damage=0.8, cooldown=4.0, projectile_speed=150.0, location=location)
+        super().__init__("Tornado Launcher", damage=0.8, cooldown=4.0, projectile_speed=150.0, max_ammo=6, ammo_per_shot=1, location=location)
         self.color = (180, 180, 180)
 
     def shoot(self, owner_x, owner_y, target_x, target_y, owner_id):
@@ -22,6 +22,8 @@ class TornadoGun(Weapon):
         else:
             direction = [dx / dist, dy / dist]
 
+        # Consume ammo
+        self.ammo -= self.ammo_per_shot
         self.last_shot_time = time.time()
         
         # Create the tornado at the owner's position

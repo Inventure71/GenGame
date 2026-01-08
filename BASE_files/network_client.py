@@ -547,6 +547,7 @@ class EntityManager:
             'characters': game_state.get('characters', []),
             'projectiles': game_state.get('projectiles', []),
             'weapons': game_state.get('weapons', []),
+            'ammo_pickups': game_state.get('ammo_pickups', []),
             'platforms': game_state.get('platforms', [])
         }
 

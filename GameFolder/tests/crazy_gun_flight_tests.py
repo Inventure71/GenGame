@@ -133,16 +133,18 @@ def test_black_hole_damage():
     # Spawn character directly on top of black hole
     char = Character("Victim", "Desc", "", [200, 100])
     char.health = 100
+    # Deplete shields first so we can test health damage
+    char.shield = 0
     arena.characters.append(char)
-    
+
     proj = BlackHoleProjectile(200, 100, 200, 100, "attacker")
     proj.is_stationary = True
     arena.projectiles.append(proj)
-    
+
     # Run collision logic
     delta = 0.5
     arena.handle_collisions(delta)
-    
+
     assert char.health < 100, "Character should take damage when inside the black hole"
 
 def test_lootpool_registration():

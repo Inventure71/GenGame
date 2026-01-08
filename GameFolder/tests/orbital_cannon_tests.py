@@ -125,6 +125,8 @@ def test_orbital_blast_damage():
     # Character inside beam
     victim = Character("Victim", "", "", [410, 100])
     victim.id = "victim"
+    # Deplete shields first so we can test health damage
+    victim.shield = 0
     arena.characters.append(victim)
     
     # Character outside beam
@@ -194,6 +196,8 @@ def test_orbital_cannon_gameplay_integration():
     # Victim character at position (600, 300)
     victim = Character("Victim", "", "", [600, 300])
     victim.id = "victim"
+    # Deplete shields first so we can test health damage
+    victim.shield = 0
     arena.characters.append(victim)
 
     initial_victim_hp = victim.health

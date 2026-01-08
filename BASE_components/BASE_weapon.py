@@ -5,7 +5,7 @@ import time
 import math
 
 class BaseWeapon(NetworkObject):
-    def __init__(self, name: str, damage: float, cooldown: float, projectile_speed: float, location: [float, float] = None):
+    def __init__(self, name: str, damage: float, cooldown: float, projectile_speed: float, max_ammo: int = 30, ammo_per_shot: int = 1, location: [float, float] = None):
         # Initialize network capabilities first
         super().__init__()
         # Network identity is automatically set by NetworkObject.__init__
@@ -15,6 +15,11 @@ class BaseWeapon(NetworkObject):
         self.cooldown = cooldown # Seconds between shots
         self.projectile_speed = projectile_speed
         self.last_shot_time = 0.0
+        
+        # Ammo system
+        self.max_ammo = max_ammo  # Maximum ammo capacity
+        self.ammo = max_ammo  # Current ammo (starts full)
+        self.ammo_per_shot = ammo_per_shot  # Ammo consumed per shot
         
         # Pickup properties
         self.location = location if location else [0, 0]  # World coordinates [x, y]
@@ -46,12 +51,15 @@ class BaseWeapon(NetworkObject):
             pass
 
     def can_shoot(self) -> bool:
-        return (time.time() - self.last_shot_time) >= self.cooldown
+        """Check if weapon can shoot (cooldown elapsed AND has ammo)."""
+        return (time.time() - self.last_shot_time) >= self.cooldown and self.ammo >= self.ammo_per_shot
 
     def shoot(self, owner_x: float, owner_y: float, target_x: float, target_y: float, owner_id: str) -> BaseProjectile:
         if not self.can_shoot():
             return None
 
+        # Consume ammo
+        self.ammo -= self.ammo_per_shot
         self.last_shot_time = time.time()
 
         # Calculate direction vector
@@ -86,6 +94,19 @@ class BaseWeapon(NetworkObject):
         """
         self.is_equipped = True
 
+    def add_ammo(self, amount: int):
+        """
+        Add ammo to the weapon (used by ammo pickups).
+        Cannot exceed max_ammo.
+        """
+        self.ammo = min(self.max_ammo, self.ammo + amount)
+        
+    def reload(self):
+        """
+        Reload weapon to full ammo capacity.
+        """
+        self.ammo = self.max_ammo
+
     def get_pickup_rect(self, arena_height: float) -> pygame.Rect:
         """
         Get the collision rect for pickup detection.
@@ -114,9 +135,10 @@ class BaseWeapon(NetworkObject):
         pygame.draw.rect(screen, self.color, weapon_rect)
         pygame.draw.rect(screen, (255, 255, 255), weapon_rect, 2)  # White border
 
-        # Draw weapon name (small text)
+        # Draw weapon name and ammo (small text)
         font = pygame.font.Font(None, 16)
-        text = font.render(self.name[:8], True, (255, 255, 255))
+        display_text = f"{self.name[:8]} ({self.ammo}/{self.max_ammo})"
+        text = font.render(display_text, True, (255, 255, 255))
         text_rect = text.get_rect(center=(self.location[0] + self.width/2, py_y - 10))
         screen.blit(text, text_rect)
 

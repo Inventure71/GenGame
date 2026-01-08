@@ -67,15 +67,29 @@ class BaseUI:
         # Draw weapon info
         if character.weapon:
             weapon_name = character.weapon.name[:10]
-            weapon_text = self.small_font.render(weapon_name, True, (255, 255, 255))
+            ammo_display = f"{character.weapon.ammo}/{character.weapon.max_ammo}"
+            weapon_text = self.small_font.render(f"{weapon_name}", True, (255, 255, 255))
+            ammo_text = self.small_font.render(ammo_display, True, (255, 200, 0))
+            
+            # Position weapon name
             weapon_rect = weapon_text.get_rect(center=(x, y + self.circle_radius + 18))
             
-            # Label background
+            # Position ammo below weapon name
+            ammo_rect = ammo_text.get_rect(center=(x, y + self.circle_radius + 32))
+            
+            # Label background for weapon
             bg_rect = weapon_rect.inflate(8, 4)
             bg_surf = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
             pygame.draw.rect(bg_surf, (0, 0, 0, 180), (0, 0, bg_rect.width, bg_rect.height), border_radius=4)
             self.screen.blit(bg_surf, bg_rect)
             self.screen.blit(weapon_text, weapon_rect)
+            
+            # Label background for ammo
+            ammo_bg_rect = ammo_rect.inflate(8, 4)
+            ammo_bg_surf = pygame.Surface((ammo_bg_rect.width, ammo_bg_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(ammo_bg_surf, (0, 0, 0, 180), (0, 0, ammo_bg_rect.width, ammo_bg_rect.height), border_radius=4)
+            self.screen.blit(ammo_bg_surf, ammo_bg_rect)
+            self.screen.blit(ammo_text, ammo_rect)
 
     def draw(self, characters: list, game_over: bool = False, winner=None, respawn_timers: dict = None):
         """Main draw loop for the UI."""

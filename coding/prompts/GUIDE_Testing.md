@@ -34,13 +34,16 @@ def test_weapon_creation():
     assert gun.name == "Name"
     assert gun.damage > 0
     assert not gun.is_equipped
+    assert gun.ammo == gun.max_ammo  # Starts with full ammo
 
 def test_weapon_shooting():
     gun = YourWeapon()
+    initial_ammo = gun.ammo
     projectiles = gun.shoot(100, 100, 200, 100, "owner")
     assert isinstance(projectiles, list)
     assert len(projectiles) == expected_count
     assert all(p.damage == gun.damage for p in projectiles)
+    assert gun.ammo == initial_ammo - gun.ammo_per_shot  # Ammo consumed
 
 def test_weapon_cooldown():
     gun = YourWeapon()
@@ -48,6 +51,31 @@ def test_weapon_cooldown():
     shot2 = gun.shoot(100, 100, 200, 100, "owner")  # Immediate retry
     assert shot1 is not None
     assert shot2 is None  # Blocked by cooldown
+
+def test_weapon_ammo_depletion():
+    gun = YourWeapon()
+    # Shoot until out of ammo
+    shots = 0
+    while gun.ammo >= gun.ammo_per_shot:
+        result = gun.shoot(100, 100, 200, 100, "owner")
+        if result is not None:
+            shots += 1
+        gun.last_shot_time = 0  # Reset cooldown
+    
+    # Should not shoot when out of ammo
+    final_shot = gun.shoot(100, 100, 200, 100, "owner")
+    assert final_shot is None
+    assert gun.ammo < gun.ammo_per_shot
+
+def test_weapon_ammo_pickup():
+    gun = YourWeapon()
+    gun.ammo = 5  # Reduce ammo
+    gun.add_ammo(10)
+    assert gun.ammo == 15
+    
+    # Should not exceed max_ammo
+    gun.add_ammo(1000)
+    assert gun.ammo == gun.max_ammo
 ```
 
 ## PROJECTILE TESTING PATTERNS
@@ -86,6 +114,112 @@ def test_character_weapon_integration():
 
     result = char.shoot([200, 100])
     assert result is not None
+    assert weapon.ammo < weapon.max_ammo  # Ammo was consumed
+
+def test_ammo_pickup_integration():
+    from BASE_components.BASE_ammo import BaseAmmoPickup
+    from GameFolder.arenas.GAME_arena import Arena
+    
+    arena = Arena(800, 600, headless=True)
+    char = Character("Test", "Test", "", [100, 100])
+    weapon = YourWeapon()
+    
+    # Give character weapon with low ammo
+    weapon.ammo = 5
+    weapon.pickup()
+    char.weapon = weapon
+    arena.add_character(char)
+    
+    # Place ammo pickup near character
+    ammo = BaseAmmoPickup([105, 100], ammo_amount=10)
+    arena.spawn_ammo(ammo)
+    
+    # Simulate collision
+    arena.handle_collisions(0.016)
+    
+    # Character should have picked up ammo
+    assert char.weapon.ammo == 15
+    assert not ammo.is_active
+
+def test_shield_damage_priority():
+    """Test that shields absorb damage before health."""
+    char = Character("Test", "Test", "", [100, 100])
+
+    initial_health = char.health
+    initial_shield = char.shield
+
+    # Damage less than shield amount
+    char.take_damage(20)
+    assert char.shield == initial_shield - 20, f"Shield should absorb 20 damage, got {char.shield}"
+    assert char.health == initial_health, f"Health should be unchanged, got {char.health}"
+
+    # Damage exceeding remaining shield
+    remaining_shield = char.shield
+    excess_damage = 40
+    char.take_damage(excess_damage)
+    expected_health_loss = excess_damage - remaining_shield
+    assert char.shield == 0, f"Shield should be depleted, got {char.shield}"
+    assert char.health == initial_health - expected_health_loss, f"Health should lose {expected_health_loss}, got {char.health}"
+
+def test_shield_regeneration():
+    """Test shield regeneration mechanics."""
+    char = Character("Test", "Test", "", [100, 100])
+    import time
+
+    # Deplete shield
+    char.take_damage(50)
+    assert char.shield == 0
+
+    # Shield should not regen immediately
+    char.update(0.5, [], 600)  # 0.5 seconds
+    assert char.shield == 0, "Shield should not regen during damage delay"
+
+    # Set last damage time to enable regen
+    char.last_damage_time = time.time() - 2  # 2 seconds ago
+    char.update(1.0, [], 600)  # 1 second update
+    assert char.shield > 0, f"Shield should regenerate, got {char.shield}"
+    assert char.shield <= char.max_shield, f"Shield should not exceed max, got {char.shield}"
+
+def test_shield_network_serialization():
+    """Test shield properties survive network serialization."""
+    char = Character("Test", "Test", "", [100, 100])
+
+    # Modify shield state
+    char.take_damage(25)
+    char.last_damage_time = 1234567890.0
+
+    # Simulate network serialization/deserialization
+    state = char.__getstate__()
+    new_char = Character("Test2", "Test", "", [200, 200])
+    new_char.__setstate__(state)
+
+    # Verify shield properties were preserved
+    assert new_char.shield == char.shield, f"Shield not preserved: {new_char.shield} != {char.shield}"
+    assert new_char.max_shield == char.max_shield, f"Max shield not preserved: {new_char.max_shield} != {char.max_shield}"
+    assert new_char.last_damage_time == char.last_damage_time, f"Last damage time not preserved: {new_char.last_damage_time} != {char.last_damage_time}"
+
+def test_shield_ui_display():
+    """Test shield visualization in UI."""
+    from GameFolder.ui.GAME_ui import GameUI
+    import pygame
+
+    # Create mock screen for testing
+    pygame.init()
+    screen = pygame.Surface((1200, 700))
+
+    ui = GameUI(screen, 1200, 700)
+    char = Character("Test", "Test", "", [100, 100])
+
+    # Test full shield display
+    ui.draw_character_indicator(char, 1, [1000, 50])
+    # Shield ring should be visible when shield > 0
+
+    # Test depleted shield
+    char.take_damage(50)  # Deplete shield
+    ui.draw_character_indicator(char, 1, [1000, 50])
+    # Shield ring should show as mostly gray/depleted
+
+    pygame.quit()  # Clean up
 ```
 
 ## RUNNING TESTS
@@ -118,6 +252,22 @@ target.health = 0
 ```
 
 The `is_alive` property checks `health > 0 AND lives > 0`. It's read-only.
+
+### 1.5. Shield Damage Priority (CRITICAL!)
+**Shields absorb damage BEFORE health!** All damage calculations must account for shield absorption:
+```python
+# ❌ WRONG - ignores shield absorption
+char.take_damage(30)
+assert char.health == initial_health - 30  # FAILS! Shield absorbs first
+
+# ✅ CORRECT - account for shield priority
+damage = 30
+shield_absorbed = min(damage, char.shield)
+health_damage = max(0, damage - char.shield)
+char.take_damage(damage)
+assert char.shield == initial_shield - shield_absorbed
+assert char.health == initial_health - health_damage
+```
 
 ### 2. Weapon Cooldown Between Shots
 `weapon.shoot()` returns `None` if cooldown hasn't elapsed:

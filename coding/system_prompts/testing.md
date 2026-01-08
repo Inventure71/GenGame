@@ -76,6 +76,9 @@ Must read (in ONE parallel batch):
 2. **Correct damage amount**: Health reduced by `projectile.damage`
 3. **Projectile spawning**: `shoot()` returns projectile(s) with correct damage
 4. **Cooldown**: Cannot fire again until elapsed
+5. **Ammo consumption**: Each shot reduces `weapon.ammo` by `weapon.ammo_per_shot`
+6. **Ammo depletion**: Cannot shoot when `weapon.ammo < weapon.ammo_per_shot`
+7. **Ammo persistence**: Weapon retains ammo when dropped and picked up
 
 ### Projectiles - MUST verify:
 1. **Damage on hit**: `target.health` reduced on collision

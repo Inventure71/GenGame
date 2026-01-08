@@ -859,6 +859,7 @@ class GameServer:
             'characters': character_states,
             'projectiles': [proj.__getstate__() for proj in self.arena.projectiles],
             'weapons': [weapon.__getstate__() for weapon in self.arena.weapon_pickups],
+            'ammo_pickups': [ammo.__getstate__() for ammo in self.arena.ammo_pickups],
             'platforms': [platform.__getstate__() for platform in self.arena.platforms],
             'game_over': self.arena.game_over,
             'winner': self.arena.winner

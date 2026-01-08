@@ -446,22 +446,32 @@ def test_character_max_lives(character_class: Type):
 
 
 def test_character_take_damage(character_class: Type):
-    """Test that a character can take damage (with defense applied)."""
+    """Test that a character can take damage (with shields and defense applied)."""
     char = character_class(
         name="Test Player",
         description="Test",
         image="",
         location=[100.0, 100.0]
     )
-    
+
     initial_health = char.health
+    initial_shield = getattr(char, 'shield', 0)  # Handle characters without shields
     damage = 20
-    
+
     char.take_damage(damage)
-    
-    # Damage is reduced by defense: max(1, 20 - (5 * 1)) = 15
-    expected_damage = max(1, damage - (char.defense * char.defense_multiplier))
-    expected_health = initial_health - expected_damage
+
+    # With shield system: shields absorb damage first, then defense applies to remaining
+    shield_damage = min(damage, initial_shield)
+    remaining_damage = max(0, damage - initial_shield)
+    health_damage = max(0, remaining_damage - (char.defense * char.defense_multiplier))
+    health_damage = max(1, health_damage) if remaining_damage > 0 else 0
+
+    expected_shield = initial_shield - shield_damage
+    expected_health = initial_health - health_damage
+
+    # Verify shield absorption
+    if hasattr(char, 'shield'):
+        assert char.shield == expected_shield, f"Shield should be {expected_shield}, got {char.shield}"
     assert char.health == expected_health, f"Health should be {expected_health}, got {char.health}"
 
 

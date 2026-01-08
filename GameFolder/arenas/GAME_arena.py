@@ -17,11 +17,15 @@ import random
 class Arena(BaseArena):
     def __init__(self, width: int = 800, height: int = 600, headless: bool = False):
         super().__init__(width, height, headless)
+
+        # Remove the default floor so players can fall out
+        self.platforms = [p for p in self.platforms if p.rect.y < self.height - 50]  # Keep only non-floor platforms
+
         # Register custom weapons
         self.register_weapon_type("BlackHoleGun", BlackHoleGun)
         self.register_weapon_type("TornadoGun", TornadoGun)
         self.register_weapon_type("OrbitalCannon", OrbitalCannon)
-        
+
         # Register projectile types for binary serialization
         self.register_projectile_type(StormCloud)
         self.register_projectile_type(BlackHoleProjectile)
@@ -29,12 +33,17 @@ class Arena(BaseArena):
         self.register_projectile_type(TargetingLaser)
         self.register_projectile_type(OrbitalStrikeMarker)
         self.register_projectile_type(OrbitalBlast)
-        
+
         if not self.headless:
             pygame.display.set_caption(f"GenGame - Battle Arena")
             self.ui = GameUI(self.screen, self.width, self.height)
         else:
             self.ui = None
+
+        # Out-of-bounds damage tracking
+        self.out_of_bounds_damage_timer = 0.0
+        self.out_of_bounds_damage_interval = 1.0  # Damage every 1 second
+        self.out_of_bounds_damage_amount = 20.0   # 5 damage per second
 
     def update_world(self, delta_time: float):
         """Update the world simulation (alias for update method for test compatibility)."""
@@ -46,6 +55,9 @@ class Arena(BaseArena):
         """
         Custom collision logic for special projectiles.
         """
+        # Handle out-of-bounds damage
+        self.handle_out_of_bounds_damage(delta_time)
+
         # 1. Capture special projectiles BEFORE base collision logic removes inactive ones
         special_projs = [p for p in self.projectiles if isinstance(p, (
             BlackHoleProjectile, TornadoProjectile, TargetingLaser,
@@ -184,3 +196,33 @@ class Arena(BaseArena):
         for plat in self.platforms[1:]:
             if hasattr(plat, 'return_to_origin') and not getattr(plat, 'being_pulled', False):
                 plat.return_to_origin(delta_time)
+
+    def handle_out_of_bounds_damage(self, delta_time: float):
+        """
+        Apply damage to characters who are outside the arena bounds.
+        Damage is applied every second when outside bounds.
+        """
+        self.out_of_bounds_damage_timer += delta_time
+
+        if self.out_of_bounds_damage_timer >= self.out_of_bounds_damage_interval:
+            self.out_of_bounds_damage_timer = 0.0
+
+            for char in self.characters:
+                if not char.is_alive:
+                    continue
+
+                # Check if character is outside arena bounds
+                char_left = char.location[0]
+                char_right = char.location[0] + char.width * char.scale_ratio
+                char_top = char.location[1] + char.height * char.scale_ratio
+                char_bottom = char.location[1]
+
+                out_of_bounds = (
+                    char_right < 0 or                    # Left edge
+                    char_left > self.width or            # Right edge
+                    char_top < 0 or                      # Top edge
+                    char_bottom > self.height            # Bottom edge (though unlikely due to gravity)
+                )
+
+                if out_of_bounds:
+                    char.take_damage(self.out_of_bounds_damage_amount)
