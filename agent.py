@@ -148,12 +148,13 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
     print("Tests created (REMEMBER THAT WE DIDN'T SUMMARIZE THE CHAT FOR NOW)")
     print("--------------------------------")
 
-def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None):
+def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None, UI_called=False):
     if total_cleanup:
         modelHandler.clean_chat_history()
 
     plan_feature(prompt, modelHandler, todo_list, fix_mode=fix_mode, results=results)
     implement_feature(modelHandler, todo_list)
+    
     if not fix_mode:
         generate_tests(prompt, modelHandler, todo_list)
     else:
@@ -187,7 +188,12 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
         print("Issues to fix: ", issues_to_fix)
         print("Some tests failed do you want to ask for a fix? (y/n)")
         print("You will be prompted to save the files to the extension file after the N or a successful fix")
-        if input("Fix tests? (y/n): ").strip().lower() == 'y':
+        if not UI_called:
+            answer = input("Fix tests? (y/n): ").strip().lower() == 'y'
+        else:
+            answer = True
+
+        if answer:
             print("Asking for a fix to model...")
             print("Not cleaning up chat history in fix mode but we are summarizing it again in case last step wasn't summarized")
             modelHandler.summarize_chat_history(autocleanup=True)
@@ -196,57 +202,40 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
                 f"## The following tests failed, understand why and fix the issues\n"
                 f"{issues_to_fix}\n"
             )
-            full_loop(prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results)
-        if fix_mode:
+            if not UI_called:
+                full_loop(prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results)
+            else:
+                return False, modelHandler, todo_list, prompt, backup_name
+        
+        elif fix_mode:
             return False
+    
     else:
         print("Tests passed, continuing...")    
         if fix_mode:
-            return True
+            if not UI_called:
+                return True
+            else:
+                return True, modelHandler, todo_list, "", backup_name
 
-    if input("Save changes to extension file? (y/n): ").strip().lower() == 'y':
-        action_logger.save_changes_to_extension_file("patches.json", name_of_backup=backup_name)
+    if not UI_called:
+        if input("Save changes to extension file? (y/n): ").strip().lower() == 'y':
+            action_logger.save_changes_to_extension_file("patches.json", name_of_backup=backup_name)
 
     print("--------------------------------")
     action_logger.print_summary(todo_list)
     print("--------------------------------")
     
-    # Prompt user to see full diffs
-    show_diffs = input("\nShow full diffs? (y/n): ").strip().lower()
-    if show_diffs == 'y':
-        action_logger.print_diffs()
+    if not UI_called:
+        # Prompt user to see full diffs
+        show_diffs = input("\nShow full diffs? (y/n): ").strip().lower()
+        if show_diffs == 'y':
+            action_logger.print_diffs()
 
-def new_main(prompt: str = None, start_from_base: str = None):
+def new_main(prompt: str = None, start_from_base: str = None, UI_called=False):
     load_dotenv()
     check_integrity()
 
-    print("Running tests...")
-    suite = run_all_tests()
-    # Convert TestSuite to dict format expected by parse_test_results
-    results = {
-        "success": suite.all_passed,
-        "total_tests": suite.total_tests,
-        "passed_tests": suite.passed_tests,
-        "failed_tests": suite.failed_tests,
-        "duration": suite.total_duration,
-        "summary": suite.get_summary(),
-        "failures": [
-            {
-                "test_name": result.test_name,
-                "source_file": result.source_file,
-                "error_msg": result.error_msg,
-                "traceback": result.error_traceback,
-                "duration": result.duration
-            }
-            for result in suite.results if not result.passed
-        ]
-    }
-    print("Tests results: ", results)
-
-    issues_to_fix = parse_test_results(results)
-
-    
-    """
     handler = BackupHandler("__game_backups")
     if start_from_base is None:
         backup_path, backup_name = handler.create_backup("GameFolder") 
@@ -269,8 +258,22 @@ def new_main(prompt: str = None, start_from_base: str = None):
         prompt = input("Enter your prompt: ")
     else:
         print("Using prompt: ", prompt)
-    full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True)
-    """
+    
+    if not UI_called:
+        full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True, UI_called=UI_called)
+
+        action_logger.end_session()
+    else:
+        if UI_called:
+            success, modelHandler, todo_list, prompt, backup_name = full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True, UI_called=UI_called)
+        else:
+            success, modelHandler, todo_list, prompt = full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True, UI_called=UI_called)
+
+        if success:
+            action_logger.end_session()
+
+        return success, modelHandler, todo_list, prompt, backup_name
+    
     """
     REMEMBER
     - Fix mode avoids cleaning up chat history and avoids creating tests

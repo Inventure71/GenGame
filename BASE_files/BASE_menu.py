@@ -321,6 +321,7 @@ class BaseMenu:
         self.agent_running = False
         self.agent_results = None
         self.show_fix_prompt = False
+        self.agent_values = None
 
         # Patch saving state
         self.patch_name = ""
@@ -1177,9 +1178,14 @@ class BaseMenu:
         if not os.path.exists(patches_dir):
             os.makedirs(patches_dir)
 
+        # Get the backup name from agent values, fallback to "GameFolder"
+        backup_name = "GameFolder"
+        if self.agent_values and "backup_name" in self.agent_values:
+            backup_name = self.agent_values["backup_name"]
+
         # Save the patch
         patch_path = os.path.join(patches_dir, f"{self.patch_name}.json")
-        success = action_logger.save_changes_to_extension_file(patch_path, name_of_backup="GameFolder")
+        success = action_logger.save_changes_to_extension_file(patch_path, name_of_backup=backup_name)
 
         if success:
             print(f"✓ Patch saved successfully: {patch_path}")
@@ -1612,7 +1618,8 @@ class BaseMenu:
         """Run the agent with the given prompt."""
         try:
             from agent import new_main
-            new_main(prompt=prompt)
+            success, modelHandler, todo_list, prompt, backup_name = new_main(prompt=prompt, start_from_base="20260109000711_GameFolder", UI_called=True)
+            self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
             # Get test results
             from coding.tools.testing import run_all_tests
             test_results = run_all_tests()
@@ -1632,8 +1639,25 @@ class BaseMenu:
     def run_agent_fix(self, results):
         """Run the agent in fix mode."""
         try:
-            from agent import new_main
-            new_main(prompt=None, start_from_base=None)  # This will trigger fix mode internally
+            if self.agent_values is None:
+                print("No agent values to run agent fix")
+                self.show_error_message("No agent values to run agent fix")
+                return
+                
+            from agent import full_loop
+
+            success = self.agent_values["success"]
+            modelHandler = self.agent_values["modelHandler"] 
+            todo_list = self.agent_values["todo_list"]
+            prompt = self.agent_values["prompt"]
+
+            backup_name = self.agent_values.get("backup_name", "GameFolder")
+            success, modelHandler, todo_list, prompt, backup_name = full_loop(prompt=prompt, modelHandler=modelHandler, todo_list=todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results, UI_called=True)
+            if success:
+                self.agent_values = None
+            else:
+                self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
+
             # Get updated test results
             from coding.tools.testing import run_all_tests
             test_results = run_all_tests()

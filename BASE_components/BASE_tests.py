@@ -21,7 +21,7 @@ import inspect
 from typing import List, Callable, Optional, Type, Any
 from dataclasses import dataclass, field
 from coding.non_callable_tools.helpers import clear_python_cache
-
+from coding.non_callable_tools.action_logger import action_logger
 # Set up headless mode for automated testing (only when run directly)
 import pygame
 
@@ -800,6 +800,17 @@ def run_all_tests(
             # Run test with the required class
             result = runner.run_test_with_args(test_func, [required_class], "BASE_tests.py")
         
+        # Log individual test result to visual logger
+        if hasattr(action_logger, 'log_test_result'):
+            action_logger.log_test_result({
+                'test_name': result.test_name,
+                'status': 'passed' if result.passed else 'failed',
+                'source_file': result.source_file,
+                'error_msg': result.error_msg,
+                'traceback': result.error_traceback,
+                'duration': result.duration
+            })
+
         combined_suite.add_result(result)
         if result.passed:
             passed += 1
@@ -826,6 +837,15 @@ def run_all_tests(
                 # Custom tests don't take arguments
                 custom_suite = runner.run_tests(test_functions, file_name)
                 for result in custom_suite.results:
+                    if hasattr(action_logger, 'log_test_result'):
+                        action_logger.log_test_result({
+                            'test_name': result.test_name,
+                            'status': 'passed' if result.passed else 'failed',
+                            'source_file': result.source_file,
+                            'error_msg': result.error_msg,
+                            'traceback': result.error_traceback,
+                            'duration': result.duration
+                        })
                     combined_suite.add_result(result)
                 
                 if verbose:

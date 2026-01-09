@@ -73,7 +73,7 @@ class GeminiHandler:
             # For Gemini 2.5/3, include_thoughts is often required to see the process
             config_kwargs["thinking_config"] = types.ThinkingConfig(
                 include_thoughts=True, 
-                thinking_level=thinking_level
+                thinking_level=thinking_level.lower()
             )
         
         if tools:

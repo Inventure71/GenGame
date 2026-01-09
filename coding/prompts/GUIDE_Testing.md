@@ -253,17 +253,38 @@ target.health = 0
 
 The `is_alive` property checks `health > 0 AND lives > 0`. It's read-only.
 
-### 1.5. Shield Damage Priority (CRITICAL!)
-**Shields absorb damage BEFORE health!** All damage calculations must account for shield absorption:
-```python
-# ❌ WRONG - ignores shield absorption
-char.take_damage(30)
-assert char.health == initial_health - 30  # FAILS! Shield absorbs first
+### 1.5. Damage System (CRITICAL!)
+**Two-layer damage mitigation: Shields → Defense → Health**
 
-# ✅ CORRECT - account for shield priority
-damage = 30
+**Shields absorb damage first:**
+```python
+# Shields take damage before health
+char.take_damage(30)  # 30 damage
+# Result: shield -= 30, health unchanged (if shield >= 30)
+```
+
+**Defense reduces remaining damage:**
+```python
+# Defense formula: max(1, damage - defense)
+# Characters have 5.0 base defense
+char.shield = 0  # Disable shields
+char.take_damage(3)   # Result: health -= 1 (minimum damage)
+char.take_damage(10)  # Result: health -= 5 (10 - 5 defense)
+```
+
+**Complete damage calculation:**
+```python
+damage = 15
+# 1. Shields absorb first
 shield_absorbed = min(damage, char.shield)
-health_damage = max(0, damage - char.shield)
+remaining = damage - shield_absorbed
+
+# 2. Defense reduces remaining (minimum 1 damage)
+if remaining > 0:
+    health_damage = max(1, remaining - 5.0)  # 5.0 = base defense
+else:
+    health_damage = 0
+
 char.take_damage(damage)
 assert char.shield == initial_shield - shield_absorbed
 assert char.health == initial_health - health_damage

@@ -40,12 +40,17 @@ Inputs are captured directly from pygame events.
 - `self.weapon`: The currently equipped `BaseWeapon` or `None`.
 - `self.on_ground`: Boolean flag updated by physics.
 - `self.vertical_velocity`: Current upward/downward velocity (used for jumping and falling).
-- **Shield System** (GAME_character.py extension):
-  - `self.shield` / `self.max_shield`: Current/Max shield points (default 50.0).
-  - `self.shield_regen_rate`: Shield regeneration per second (default 1.0).
-  - `self.last_damage_time`: Timestamp of last damage taken (for regen delay).
-  - **Damage Priority**: Shields absorb damage before health.
-  - **Regeneration**: Shields regenerate after 1 second delay from last damage.
+- **Two-Layer Damage System**:
+  - **Shields** (GAME_character.py): Absorb damage before health.
+    - `self.shield` / `self.max_shield`: Current/Max shield points (default 50.0).
+    - `self.shield_regen_rate`: Shield regeneration per second (default 1.0).
+    - `self.last_damage_time`: Timestamp of last damage taken (for regen delay).
+    - **Regeneration**: Shields regenerate after 1 second delay from last damage.
+  - **Defense** (BASE_character.py): Reduces remaining damage after shields.
+    - `self.defense`: Base defense value (default 5.0).
+    - `self.defense_multiplier`: Defense modifier (default 1.0).
+    - **Formula**: `reduced_damage = max(1, damage - (defense × multiplier))`
+    - **Minimum**: Always deals at least 1 damage.
 - **Flight System**:
   - `self.flight_time_remaining`: Current flight fuel (max 3.0 seconds).
   - `self.needs_recharge`: If True, flight is disabled until landing.

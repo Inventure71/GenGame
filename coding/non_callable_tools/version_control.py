@@ -100,14 +100,39 @@ class VersionControl:
         for change in changes:
             file_path = change["path"]
             print(f"Applying patch to {file_path}...")
-            # check if it exists
-            if not os.path.exists(file_path):
-                print(f"File {file_path} does not exist, creating")
-                with open(file_path, 'w') as f:
-                    f.write('')
-            
             diff = change["diff"]
+            
             if diff:
+                # Check if this is a file creation diff (@@ -0,0 +1,N @@)
+                if '@@ -0,0' in diff:
+                    # Extract content from file creation diff
+                    lines = diff.split('\n')
+                    content_lines = []
+                    in_content = False
+                    for line in lines:
+                        if line.startswith('@@ -0,0'):
+                            in_content = True
+                            continue
+                        if in_content:
+                            if not line.startswith('---') and not line.startswith('+++') and not line.startswith('@@'):
+                                # Handle both standard diff format (+prefix) and simplified format (no prefix)
+                                if line.startswith('+'):
+                                    content_lines.append(line[1:])
+                                else:
+                                    content_lines.append(line)
+                    content = '\n'.join(content_lines)
+                    with open(file_path, 'w') as f:
+                        f.write(content)
+                    print(f"    ✓ Created new file")
+                    success_count += 1
+                    continue
+                
+                # For normal diffs, ensure file exists
+                if not os.path.exists(file_path):
+                    print(f"File {file_path} does not exist, creating")
+                    with open(file_path, 'w') as f:
+                        f.write('')
+                
                 success, result = self.valid_apply(file_path, diff)
                 if success:
                     print(f"    ✓ Applied successfully")
