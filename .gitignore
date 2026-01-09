@@ -9,4 +9,8 @@ __pycache__/
 *.pyd
 .pytest_cache
 tt.py
-__server_patches/conflict_cache.json
+
+/__patches
+/__server_patches
+/__TEMP_SECURITY_BACKUP
+
