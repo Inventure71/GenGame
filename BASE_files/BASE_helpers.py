@@ -2,7 +2,7 @@ import socket
 
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SECRET_OFFSET = 717171 
-REMOTE_DOMAIN = "gen.inventure71.duckdns.org"
+REMOTE_DOMAIN = "gengame.inventure71.duckdns.org"
 
 def base_encode(n: int) -> str:
     if n == 0: return ALPHABET[0]

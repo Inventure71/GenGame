@@ -32,7 +32,7 @@ class GameServer:
     Authoritative server that runs the game simulation and broadcasts state to clients.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 5555):
+    def __init__(self, host: str = "0.0.0.0", port: int = 5555):
         self.host = host
         self.port = port
         self.running = False
@@ -135,6 +135,15 @@ class GameServer:
             except:
                 pass
         print("Server stopped.")
+
+    def _send_data_safe(self, client_socket: socket.socket, data: bytes):
+        """Send data safely to a non-blocking socket by temporarily making it blocking."""
+        was_blocking = client_socket.gettimeout() is not None
+        try:
+            client_socket.setblocking(True)
+            client_socket.sendall(data)
+        finally:
+            client_socket.setblocking(False)
 
     def _network_loop(self):
         """Handle network connections and client communication."""
@@ -264,7 +273,7 @@ class GameServer:
             
             data = pickle.dumps(message)
             length_bytes = len(data).to_bytes(4, byteorder='big')
-            client_socket.send(length_bytes + data)
+            self._send_data_safe(client_socket, length_bytes + data)
             
             print(f"Sent merge patch to {player_id} ({len(patch_content)} bytes)")
         except Exception as e:
@@ -282,7 +291,7 @@ class GameServer:
 
         for player_id, client_socket in self.clients.items():
             try:
-                client_socket.send(length_bytes + data)
+                self._send_data_safe(client_socket, length_bytes + data)
                 print(f"Sent game_start to {player_id}")
             except Exception as e:
                 print(f"Failed to send game_start to {player_id}: {e}")
@@ -307,7 +316,7 @@ class GameServer:
         
         for player_id, client_socket in self.clients.items():
             try:
-                client_socket.send(length_bytes + data)
+                self._send_data_safe(client_socket, length_bytes + data)
                 print(f"Sent patch_sync_failed notification to {player_id}")
             except Exception as e:
                 print(f"Failed to send patch_sync_failed to {player_id}: {e}")
@@ -326,13 +335,35 @@ class GameServer:
             data = pickle.dumps(sync_data)
             # Send length first, then data
             length_bytes = len(data).to_bytes(4, byteorder='big')
-            client_socket.send(length_bytes)
-            client_socket.send(data)
+            self._send_data_safe(client_socket, length_bytes + data)
 
             print(f"Sent file sync to {player_id}")
 
         except Exception as e:
             print(f"Failed to send file sync to {player_id}: {e}")
+
+    def _recv_exact(self, socket, size: int) -> Optional[bytes]:
+        """Receive exactly size bytes from non-blocking socket."""
+        data = b''
+        while len(data) < size:
+            try:
+                # Wait up to 5 seconds for data
+                ready, _, _ = select.select([socket], [], [], 5.0)
+                if ready:
+                    chunk = socket.recv(size - len(data))
+                    if not chunk:
+                        return None # Disconnected
+                    data += chunk
+                else:
+                    # Timeout waiting for data chunk
+                    continue
+            except BlockingIOError:
+                # Resource temporarily unavailable, try again
+                continue
+            except Exception as e:
+                print(f"Error in _recv_exact: {e}")
+                return None
+        return data
 
     def _handle_client_messages(self):
         """Receive and process messages from all clients."""
@@ -382,18 +413,19 @@ class GameServer:
 
                     message_length = int.from_bytes(length_bytes, byteorder='big')
 
-                    # Receive the actual message
-                    data = b''
-                    while len(data) < message_length:
-                        chunk = client_socket.recv(message_length - len(data))
-                        if not chunk:
-                            break
-                        data += chunk
-
-                    if len(data) == message_length:
+                    # Receive the actual message using robust reader
+                    data = self._recv_exact(client_socket, message_length)
+                    
+                    if data and len(data) == message_length:
                         message = pickle.loads(data)
                         self._process_client_message(player_id, message, client_socket)
-
+                    else:
+                        print(f"Failed to receive complete message body from {player_id}")
+                        if not is_pending:
+                            self._handle_client_disconnect(player_id)
+                
+                except BlockingIOError:
+                    continue
                 except Exception as e:
                     # Client likely disconnected
                     if is_pending:
@@ -529,7 +561,7 @@ class GameServer:
                         data = pickle.dumps(response)
                         length_bytes = len(data).to_bytes(4, byteorder='big')
                         try:
-                            client_socket.send(length_bytes + data)
+                            self._send_data_safe(client_socket, length_bytes + data)
                         except:
                             pass
                         return
@@ -565,7 +597,7 @@ class GameServer:
                 data = pickle.dumps(response)
                 length_bytes = len(data).to_bytes(4, byteorder='big')
                 try:
-                    self.clients[player_id].send(length_bytes + data)
+                    self._send_data_safe(self.clients[player_id], length_bytes + data)
                 except Exception as e:
                     print(f"Failed to send character assignment: {e}")
         elif msg_type == 'file_request':
@@ -776,7 +808,7 @@ class GameServer:
         try:
             data = pickle.dumps(message)
             length_bytes = len(data).to_bytes(4, byteorder='big')
-            self.clients[player_id].send(length_bytes + data)
+            self._send_data_safe(self.clients[player_id], length_bytes + data)
         except Exception as e:
             print(f"Failed to send message to {player_id}: {e}")
             # Client might have disconnected
@@ -1023,7 +1055,7 @@ class GameServer:
         
         for player_id, client_socket in self.clients.items():
             try:
-                client_socket.send(length_bytes + data)
+                self._send_data_safe(client_socket, length_bytes + data)
             except Exception as e:
                 print(f"Failed to notify {player_id}: {e}")
         
@@ -1065,7 +1097,7 @@ class GameServer:
 
                 for player_id, client_socket in self.clients.items():
                     try:
-                        client_socket.send(length_bytes + data)
+                        self._send_data_safe(client_socket, length_bytes + data)
                         print(f"Sent restart notification to {player_id}")
                     except Exception as e:
                         print(f"Failed to send restart notification to {player_id}: {e}")
@@ -1257,7 +1289,7 @@ class GameServer:
 
             for player_id, client_socket in self.clients.items():
                 try:
-                    client_socket.send(length_bytes + data)
+                    self._send_data_safe(client_socket, length_bytes + data)
                 except Exception as e:
                     print(f"Failed to send restart notification to {player_id}: {e}")
 
@@ -1285,7 +1317,7 @@ class GameServer:
         disconnected_clients = []
         for player_id, client_socket in self.clients.items():
             try:
-                client_socket.send(length_bytes + data)
+                self._send_data_safe(client_socket, length_bytes + data)
             except Exception as e:
                 print(f"Failed to send to {player_id}: {e}")
                 disconnected_clients.append(player_id)
@@ -1301,7 +1333,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser(description='GenGame Server')
-    parser.add_argument('--host', default='127.0.0.1', help='Server host (default: 127.0.0.1)')
+    parser.add_argument('--host', default='0.0.0.0', help='Server host (default: 0.0.0.0)')
     parser.add_argument('--port', type=int, default=5555, help='Server port (default: 5555)')
 
     args = parser.parse_args()

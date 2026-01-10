@@ -10,6 +10,7 @@ import sys
 import traceback
 import platform
 import subprocess
+import threading
 
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
 from BASE_files.patch_manager import PatchManager
@@ -659,9 +660,14 @@ class BaseMenu:
         """Callback when patch file is received from server."""
         print(f"📦 Received merge patch: {patch_path}")
         print("🔧 Applying patch to GameFolder...")
+        
+        # Run patch application in a separate thread to avoid blocking network updates
+        patch_thread = threading.Thread(target=self._apply_patch_async, args=(patch_path,), daemon=True)
+        patch_thread.start()
 
+    def _apply_patch_async(self, patch_path: str):
+        """Apply patch asynchronously to avoid blocking the network loop."""
         # CRITICAL FIX: Ensure we're applying patches from the project root directory
-        # VersionControl.apply_all_changes applies patches relative to current working directory
         project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         original_cwd = os.getcwd()
 
@@ -683,12 +689,11 @@ class BaseMenu:
                 print("-----    FAILED    -----")
                 print("Some changes failed to apply")
                 print(errors)
-                # FIXED: Actually report failure to server
                 error_msg = str(errors) if errors else "Unknown error applying patches"
                 self.client.send_patch_applied(success=False, error_message=error_msg)
         except Exception as e:
             print(f"Error applying patch: {e}")
-            # FIXED: Actually report failure to server
+            traceback.print_exc()
             self.client.send_patch_applied(success=False, error_message=str(e))
         finally:
             # Always restore original working directory
@@ -767,12 +772,6 @@ class BaseMenu:
         # Reset error message state
         self.error_message = None
         self.error_message_time = 0
-
-        # Reset target server info (for joining rooms)
-        if hasattr(self, 'target_server_ip'):
-            delattr(self, 'target_server_ip')
-        if hasattr(self, 'target_server_port'):
-            delattr(self, 'target_server_port')
 
         # Reset connection attempt time
         if hasattr(self, 'connection_attempt_time'):

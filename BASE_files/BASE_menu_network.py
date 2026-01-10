@@ -32,8 +32,16 @@ class MenuNetwork:
 
     def connect_to_server(self, server_host: str = "127.0.0.1", server_port: int = 5555):
         """Connect to the server, creating client if needed or reconnecting if disconnected."""
+        # Store connection info in menu for reconnection
+        self.menu.target_server_ip = server_host
+        self.menu.target_server_port = server_port
+
         if not self.client:
             self.client = NetworkClient(server_host, server_port)
+        else:
+            # Update host and port in case they changed
+            self.client.host = server_host
+            self.client.port = server_port
 
         # Only connect if not already connected
         self.client.disconnect()
@@ -82,5 +90,8 @@ class MenuNetwork:
         print(f"Room code generated: {self.menu.room_code}")
         print("NOTE: For remote rooms to work, replace the external_ip with your actual external IP address")
 
-        # Connect locally (the server is still running on localhost for the host)
-        self.connect_to_server("localhost", self.server_port)
+        # Connect to the remote server
+        if not self.connect_to_server(REMOTE_DOMAIN, self.server_port):
+            print("Failed to connect to remote server!")
+            return False
+        return True

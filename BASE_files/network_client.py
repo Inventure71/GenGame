@@ -308,6 +308,29 @@ class NetworkClient:
         # Process incoming messages
         self._process_incoming_messages()
 
+    def _recv_exact(self, size: int) -> Optional[bytes]:
+        """Receive exactly size bytes from non-blocking socket."""
+        data = b''
+        while len(data) < size and self.running and self.connected:
+            try:
+                # Wait up to 5 seconds for data
+                ready, _, _ = select.select([self.socket], [], [], 5.0)
+                if ready:
+                    chunk = self.socket.recv(size - len(data))
+                    if not chunk:
+                        return None # Disconnected
+                    data += chunk
+                else:
+                    # Timeout waiting for data chunk
+                    continue
+            except BlockingIOError:
+                # Resource temporarily unavailable, try again
+                continue
+            except Exception as e:
+                print(f"Error in _recv_exact: {e}")
+                return None
+        return data
+
     def _receive_loop(self):
         """Background thread for receiving messages."""
         while self.running and self.connected:
@@ -325,23 +348,37 @@ class NetworkClient:
 
                     message_length = int.from_bytes(length_bytes, byteorder='big')
 
-                    # Receive the actual message
-                    data = b''
-                    while len(data) < message_length:
-                        chunk = self.socket.recv(message_length - len(data))
-                        if not chunk:
-                            break
-                        data += chunk
-
-                    if len(data) == message_length:
+                    # Receive the actual message using robust reader
+                    data = self._recv_exact(message_length)
+                    
+                    if data and len(data) == message_length:
                         message = pickle.loads(data)
                         self.incoming_queue.append(message)
+                    else:
+                        print("Failed to receive complete message body")
+                        self.disconnect()
+                        break
 
+            except BlockingIOError:
+                # Just continue if resource temp unavailable on length read
+                continue
             except Exception as e:
                 if self.running:  # Only print error if we're supposed to be running
                     print(f"Receive error: {e}")
                     self.disconnect()
                 break
+
+    def _send_data_safe(self, data: bytes):
+        """Send data safely to a non-blocking socket by temporarily making it blocking."""
+        if not self.socket:
+            return
+            
+        was_blocking = self.socket.gettimeout() is not None
+        try:
+            self.socket.setblocking(True)
+            self.socket.sendall(data)
+        finally:
+            self.socket.setblocking(False)
 
     def _send_outgoing_messages(self):
         """Send queued outgoing messages."""
@@ -350,7 +387,7 @@ class NetworkClient:
                 message = self.outgoing_queue.popleft()
                 data = pickle.dumps(message)
                 length_bytes = len(data).to_bytes(4, byteorder='big')
-                self.socket.send(length_bytes + data)
+                self._send_data_safe(length_bytes + data)
             except Exception as e:
                 print(f"Send error: {e}")
                 self.disconnect()

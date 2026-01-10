@@ -30,8 +30,11 @@ class MenuHandlers:
             print("Error: Please enter a Player ID before creating a room")
             return
         print("Create Remote Room clicked")
-        self.menu.network.create_remote_room()
-        self.menu.show_menu("room")
+        if self.menu.network.create_remote_room():
+            self.menu.show_menu("room")
+        else:
+            self.menu.show_error_message("Failed to connect to remote server")
+            print("Failed to connect to remote server")
 
     def on_join_room_click(self):
         """Handle join room button click."""
