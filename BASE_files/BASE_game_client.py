@@ -165,41 +165,13 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
             # Send input to server (throttled to reduce network traffic)
             if current_time - last_input_time > 0.016:  # ~60 FPS input rate
-                input_data = {}
-
-                # ALWAYS send mouse position for TronProjectile tracking
-                input_data['mouse_pos'] = [world_mx, world_my]
-
-                # Movement input - always send to ensure server updates character state
-                direction = [0, 0]
-                if pygame.K_LEFT in held_keys or pygame.K_a in held_keys:
-                    direction[0] = -1
-                if pygame.K_RIGHT in held_keys or pygame.K_d in held_keys:
-                    direction[0] = 1
-                if pygame.K_UP in held_keys or pygame.K_w in held_keys:
-                    direction[1] = 1
-                if pygame.K_DOWN in held_keys or pygame.K_s in held_keys:
-                    direction[1] = -1
-
-                # Always send movement input, even [0, 0], to update character state on server
-                input_data['movement'] = direction
-
-                # Shooting inputs
-                if mouse_pressed[0]:  # Left click
-                    input_data['shoot'] = [world_mx, world_my]
-                if mouse_pressed[2]:  # Right click
-                    input_data['secondary_fire'] = [world_mx, world_my]
-
-                # Special fire (E or F key)
-                if pygame.K_e in held_keys or pygame.K_f in held_keys:
-                    input_data['special_fire'] = [world_mx, world_my]
-                    input_data['special_fire_holding'] = True
-                    special_fire_holding = True
-                elif special_fire_holding:
-                    # Send release
-                    input_data['special_fire'] = [world_mx, world_my]
-                    input_data['special_fire_holding'] = False
-                    special_fire_holding = False
+                # Use the Character class to determine what to send
+                # This allows agents to define new keys in GAME_character.py
+                if Character and hasattr(Character, 'get_input_data'):
+                    input_data = Character.get_input_data(held_keys, mouse_pressed, [world_mx, world_my])
+                else:
+                    # Fallback if Character class is not loaded yet
+                    input_data = {'mouse_pos': [world_mx, world_my], 'movement': [0, 0]}
 
                 # Always send input (at least mouse position)
                 network_client.send_input(input_data, entity_manager)

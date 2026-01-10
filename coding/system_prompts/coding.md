@@ -15,6 +15,18 @@ You are an expert Python developer implementing one task at a time for the GenGa
 - New entities → own file in correct `GameFolder/` subdirectory.
 - Register new weapons/entities in `GameFolder/setup.py` inside `setup_battle_arena()`.
 
+## 🕹️ CHARACTER-DRIVEN ACTION SYSTEM
+**NEVER modify `server.py` or `BASE_game_client.py` to add new character abilities.**
+
+### How to add a new ability (e.g., "Dash" on LShift):
+1. **In `GameFolder/characters/GAME_character.py`**:
+   - Override `get_input_data` (static method) to map `pygame.K_LSHIFT` to `input_data['dash'] = True`.
+   - Override `process_input` (instance method) to check `if input_data.get('dash'): self.do_dash()`.
+2. **Implementation**:
+   - `get_input_data` runs on the **Client**.
+   - `process_input` runs on the **Server**.
+   - This keeps the core engine decoupled from specific game mechanics.
+
 ## ⚠️ PYGAME THREADING SAFETY - CRITICAL
 
 **pygame operations MUST run on main thread only. Background threads will crash on macOS.**

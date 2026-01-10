@@ -1205,54 +1205,14 @@ class GameServer:
         if not character:
             return
 
-        # Update arena mouse position for TronProjectile tracking
-        if 'mouse_pos' in input_data:
-            self.arena.last_mouse_world_pos = input_data['mouse_pos']
-
-        # Apply movement
-        if 'movement' in input_data:
-            direction = input_data['movement']
-            character.move(direction, self.arena.platforms)
-
-        # Apply shooting
-        if 'shoot' in input_data:
-            target_pos = input_data['shoot']
-            projectiles = character.shoot(target_pos)
-            if projectiles:
-                # Handle both single projectile and list of projectiles
-                if isinstance(projectiles, list):
-                    self.arena.projectiles.extend(projectiles)
-                else:
-                    self.arena.projectiles.append(projectiles)
-
-        # Apply secondary fire
-        if 'secondary_fire' in input_data:
-            target_pos = input_data['secondary_fire']
-            projectiles = character.secondary_fire(target_pos)
-            if projectiles:
-                # Handle both single projectile and list of projectiles
-                if isinstance(projectiles, list):
-                    self.arena.projectiles.extend(projectiles)
-                else:
-                    self.arena.projectiles.append(projectiles)
-
-        # Apply special fire
-        if 'special_fire' in input_data:
-            target_pos = input_data['special_fire']
-            is_holding = input_data.get('special_fire_holding', False)
-            projectiles = character.special_fire(target_pos, is_holding)
-            if projectiles:
-                # Handle both single projectile and list of projectiles
-                if isinstance(projectiles, list):
-                    self.arena.projectiles.extend(projectiles)
-                else:
-                    self.arena.projectiles.append(projectiles)
-
-        # Apply weapon drop
-        if input_data.get('drop_weapon', False):
-            dropped_weapon = character.drop_weapon()
-            if dropped_weapon:
-                self.arena.spawn_weapon(dropped_weapon)
+        # Delegate input processing to the character itself.
+        # This allows future agents to add new actions by only changing GAME_character.py
+        # without needing to touch server.py.
+        if hasattr(character, 'process_input'):
+            character.process_input(input_data, self.arena)
+        else:
+            # Fallback for characters that haven't implemented it yet (though BaseCharacter has it now)
+            pass
 
     def _broadcast_game_state(self):
         """Broadcast the current game state to all clients."""

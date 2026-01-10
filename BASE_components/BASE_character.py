@@ -345,6 +345,73 @@ class BaseCharacter(NetworkObject):
         self.weapon = None
         return dropped_weapon
 
+    @staticmethod
+    def get_input_data(held_keys, mouse_buttons, mouse_pos):
+        """
+        TRANSFORMS raw hardware input into a logical input dictionary.
+        This runs on the CLIENT. Override this in GAME_character.py to add new keys.
+        """
+        input_data = {}
+        input_data['mouse_pos'] = mouse_pos
+
+        # Movement mapping
+        direction = [0, 0]
+        if pygame.K_LEFT in held_keys or pygame.K_a in held_keys: direction[0] = -1
+        if pygame.K_RIGHT in held_keys or pygame.K_d in held_keys: direction[0] = 1
+        if pygame.K_UP in held_keys or pygame.K_w in held_keys: direction[1] = 1
+        if pygame.K_DOWN in held_keys or pygame.K_s in held_keys: direction[1] = -1
+        input_data['movement'] = direction
+
+        # Combat mapping
+        if mouse_buttons[0]: input_data['shoot'] = mouse_pos
+        if mouse_buttons[2]: input_data['secondary_fire'] = mouse_pos
+        
+        if pygame.K_e in held_keys or pygame.K_f in held_keys:
+            input_data['special_fire'] = mouse_pos
+            input_data['special_fire_holding'] = True
+        
+        if pygame.K_q in held_keys:
+            input_data['drop_weapon'] = True
+
+        return input_data
+
+    def process_input(self, input_data: dict, arena):
+        """
+        EXECUTES actions based on the input dictionary.
+        This runs on the SERVER. Override this in GAME_character.py to add new abilities.
+        """
+        if not self.is_alive:
+            return
+
+        # 1. Update arena-wide tracking
+        if 'mouse_pos' in input_data:
+            arena.last_mouse_world_pos = input_data['mouse_pos']
+
+        # 2. Movement
+        if 'movement' in input_data:
+            self.move(input_data['movement'], arena.platforms)
+
+        # 3. Combat Helper
+        def add_projs(res):
+            if not res: return
+            if isinstance(res, list): arena.projectiles.extend(res)
+            else: arena.projectiles.append(res)
+
+        if 'shoot' in input_data:
+            add_projs(self.shoot(input_data['shoot']))
+        
+        if 'secondary_fire' in input_data:
+            add_projs(self.secondary_fire(input_data['secondary_fire']))
+            
+        if 'special_fire' in input_data:
+            add_projs(self.special_fire(input_data['special_fire'], input_data.get('special_fire_holding', False)))
+
+        # 4. Weapon Management
+        if input_data.get('drop_weapon', False):
+            dropped = self.drop_weapon()
+            if dropped:
+                arena.spawn_weapon(dropped)
+
     def update(self, delta_time: float, platforms: list = None, arena_height: float = 600):
         """Per-frame update logic"""
         if not self.is_alive:

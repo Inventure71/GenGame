@@ -34,6 +34,9 @@ from coding.non_callable_tools.action_logger import ActionLogger
 
 class BaseMenu:
     def __init__(self, action_logger=None):
+        #self.base_working_backup = None
+        self.base_working_backup = "20260110145521_GameFolder"
+
         print("Initializing BaseMenu...")
         # Initialize pygame if not already initialized
         if not pygame.get_init():
@@ -556,7 +559,7 @@ class BaseMenu:
         """Run the agent with the given prompt."""
         try:
             from agent import new_main
-            success, modelHandler, todo_list, prompt, backup_name = new_main(prompt=prompt, start_from_base="20260110032310_GameFolder", UI_called=True) #start_from_base="20260109000711_GameFolder",
+            success, modelHandler, todo_list, prompt, backup_name = new_main(prompt=prompt, start_from_base=self.base_working_backup, UI_called=True) #start_from_base="20260109000711_GameFolder",
             self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
             # Get test results
             from coding.tools.testing import run_all_tests
