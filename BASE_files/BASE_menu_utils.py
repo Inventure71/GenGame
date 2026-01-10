@@ -1,6 +1,5 @@
 import pygame
-#from BASE_files.BASE_helpers import base_encode, base_decode, encrypt_code, decrypt_code
-from BASE_helpers import base_encode, base_decode, encrypt_code, decrypt_code
+from BASE_files.BASE_helpers import base_encode, base_decode, encrypt_code, decrypt_code
 
 class MenuUtils:
     """Utility class for menu drawing and text input handling."""

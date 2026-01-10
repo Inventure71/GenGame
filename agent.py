@@ -149,6 +149,17 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
     print("--------------------------------")
 
 def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None, UI_called=False):
+    """
+    Main game creation loop that plans, implements, tests, and optionally fixes issues.
+    
+    Returns:
+        tuple: (success, modelHandler, todo_list, prompt, backup_name)
+            - success: True if tests passed, False if tests failed
+            - modelHandler: Updated GenericHandler instance
+            - todo_list: Updated TodoList instance
+            - prompt: The fix prompt if tests failed, empty string otherwise
+            - backup_name: Name of the backup used
+    """
     if total_cleanup:
         modelHandler.clean_chat_history()
 
@@ -198,39 +209,46 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
             print("Not cleaning up chat history in fix mode but we are summarizing it again in case last step wasn't summarized")
             modelHandler.summarize_chat_history(autocleanup=True)
             # files involved in issues_to_fix
-            prompt = (
+            fix_prompt = (
                 f"## The following tests failed, understand why and fix the issues\n"
                 f"{issues_to_fix}\n"
             )
             if not UI_called:
-                full_loop(prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results)
+                # Recursive call for command-line fix mode
+                return full_loop(fix_prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results, UI_called=False)
             else:
-                return False, modelHandler, todo_list, prompt, backup_name
+                # Return to menu with fix prompt
+                return False, modelHandler, todo_list, fix_prompt, backup_name
         
-        elif fix_mode:
-            return False
+        # User declined to fix, or fix mode failed
+        if not UI_called:
+            # Command-line mode with no fix
+            if input("Save changes to extension file? (y/n): ").strip().lower() == 'y':
+                action_logger.save_changes_to_extension_file("patches.json", name_of_backup=backup_name)
+            action_logger.print_summary(todo_list)
+        
+        # Return failure
+        return False, modelHandler, todo_list, "", backup_name
     
     else:
         print("Tests passed, continuing...")    
-        if fix_mode:
-            if not UI_called:
-                return True
-            else:
-                return True, modelHandler, todo_list, "", backup_name
+        # Tests passed - success!
+        if not UI_called:
+            if input("Save changes to extension file? (y/n): ").strip().lower() == 'y':
+                action_logger.save_changes_to_extension_file("patches.json", name_of_backup=backup_name)
 
-    if not UI_called:
-        if input("Save changes to extension file? (y/n): ").strip().lower() == 'y':
-            action_logger.save_changes_to_extension_file("patches.json", name_of_backup=backup_name)
-
-    print("--------------------------------")
-    action_logger.print_summary(todo_list)
-    print("--------------------------------")
-    
-    if not UI_called:
-        # Prompt user to see full diffs
-        show_diffs = input("\nShow full diffs? (y/n): ").strip().lower()
-        if show_diffs == 'y':
-            action_logger.print_diffs()
+        print("--------------------------------")
+        action_logger.print_summary(todo_list)
+        print("--------------------------------")
+        
+        if not UI_called:
+            # Prompt user to see full diffs
+            show_diffs = input("\nShow full diffs? (y/n): ").strip().lower()
+            if show_diffs == 'y':
+                action_logger.print_diffs()
+        
+        # Return success
+        return True, modelHandler, todo_list, "", backup_name
 
 def new_main(prompt: str = None, start_from_base: str = None, UI_called=False):
     load_dotenv()
@@ -259,20 +277,22 @@ def new_main(prompt: str = None, start_from_base: str = None, UI_called=False):
     else:
         print("Using prompt: ", prompt)
     
-    if not UI_called:
-        full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True, UI_called=UI_called)
-
+    # Run the main loop (always returns 5 values now)
+    success, modelHandler, todo_list, fix_prompt, backup_name = full_loop(
+        prompt, modelHandler, todo_list, 
+        fix_mode=False, 
+        backup_name=backup_name, 
+        total_cleanup=True, 
+        UI_called=UI_called
+    )
+    
+    # End session on success, or when not called from UI
+    if success or not UI_called:
         action_logger.end_session()
-    else:
-        if UI_called:
-            success, modelHandler, todo_list, prompt, backup_name = full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True, UI_called=UI_called)
-        else:
-            success, modelHandler, todo_list, prompt = full_loop(prompt, modelHandler, todo_list, fix_mode=False, backup_name=backup_name, total_cleanup=True, UI_called=UI_called)
-
-        if success:
-            action_logger.end_session()
-
-        return success, modelHandler, todo_list, prompt, backup_name
+    
+    # Return values for UI, or just end for command-line
+    if UI_called:
+        return success, modelHandler, todo_list, fix_prompt, backup_name
     
     """
     REMEMBER
@@ -288,4 +308,4 @@ if __name__ == "__main__":
     #handler = BackupHandler("__game_backups")
     #handler.restore_backup("20260104161653_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
-    new_main()#start_from_base="20260109000711_GameFolder")#start_from_base="20260108141029_GameFolder")#start_from_base="20260104161653_GameFolder")
+    new_main(start_from_base="20260110023140_GameFolder")#start_from_base="20260108141029_GameFolder")#start_from_base="20260104161653_GameFolder")

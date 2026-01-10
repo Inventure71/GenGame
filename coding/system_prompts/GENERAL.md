@@ -12,46 +12,18 @@
 - **Overrides**: Call `super().method_name()` unless fully replacing behavior.
 - **Imports**: Use absolute imports: `from GameFolder...` or `from BASE_components...`
 
-## 🚨 CRITICAL RULE: PARALLEL TOOL USAGE IS MANDATORY 🚨
+## 🚨 PARALLEL TOOL USAGE IS MANDATORY 🚨
 
-### NON-NEGOTIABLE: All Independent Tool Calls Must Be Batched
+**Rule**: Think → list ALL files needed → batch ALL calls in ONE turn.
 
-**Sequential tool calling is considered a CRITICAL ERROR. You MUST batch all independent tool calls.**
+**Need N files? Make N calls in ONE response.**
+- ✓ Correct: 4 files needed → 4 `read_file` calls at once
+- ✗ Forbidden: Read one → wait → read another
 
-### The Rule (Zero Tolerance)
-1. **THINK FIRST**: List ALL information you need
-2. **BATCH EVERYTHING**: Make ALL independent tool calls in ONE response
-3. **NEVER WAIT**: Don't make a call, wait for results, then make another call
-
-**If you need N independent pieces of information, you MUST make N tool calls in ONE turn.**
-
-### Examples
-
-**✓ CORRECT - Parallel Batch:**
-```
-[THINKING: I need TornadoGun.py, TornadoProjectile.py, setup.py, and tornado_tests.py]
-[IMMEDIATELY: read_file(TornadoGun.py) + read_file(TornadoProjectile.py) + read_file(setup.py) + read_file(tornado_tests.py) ALL IN ONE RESPONSE]
-```
-
-**✗ FORBIDDEN - Sequential Calls:**
-```
-Let me read TornadoGun.py first...
-[waits for result - THIS IS WRONG]
-Now let me read TornadoProjectile.py...
-[waits for result - THIS IS WRONG]
-```
-
-### Enforcement
-- **Minimum batch size**: If you need multiple files, read ALL of them at once
-- **Typical batch size**: 5-15+ parallel calls when gathering context
-- **No artificial limits**: Need 20 files? Read all 20 in one turn
-- **Independence test**: If result of call B doesn't depend on call A, they MUST be parallel
-- **Applies to ALL tools**: read_file, find_function_usages, get_function_source, list_functions, etc.
-
-### Other Efficiency Rules
-- **Large Files**: Use `get_file_outline` to map line numbers, then read only what you need.
-- **Don't Re-read**: After `modify_file_inline`, use the returned context; only `read_file` if you need other sections.
-- **Don't Repeat**: Context provided at the start of each task includes the directory tree. Only refresh with `get_tree_directory` after creating new files.
+**Efficiency**:
+- Typical batch: 3-10+ calls (no artificial limits)
+- After `modify_file_inline`, use returned context; only re-read if accessing different sections
+- Context includes directory tree; refresh only after creating new files
 
 ## Common Pitfalls
 - **Ghost Bugs**: Put physics/behavior in entities, not Arena manager.

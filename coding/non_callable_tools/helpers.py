@@ -34,65 +34,91 @@ def check_integrity():
 
 def clear_python_cache():
     """
-    Clear Python bytecode cache (__pycache__ directories) to ensure fresh imports.
+    Clear Python module cache (sys.modules) and bytecode cache (__pycache__).
 
-    This prevents issues where cached bytecode doesn't reflect recent source code changes,
-    especially imports like 'import math' that were added after the .pyc files were created.
+    This prevents issues where cached modules don't reflect recent source code changes.
+    Two-phase approach:
+    1. Clear in-memory module cache (sys.modules) - FAST
+    2. Clear disk bytecode cache (__pycache__, .pyc) - SLOWER
     """
+    import sys
     import shutil
-    import glob
     import time
-
-    start_time = time.time()
-    timeout = 2.0  # Very short timeout to avoid hanging
-
-    # Only clear cache in specific directories that matter for our game
-    # Be very conservative - only clear if we're in the main thread
     import threading
+    import gc
+    import importlib
+
+    # Phase 1: Clear in-memory module cache (CRITICAL - this is what fixes the issue)
+    # This is fast and happens in-memory, no I/O
+    modules_to_clear = [
+        'GameFolder',
+        'BASE_components',
+        'BASE_files'
+    ]
+    
+    cleared_count = 0
+    for prefix in modules_to_clear:
+        # Create list first to avoid "dictionary changed size during iteration"
+        modules_to_remove = [key for key in sys.modules.keys() if key.startswith(prefix)]
+        for module_name in modules_to_remove:
+            try:
+                del sys.modules[module_name]
+                cleared_count += 1
+            except KeyError:
+                pass  # Already removed
+    
+    # Invalidate import system caches (path finder, loader caches)
+    # This ensures Python recognizes file changes immediately
+    importlib.invalidate_caches()
+    
+    # Force garbage collection to clean up old module objects
+    # This releases memory from deleted modules
+    gc.collect()
+    
+    print(f"Cleared {cleared_count} modules from sys.modules")
+
+    # Phase 2: Clear disk cache (optional but helps ensure consistency)
+    # Only do this from main thread to avoid threading issues
     if threading.current_thread() != threading.main_thread():
-        print("Skipping cache clearing from background thread")
+        print("Skipping disk cache clearing from background thread")
         return
 
-    target_dirs = ["GameFolder"]  # Only clear GameFolder cache to minimize conflicts
+    start_time = time.time()
+    timeout = 1.5  # Short timeout for disk operations
+
+    target_dirs = ["GameFolder", "BASE_components"]
 
     for target_dir in target_dirs:
         if time.time() - start_time > timeout:
-            print("Cache clearing timed out - continuing with tests")
-            return
+            print("Disk cache clearing timed out - continuing")
+            break
 
         if not os.path.exists(target_dir):
             continue
 
-        # Find __pycache__ directories in this target directory
-        cache_dirs = glob.glob(f"{target_dir}/**/__pycache__", recursive=True)
-
-        # Remove cache directories
-        for cache_dir in cache_dirs:
+        # Use os.walk for better control and performance
+        for root, dirs, files in os.walk(target_dir):
             if time.time() - start_time > timeout:
                 break
-            try:
-                shutil.rmtree(cache_dir)
-                print(f"Cleared cache: {cache_dir}")
-            except Exception as e:
-                # Silently ignore cache clearing errors - not critical for testing
-                pass
+            
+            # Remove __pycache__ directories
+            if '__pycache__' in dirs:
+                cache_path = os.path.join(root, '__pycache__')
+                try:
+                    shutil.rmtree(cache_path)
+                except Exception:
+                    pass  # Ignore errors, not critical
+            
+            # Remove .pyc files (usually inside __pycache__ but check anyway)
+            for file in files:
+                if file.endswith('.pyc'):
+                    try:
+                        os.remove(os.path.join(root, file))
+                    except Exception:
+                        pass  # Ignore errors
 
-        # Find .pyc files in this target directory
-        pyc_files = glob.glob(f"{target_dir}/**/*.pyc", recursive=True)
-
-        # Remove individual .pyc files (limit to first 50 to avoid hanging)
-        for i, pyc_file in enumerate(pyc_files[:50]):
-            if time.time() - start_time > timeout:
-                break
-            try:
-                os.remove(pyc_file)
-            except Exception as e:
-                # Silently ignore - not critical for testing
-                pass
-
-    # Critical: Add delay to let file system operations complete before imports
-    time.sleep(1.0)
-    print("Cache clearing completed - waiting for file system to settle")
+    elapsed = time.time() - start_time
+    print(f"Cache clearing completed in {elapsed:.2f}s")
 
 def cleanup_old_logs():
     """Remove old log files, keeping only the most recent server.log."""

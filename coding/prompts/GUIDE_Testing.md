@@ -1,5 +1,38 @@
 # TESTING SYSTEM
 
+## 🚨 CRITICAL: VERIFY IMPLEMENTATION DETAILS FIRST 🚨
+
+**Before writing ANY test, you MUST verify these in the actual implementation:**
+
+1. **Constructor signature**: Check `__init__` for exact parameters and order
+2. **Method return types**: What does `shoot()` return? Single object, list, or None?
+3. **Attribute names**: Search for `self.` assignments (don't assume `vx` exists if it's `horizontal_velocity`)
+4. **State flag names**: Find actual boolean names (`is_stationary` not `is_on_floor`)
+5. **API methods**: Use `BASE_COMPONENTS_DOCS.md` for Character/Weapon/Projectile methods
+
+**Never assume standard names. Always read the implementation.**
+
+---
+
+## 🔥 TOP 5 MOST COMMON TEST FAILURES 🔥
+
+1. **Direct state manipulation** → Use proper methods instead of setting attributes
+   - Example: Setting `health = 0` won't trigger death logic; use `take_damage()` or `die()`
+
+2. **Hardcoded values** → Tests with different configurations fail
+   - Example: Hardcoded arena dimensions break coordinate conversion; pass as parameters
+
+3. **Assumed constructor signatures** → Tests crash on object creation
+   - Always read `__init__` before creating objects in tests
+
+4. **Assumed return types** → Code expects list but gets single object
+   - Check what methods actually return before using the result
+
+5. **Stateful objects** → Reusing objects between tests causes unexpected behavior
+   - Create fresh instances or explicitly reset state between tests
+
+---
+
 ## STRUCTURE
 - Tests in `GameFolder/tests/*.py`
 - Auto-discovered and run by `BASE_tests.py`
@@ -220,6 +253,35 @@ def test_shield_ui_display():
     # Shield ring should show as mostly gray/depleted
 
     pygame.quit()  # Clean up
+
+def test_movement_with_obstacles():
+    """Test movement respects collision boundaries."""
+    arena = Arena(800, 600, headless=True)
+    char = Character("Test", "Test", "", [100, 100])
+    
+    # Create obstacle with appropriate spacing
+    obstacle = Platform(200, 400, 20, 200)
+    arena.add_character(char)
+    arena.platforms.append(obstacle)
+    
+    # Trigger movement ability
+    initial_pos = char.location[0]
+    char.move_action([1, 0], arena.platforms)
+    
+    # Verify collision was respected
+    assert char.location[0] < obstacle.position, "Should be blocked by obstacle"
+    
+def test_ability_requires_alive_state():
+    """Verify abilities can't be used when dead."""
+    char = Character("Test", "Test", "", [100, 100])
+    
+    # Use proper method to change state
+    char.die()
+    assert char.is_alive is False
+    
+    # Ability should not activate
+    result = char.use_ability([1, 0])
+    assert result is False, "Dead character should not use abilities"
 ```
 
 ## RUNNING TESTS
@@ -239,223 +301,284 @@ python -m BASE_components.BASE_tests
 
 ## ⚠️ CRITICAL: COMMON TEST PITFALLS
 
-### 1. Character Health Attribute
-The Character class uses `health`, **NOT** `hp`:
-```python
-# ❌ WRONG - will cause AttributeError
-initial_hp = target.hp
-target.hp = 0
+### 0. WRONG CONSTRUCTOR SIGNATURES (MOST COMMON!)
+**Always check `__init__` parameters before creating objects in tests.**
 
-# ✅ CORRECT
-initial_health = target.health
-target.health = 0
+```python
+# ❌ WRONG - Assumed separate velocity components
+proj = MyProjectile(x, y, vx, vy, damage, owner_id)
+
+# ✅ CORRECT - Checked actual signature uses direction vector + speed
+proj = MyProjectile(x, y, [1, 0], speed, damage, owner_id)
 ```
 
-The `is_alive` property checks `health > 0 AND lives > 0`. It's read-only.
+**Common mistakes:**
+- Assuming `vx, vy` when implementation uses `direction, speed`
+- Wrong parameter order
+- Missing required parameters
+- Wrong types (int vs float, list vs tuple)
 
-### 1.5. Damage System (CRITICAL!)
-**Two-layer damage mitigation: Shields → Defense → Health**
+### 0.5. WRONG RETURN TYPE ASSUMPTIONS
+**Always check what methods actually return.**
 
-**Shields absorb damage first:**
 ```python
-# Shields take damage before health
-char.take_damage(30)  # 30 damage
-# Result: shield -= 30, health unchanged (if shield >= 30)
+# ❌ WRONG - Assumed shoot() returns list
+projectiles = gun.shoot(x, y, tx, ty, owner_id)
+assert len(projectiles) == 1  # FAILS if shoot() returns single object
+
+# ✅ CORRECT - Checked implementation
+projectile = gun.shoot(x, y, tx, ty, owner_id)
+assert isinstance(projectile, MyProjectile)
+
+# ✅ ALSO CORRECT - Handle both cases
+result = gun.shoot(x, y, tx, ty, owner_id)
+projectiles = result if isinstance(result, list) else [result] if result else []
 ```
 
-**Defense reduces remaining damage:**
+### 0.75. WRONG ATTRIBUTE NAMES
+**Never assume standard attribute names. Search for `self.` in the class.**
+
 ```python
-# Defense formula: max(1, damage - defense)
-# Characters have 5.0 base defense
-char.shield = 0  # Disable shields
-char.take_damage(3)   # Result: health -= 1 (minimum damage)
-char.take_damage(10)  # Result: health -= 5 (10 - 5 defense)
+# ❌ WRONG - Assumed standard names
+assert proj.vx > 0
+assert proj.vy < 0
+assert proj.is_on_floor
+
+# ✅ CORRECT - Found actual names in implementation
+assert proj.horizontal_velocity > 0
+assert proj.vertical_velocity < 0
+assert proj.is_stationary
 ```
 
-**Complete damage calculation:**
+### 1. State Flags vs Computed Properties (CRITICAL!)
+**Use proper methods to trigger state changes, not direct assignment.**
+
+Some attributes like `is_alive` are state flags that are only updated by specific methods, not automatically computed from other values:
+
 ```python
-damage = 15
-# 1. Shields absorb first
-shield_absorbed = min(damage, char.shield)
-remaining = damage - shield_absorbed
+# ❌ WRONG - directly modifying underlying data
+char.health = 0
+assert char.is_alive is False  # FAILS! Flag not updated
 
-# 2. Defense reduces remaining (minimum 1 damage)
-if remaining > 0:
-    health_damage = max(1, remaining - 5.0)  # 5.0 = base defense
-else:
-    health_damage = 0
-
-char.take_damage(damage)
-assert char.shield == initial_shield - shield_absorbed
-assert char.health == initial_health - health_damage
+# ✅ CORRECT - use the proper method
+char.die()  # Or use take_damage() which calls die()
+assert char.is_alive is False  # PASSES
 ```
 
-### 2. Weapon Cooldown Between Shots
-`weapon.shoot()` returns `None` if cooldown hasn't elapsed:
+**General principle**: If a class has a method that changes state (like `die()`, `kill()`, `activate()`), use it instead of directly setting attributes. Direct assignment may skip important side effects and leave objects in invalid states.
+
+### 1.5. Multi-Layer Systems
+**Understand the order of operations in complex systems.**
+
+Game systems often have multiple layers that process in sequence (e.g., shields → defense → health):
+
 ```python
-# ❌ WRONG - second shot fails silently
-gun = YourWeapon()
-projs1 = gun.shoot(0, 0, 100, 100, "owner")  # Works
-projs2 = gun.shoot(0, 0, 200, 200, "owner")  # Returns None!
+# When testing layered systems, verify each layer's behavior
+char.take_damage(amount)
 
-# ✅ CORRECT - use new instance for each test
-def test_shot_1():
-    gun = YourWeapon()
-    projs = gun.shoot(...)
+# Test each layer independently:
+# 1. First layer absorbs/modifies
+# 2. Remaining passes to next layer
+# 3. Final layer applies the result
 
-def test_shot_2():
-    gun = YourWeapon()  # Fresh instance, no cooldown
-    projs = gun.shoot(...)
-
-# ✅ OR reset cooldown manually
-gun.last_shot_time = 0
+# Check actual implementation for:
+# - Processing order
+# - Formulas and minimums
+# - Side effects at each layer
 ```
 
-### 3. Floating Point Timing Loops
-Float accumulation causes precision errors:
+### 2. Stateful Objects in Tests
+**Objects that maintain state between method calls need fresh instances or explicit resets.**
+
 ```python
-# ❌ WRONG - float errors accumulate
+# ❌ WRONG - state from first call affects second
+obj = StatefulObject()
+result1 = obj.action()  # Works
+result2 = obj.action()  # Fails due to cooldown/state
+
+# ✅ CORRECT - fresh instance per test
+def test_action():
+    obj = StatefulObject()
+    result = obj.action()
+
+# ✅ OR explicitly reset state
+obj = StatefulObject()
+obj.action()
+obj.reset_state()  # or obj.internal_timer = 0
+obj.action()  # Now works
+```
+
+**Common stateful systems**: Cooldowns, charges, ammo, animations, locks
+
+### 3. Floating Point Precision in Loops
+**Use integer iteration counts instead of floating point accumulation.**
+
+```python
+# ❌ WRONG - float errors accumulate over iterations
 dt = 0.1
-total_time = 0.0
-while total_time < 1.15:  # charge_duration - 0.05
-    proj.update(dt)
-    total_time += dt  # 0.1 + 0.1 + ... != exact sum!
+total = 0.0
+while total < target_time:
+    obj.update(dt)
+    total += dt  # Precision errors accumulate!
 
-# ✅ CORRECT - use integer frame counting
+# ✅ CORRECT - count iterations as integers
 dt = 0.1
-frames_needed = int(1.2 / dt)  # charge_duration / dt
-for i in range(frames_needed):
-    proj.update(dt)
-    if i < frames_needed - 1:
-        assert proj.state == 'CHARGING'
+iterations = int(target_time / dt)
+for i in range(iterations):
+    obj.update(dt)
 ```
 
-### 4. Cumulative Effects in Arena Loops
-`arena.handle_collisions(dt)` applies ALL effects each call:
-```python
-# ❌ WRONG - recoil applied 15 times!
-for _ in range(15):
-    arena.handle_collisions(0.1)  # Each call applies recoil
-initial_loc = list(char.location)  # Already moved!
-arena.handle_collisions(0.1)
-# Expected 25 units, but char already moved 375 units
+**Why**: Repeated floating point addition (`0.1 + 0.1 + 0.1...`) accumulates rounding errors, causing loops to end early/late.
 
-# ✅ CORRECT - track state AFTER setup loop, BEFORE test action
-for _ in range(15):
-    arena.handle_collisions(0.1)
-initial_loc = list(char.location)  # Capture AFTER loop
-arena.handle_collisions(0.1)       # Single test action
-expected_recoil = 25.0
-assert abs(char.location[0] - (initial_loc[0] - expected_recoil)) < 0.1
+### 4. Cumulative Effects in Simulation Loops
+**Capture baseline state AFTER setup, BEFORE the action you're testing.**
+
+```python
+# ❌ WRONG - setup loop affects baseline measurement
+for _ in range(setup_frames):
+    simulate()  # Effects accumulate
+initial_state = capture_state()  # Already affected!
+simulate()  # Test action
+# Expected delta is wrong!
+
+# ✅ CORRECT - capture state between setup and test
+for _ in range(setup_frames):
+    simulate()
+initial_state = capture_state()  # Capture AFTER setup
+simulate()  # Single test action
+assert state_changed_correctly(initial_state)
 ```
 
-### 5. Character Scale Ratio
-Character dimensions use `scale_ratio` (default 1.0):
+### 5. Object Scaling and Dimensions
+**Use object's scale properties when calculating positions and sizes.**
+
 ```python
-# ✅ CORRECT - always use scale_ratio
-char_center_x = char.location[0] + (char.width * char.scale_ratio) / 2
-char_center_y = char.location[1] + (char.height * char.scale_ratio) / 2
+# ❌ WRONG - ignores scaling
+position = obj.location[0] + obj.width / 2
+
+# ✅ CORRECT - includes scale factor
+position = obj.location[0] + (obj.width * obj.scale) / 2
 ```
 
-### 6. Arena Character Management
-Use proper methods, not direct assignment:
-```python
-# ⚠️ RISKY - may skip initialization
-arena.characters = [char1, char2]
+### 6. Use Proper APIs
+**Use designated methods instead of direct collection manipulation.**
 
-# ✅ PREFERRED - uses proper initialization
-arena.add_character(char1)
-arena.add_character(char2)
+```python
+# ⚠️ RISKY - may skip initialization or validation
+container.items = [item1, item2]
+
+# ✅ PREFERRED - uses proper API
+container.add_item(item1)
+container.add_item(item2)
 ```
 
-### 7. pygame.Rect Integer Truncation (CRITICAL!)
-**pygame.Rect only stores integers!** Float positions get truncated, causing collision detection failures.
+### 7. Integer Truncation in Collision Systems
+**Be aware of precision loss when systems use integer coordinates.**
 
 ```python
-# ❌ WRONG - relies on exact single-frame collision
-disc = DiscProjectile(200, 201, [0, -1], 100.0, 25.0, "owner")  # Just 1 pixel above platform
-arena.handle_collisions(1/60)  # Moves ~1.67 pixels
-assert disc.bounces == 1  # FAILS! Rect truncation causes touch, not overlap
+# ❌ WRONG - assumes exact single-frame collision
+obj = Object(pos=narrow_gap)
+simulate_one_frame()
+assert obj.collided  # FAILS! Precision loss prevents exact collision
 
-# ✅ CORRECT - run multiple frames until behavior occurs
-disc = DiscProjectile(200, 210, [0, -1], 100.0, 25.0, "owner")  # Start further away
-for _ in range(20):  # Allow enough frames
-    arena.handle_collisions(1/60)
-    if disc.bounces > 0:
+# ✅ CORRECT - allow multiple frames for collision to occur
+obj = Object(pos=starting_position)
+max_frames = 60
+for _ in range(max_frames):
+    simulate_one_frame()
+    if obj.collided:
         break
-assert disc.bounces == 1  # PASSES - collision eventually detected
+assert obj.collided
 ```
 
-**Why this happens**: When converting world coords to screen coords, floats like `380.67` become `380`. If a rect ends at exactly `400` and another starts at `400`, they TOUCH but don't OVERLAP. `colliderect()` returns False for touching rects.
+**Principle**: When coordinates are converted between float and integer representations, precision is lost. Give enough space/time for collisions to be detected reliably.
 
-### 8. Test Behaviors, Not Exact Positions
-Position assertions are fragile due to coordinate conversion and truncation. Test the BEHAVIOR instead:
+### 8. Test Outcomes, Not Internal State
+**Focus on observable behaviors and outcomes rather than exact internal values.**
 
 ```python
-# ❌ WRONG - fragile position assertion
-assert disc.location[1] == pytest.approx(200)  # May fail due to correction logic
+# ❌ WRONG - brittle assertions on exact values
+assert obj.position == 123.456
+assert obj.internal_counter == 42
 
-# ✅ CORRECT - test the behavior that matters
-assert disc.bounces == 1                        # Bounce happened
-assert disc.direction[1] > 0                    # Direction reversed (going up)
-assert disc.damage > initial_damage             # Stats increased
-assert disc.speed > initial_speed               # Speed boosted
+# ✅ CORRECT - test meaningful outcomes
+assert obj.reached_target
+assert obj.direction_reversed
+assert obj.damage > initial_damage
 ```
 
-### 9. Collision Testing Best Practices
-For ANY collision-based test (bouncing, damage, pickup):
+**Principle**: Internal state can vary due to timing, rounding, or implementation details. Test the outcomes that matter for game behavior.
+
+### 9. Event-Driven Testing Pattern
+**For time-based or collision-based events, use a loop-until-event pattern.**
 
 ```python
-# ✅ PATTERN: Loop until behavior OR max iterations
-def test_projectile_collision():
-    arena = Arena(800, 600, headless=True)
-    proj = MyProjectile(x, y, direction, speed, damage, "owner")
-    arena.projectiles.append(proj)
+# ✅ PATTERN: Simulate until event occurs or timeout
+def test_collision_event():
+    setup_objects()
+    initial_state = capture_state()
     
-    initial_state = capture_relevant_state(proj)
-    
-    # Run frames until collision OR timeout
-    max_frames = 60  # ~1 second at 60fps
-    for frame in range(max_frames):
-        arena.handle_collisions(1/60)
-        if collision_occurred(proj):  # e.g., proj.bounces > 0, not proj.active, etc.
+    max_iterations = 100
+    for i in range(max_iterations):
+        simulate_step()
+        if event_occurred():
             break
     
-    # Assert on BEHAVIOR, not exact position
-    assert collision_occurred(proj), f"Collision should occur within {max_frames} frames"
-    assert_behavior_changed(proj, initial_state)
+    assert event_occurred(), "Event should occur within timeout"
+    assert state_changed_appropriately(initial_state)
 ```
+
+**Use for**: Collisions, triggers, state transitions, time-based events
 
 ### 10. Coordinate System Awareness
 The game uses TWO coordinate systems:
 - **World coords**: Y=0 at bottom, Y increases upward (physics/game logic)
 - **Screen coords**: Y=0 at top, Y increases downward (pygame/rendering)
 
+**Principle**: Be explicit about which coordinate system you're using and ensure conversions use the correct dimensions.
+
 ```python
-# Converting world to screen for collision checks:
+# Converting world to screen:
 screen_y = arena.height - world_y - object_height
 
-# ❌ WRONG - mixing coordinate systems
-plat = Platform(100, 200, ...)  # This is SCREEN coords!
-disc_world_y = 200              # This is WORLD coords!
-# These are NOT at the same position!
-
-# ✅ CORRECT - be explicit about coordinate system
-# Platform at screen (100, 400) = world-y top at 600-400 = 200
-plat = Platform(100, 400, 200, 20)  # Screen coords
-disc = DiscProjectile(200, 210, ...)  # World coords, above platform top (200)
+# ❌ WRONG - mixing coordinate systems without conversion
+# ✅ CORRECT - explicit conversion with proper dimensions
 ```
 
-### 11. Give Entities Room to Move
-Start entities far enough apart that integer truncation doesn't matter:
+### 10.5. Avoid Hardcoded Configuration Values
+**Pass configuration as parameters or store during initialization.**
 
 ```python
-# ❌ WRONG - positions too close, truncation breaks collision
-proj_y = 201   # 1 pixel above platform at 200
-# After 1 frame: 199.33 → screen rect ends at 400
-# Platform rect starts at 400 → TOUCH, no overlap!
+# ❌ WRONG - hardcoded value breaks tests with different configs
+def process(self, data):
+    max_size = 900  # Hardcoded!
+    result = max_size - data.value
+    
+# ✅ CORRECT - pass as parameter with sensible default
+def process(self, data, max_size=900):
+    result = max_size - data.value
 
-# ✅ CORRECT - give 5-10+ pixels margin
-proj_y = 210   # 10 pixels above platform
-# After several frames, will clearly overlap
+# ✅ ALSO CORRECT - store during initialization
+def __init__(self, config):
+    self.max_size = config.get('max_size', 900)
+    
+def process(self, data):
+    result = self.max_size - data.value
 ```
+
+**Why**: Tests often use different configurations (smaller arenas, different dimensions) to run faster or test edge cases. Hardcoded values cause coordinate mismatches and failed assertions.
+
+### 11. Allow Margin for Precision Loss
+**Start objects with sufficient separation to ensure reliable collision detection.**
+
+```python
+# ❌ WRONG - minimal spacing affected by precision loss
+obj1_pos = 200
+obj2_pos = 201  # Only 1 unit apart
+
+# ✅ CORRECT - provide adequate margin
+obj1_pos = 200
+obj2_pos = 210  # Clear separation for reliable collision
+```
+
+**Principle**: Systems with precision loss (float→int conversion, coordinate transforms) need extra margin to ensure events are detected reliably.

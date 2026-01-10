@@ -26,7 +26,14 @@ Inputs are captured directly from pygame events.
 ### Coordinate Systems
 - **World Coordinates (Logic)**: Y-axis points **UP**. `[0, 0]` is bottom-left. Used for physics and object locations.
 - **Screen Coordinates (Pygame)**: Y-axis points **DOWN**. `[0, 0]` is top-left. Used for rendering.
+- **Conversion Formula**: `screen_y = arena_height - world_y - object_height`
 - **Conversion Methods**: Use `self.screen_to_world(x, y)` and `self.world_to_screen(x, y)` in the Arena class.
+
+**⚠️ CRITICAL WARNING**: NEVER hardcode `arena_height` values in collision detection or coordinate conversion! Always:
+  1. Pass `arena_height` as a parameter (preferred), OR
+  2. Store it in `self.last_arena_height` during `update()` and use that value
+  
+Hardcoding arena_height (e.g., `arena_height = 900`) will break tests that use different arena sizes and cause collision detection to fail completely.
 
 ---
 
@@ -36,6 +43,7 @@ Inputs are captured directly from pygame events.
 ### Key Attributes
 - `self.location`: `[x, y]` in **World Coordinates**.
 - `self.health` / `self.max_health`: Current/Max HP (default 100.0).
+- `self.is_alive`: Boolean flag set by `die()` method. **CRITICAL**: This is NOT a computed property! Setting `health = 0` directly will NOT update `is_alive`. Always use `take_damage()` or call `die()` explicitly.
 - `self.lives`: Fixed at 3 (Immutable).
 - `self.weapon`: The currently equipped `BaseWeapon` or `None`.
 - `self.on_ground`: Boolean flag updated by physics.
@@ -62,6 +70,11 @@ Inputs are captured directly from pygame events.
 - `move(direction, platforms)`: Updates position. Handles jumping, flying, and status effects.
 - `update(delta_time, platforms, arena_height)`: Handles gravity, flight recharge, and multiplier recovery.
 - `shoot(target_pos)` / `secondary_fire(target_pos)` / `special_fire(target_pos, is_holding)`: Spawning logic for different fire modes.
+- `pickup_weapon(weapon)`: Equips a weapon if not already holding one. Returns `True` on success, `False` if already armed.
+- `drop_weapon()`: Drops the current weapon and returns it (or `None` if unarmed).
+- `take_damage(amount, attacker_id)`: Applies damage through shields and defense. Automatically calls `die()` when health reaches 0. Returns actual damage dealt.
+- `die()`: Sets `is_alive = False`, decrements `lives`, and handles death logic. **Always call this instead of setting health/is_alive directly**.
+- `respawn()`: Resets character to spawn position, restores full health/shield, and sets `is_alive = True`.
 
 ---
 
