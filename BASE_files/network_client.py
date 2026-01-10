@@ -52,6 +52,8 @@ class NetworkClient:
         self.on_patch_sync_failed = None  # New callback for when patch sync fails
         self.on_patch_merge_failed = None  # New callback for when server merge fails
         self.on_game_start = None
+        self.on_game_restarting = None
+        self.on_server_restarted = None
 
         # Lag compensation
         self.last_server_time = 0.0
@@ -406,6 +408,19 @@ class NetworkClient:
             print(f"❌ Patch merge failed on server: {reason}")
             if self.on_patch_merge_failed:
                 self.on_patch_merge_failed(reason)
+        elif msg_type == 'game_restarting':
+            winner = message.get('winner', 'Unknown')
+            restart_delay = message.get('restart_delay', 5.0)
+            msg = message.get('message', f'Game restarting in {restart_delay} seconds...')
+            print(f"🏆 Game finished! Winner: {winner}")
+            print(f"🔄 {msg}")
+            if self.on_game_restarting:
+                self.on_game_restarting(winner, restart_delay, msg)
+        elif msg_type == 'server_restarted':
+            msg = message.get('message', 'Server has restarted.')
+            print(f"🔄 {msg}")
+            if self.on_server_restarted:
+                self.on_server_restarted(msg)
 
     def _handle_file_chunk(self, message: dict):
         """Handle incoming file chunk."""

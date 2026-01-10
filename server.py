@@ -62,6 +62,16 @@ class GameServer:
         self.last_tick_time = 0.0
         self.game_start_time = 0.0
 
+        # Auto-restart configuration
+        self.restart_delay = 5.0  # seconds to wait before restart
+        self.game_finished_time = 0.0
+        self.waiting_for_restart = False
+
+        # Empty server timeout configuration
+        self.empty_server_timeout = 5.0  # seconds to wait with no clients before resetting
+        self.last_client_disconnect_time = 0.0
+        self.waiting_for_clients = False
+
         # File synchronization
         self.game_files = {}  # filename -> content
         self._load_game_files()
@@ -72,7 +82,7 @@ class GameServer:
         self.clients_patch_failed: Dict[str, str] = {}  # Track which clients failed: player_id -> error_message
         self.waiting_for_patch_sync = False  # Flag to indicate we're waiting for patch sync
         self.waiting_for_patch_received = False  # Flag to indicate we're waiting for patch reception
-        
+
         # Server-side patch management
         self.server_patches_dir = "__server_patches"
         os.makedirs(self.server_patches_dir, exist_ok=True)
@@ -118,7 +128,8 @@ class GameServer:
         """Stop the server."""
         self.running = False
         self.server_socket.close()
-        for client_socket in self.clients.values():
+        # Create a copy of client sockets to avoid "dictionary changed size during iteration" error
+        for client_socket in list(self.clients.values()):
             try:
                 client_socket.close()
             except:
@@ -415,6 +426,12 @@ class GameServer:
                 del self.player_id_to_character[player_id]
             print(f"Client {player_id} disconnected")
 
+            # Check if server is now empty
+            if len(self.clients) == 0 and not self.waiting_for_clients:
+                print(f"Server is now empty. Will reset to lobby in {self.empty_server_timeout} seconds if no one joins...")
+                self.last_client_disconnect_time = time.time()
+                self.waiting_for_clients = True
+
     def _process_client_message(self, player_id: str, message: dict, client_socket: socket.socket = None):
         """Process a message from a client."""
         msg_type = message.get('type', 'input')
@@ -524,6 +541,12 @@ class GameServer:
                     del self.pending_clients[client_socket]
                     player_id = actual_player_id
                     print(f"Player '{requested_name}' registered with custom ID")
+
+                    # Cancel empty server timeout since we now have clients
+                    if self.waiting_for_clients:
+                        print("Client joined - canceling empty server timeout")
+                        self.waiting_for_clients = False
+                        self.last_client_disconnect_time = 0.0
 
                 self.player_name_to_id[requested_name] = player_id
 
@@ -1009,11 +1032,49 @@ class GameServer:
         self.client_patches.clear()
     
     def _game_loop(self):
-        """Main game simulation loop."""
+        """Main game simulation loop with automatic restart."""
         print("Starting game simulation...")
 
         while self.running:
             current_time = time.time()
+
+            # Check if we need to restart after game over
+            if self.waiting_for_restart:
+                if current_time - self.game_finished_time >= self.restart_delay:
+                    self._restart_server()
+                    continue
+
+            # Check if game just finished (send restart message immediately)
+            if self.arena and self.arena.game_over and not self.waiting_for_restart:
+                self.game_finished_time = time.time()
+                self.waiting_for_restart = True
+
+                winner_name = self.arena.winner if self.arena.winner else "Unknown"
+                print(f"\n🎉 GAME OVER! Winner: {winner_name}")
+                print(f"🏆 Server will restart in {self.restart_delay} seconds...")
+
+                # Send restart message to all clients
+                restart_message = {
+                    'type': 'game_restarting',
+                    'winner': winner_name,
+                    'restart_delay': self.restart_delay,
+                    'message': f'Game finished! Winner: {winner_name}. Server restarting in {self.restart_delay} seconds...'
+                }
+                data = pickle.dumps(restart_message)
+                length_bytes = len(data).to_bytes(4, byteorder='big')
+
+                for player_id, client_socket in self.clients.items():
+                    try:
+                        client_socket.send(length_bytes + data)
+                        print(f"Sent restart notification to {player_id}")
+                    except Exception as e:
+                        print(f"Failed to send restart notification to {player_id}: {e}")
+
+            # Check if server has been empty too long
+            if self.waiting_for_clients and len(self.clients) == 0:
+                if current_time - self.last_client_disconnect_time >= self.empty_server_timeout:
+                    self._reset_empty_server()
+                    continue
 
             # Fixed timestep game update
             if current_time - self.last_tick_time >= self.tick_interval:
@@ -1023,6 +1084,92 @@ class GameServer:
 
             # Sleep to prevent busy waiting
             time.sleep(0.001)
+
+    def _restart_server(self):
+        """Reset server state and notify clients to disconnect."""
+        print("\n" + "="*50)
+        print("GAME FINISHED - RESTARTING SERVER")
+        print("="*50)
+
+        # Disconnect all clients FIRST
+        for player_id in list(self.clients.keys()):
+            try:
+                self.clients[player_id].close()
+            except:
+                pass
+
+        # Reset all server state
+        self.clients.clear()
+        self.client_addresses.clear()
+        self.input_queues.clear()
+        self.last_input_ids.clear()
+        self.player_name_to_id.clear()
+        self.player_id_to_character.clear()
+        self.pending_clients.clear()
+
+        # Reset patch synchronization state
+        self.clients_patch_received.clear()
+        self.clients_patch_ready.clear()
+        self.clients_patch_failed.clear()
+        self.waiting_for_patch_sync = False
+        self.waiting_for_patch_received = False
+        self.client_patches.clear()
+        self.client_patch_files.clear()
+        self.clients_ready_status.clear()
+
+        # Reset game state
+        self.arena = None
+        self.game_start_time = time.time()
+        self.waiting_for_restart = False
+        self.game_finished_time = 0.0
+
+        # Reset arena initialization flag
+        if hasattr(self, '_arena_initialized'):
+            delattr(self, '_arena_initialized')
+
+        print("Server reset complete. All clients disconnected.")
+        # Give clients time to detect disconnection before accepting new connections
+        time.sleep(2.0)
+        print("Players can now reconnect and start a new game.")
+
+    def _reset_empty_server(self):
+        """Reset server state when it's been empty for too long."""
+        print("\n" + "="*60)
+        print("SERVER EMPTY - RESETTING TO LOBBY")
+        print("="*60)
+
+        # Cancel empty server timeout
+        self.waiting_for_clients = False
+        self.last_client_disconnect_time = 0.0
+
+        # Reset all server state (similar to restart but without disconnecting clients since there are none)
+        self.input_queues.clear()
+        self.last_input_ids.clear()
+        self.player_name_to_id.clear()
+        self.player_id_to_character.clear()
+        self.pending_clients.clear()
+
+        # Reset patch synchronization state
+        self.clients_patch_received.clear()
+        self.clients_patch_ready.clear()
+        self.clients_patch_failed.clear()
+        self.waiting_for_patch_sync = False
+        self.waiting_for_patch_received = False
+        self.client_patches.clear()
+        self.client_patch_files.clear()
+        self.clients_ready_status.clear()
+
+        # Reset game state
+        self.arena = None
+        self.game_start_time = time.time()
+        self.waiting_for_restart = False
+        self.game_finished_time = 0.0
+
+        # Reset arena initialization flag
+        if hasattr(self, '_arena_initialized'):
+            delattr(self, '_arena_initialized')
+
+        print("Server reset to lobby state. Waiting for players to join...")
 
     def _update_simulation(self, delta_time: float):
         """Update the game simulation."""
@@ -1129,6 +1276,31 @@ class GameServer:
                 char_state['last_input_id'] = 0
             character_states.append(char_state)
 
+        # Check if game just finished
+        if self.arena.game_over and not self.waiting_for_restart:
+            self.game_finished_time = time.time()
+            self.waiting_for_restart = True
+
+            winner_name = self.arena.winner if self.arena.winner else "Unknown"
+            print(f"\n🎉 GAME OVER! Winner: {winner_name}")
+            print(f"🏆 Restarting server in {self.restart_delay} seconds...")
+
+            # Notify all clients about game end and restart
+            restart_message = {
+                'type': 'game_restarting',
+                'winner': winner_name,
+                'restart_delay': self.restart_delay,
+                'message': f'Game finished! Winner: {winner_name}. Server restarting in {self.restart_delay} seconds...'
+            }
+            data = pickle.dumps(restart_message)
+            length_bytes = len(data).to_bytes(4, byteorder='big')
+
+            for player_id, client_socket in self.clients.items():
+                try:
+                    client_socket.send(length_bytes + data)
+                except Exception as e:
+                    print(f"Failed to send restart notification to {player_id}: {e}")
+
         game_state = {
             'type': 'game_state',
             'timestamp': time.time(),
@@ -1140,6 +1312,8 @@ class GameServer:
             'game_over': self.arena.game_over,
             'winner': self.arena.winner
         }
+
+        # Note: Game over detection and restart messaging is now handled in the game loop
 
 
 

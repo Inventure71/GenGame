@@ -64,7 +64,6 @@ class MenuHandlers:
     def on_join_room_back_click(self):
         """Handle back button from join room code menu."""
         print("Join Room Back clicked")
-        self.menu.join_room_code = ""
         self.menu.join_room_code_focused = False
         self.menu.show_menu("main")
 
@@ -104,11 +103,6 @@ class MenuHandlers:
             print(f"Sent {len(selected_patches)} patch(es) to server")
         else:
             print("Not connected to server!")
-
-    def on_leave_room_click(self):
-        """Handle leave room button click."""
-        print("Leave Room clicked")
-        self.menu.show_menu("main")
 
     def on_back_to_menu_click(self):
         """Handle back to menu button click."""

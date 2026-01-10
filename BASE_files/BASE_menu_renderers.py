@@ -109,8 +109,8 @@ class MenuRenderers:
             connection_attempt_time = getattr(self.menu, 'connection_attempt_time', 0)
             current_time = pygame.time.get_ticks()
 
-            # Only attempt connection once every 2 seconds to avoid spam
-            if current_time - connection_attempt_time > 2000:
+            # Only attempt connection once every 3 seconds to avoid spam
+            if current_time - connection_attempt_time > 3000:
                 self.menu.connection_attempt_time = current_time
                 print("Attempting to connect to room...")
 
@@ -139,7 +139,6 @@ class MenuRenderers:
 
         # Room code display
         if self.menu.room_code:
-                print(decrypt_code(self.menu.room_code))
                 # Fallback if code can't be decrypted
                 self.menu.utils.draw_text(f"Room Code: {self.menu.room_code}", 700, 85, self.menu.small_font, center=True)
                 self.menu.utils.draw_text("Share this code with others to let them join", 700, 110, self.menu.small_font, color=(150, 150, 150), center=True)
@@ -238,17 +237,10 @@ class MenuRenderers:
                 self.menu.on_ready_click()
             button_y += button_spacing
 
-        # Leave Room Button
-        leave_rect = self.menu.utils.draw_button("Leave Room", center_x - self.menu.utils.button_width//2, button_y,
-                                     self.menu.utils.button_width, self.menu.utils.button_height,
-                                     self.menu.utils.check_button_hover(center_x - self.menu.utils.button_width//2, button_y, self.menu.utils.button_width, self.menu.utils.button_height, self.menu.mouse_pos))
-        if self.menu.utils.check_button_click(leave_rect, self.menu.mouse_clicked, self.menu.mouse_pos):
-            self.menu.on_leave_room_click()
-
         # Back to Menu Button
-        back_rect = self.menu.utils.draw_button("Back to Menu", center_x - self.menu.utils.button_width//2, button_y + button_spacing,
+        back_rect = self.menu.utils.draw_button("Back to Menu", center_x - self.menu.utils.button_width//2, button_y,
                                     self.menu.utils.button_width, self.menu.utils.button_height,
-                                    self.menu.utils.check_button_hover(center_x - self.menu.utils.button_width//2, button_y + button_spacing, self.menu.utils.button_width, self.menu.utils.button_height, self.menu.mouse_pos))
+                                    self.menu.utils.check_button_hover(center_x - self.menu.utils.button_width//2, button_y, self.menu.utils.button_width, self.menu.utils.button_height, self.menu.mouse_pos))
         if self.menu.utils.check_button_click(back_rect, self.menu.mouse_clicked, self.menu.mouse_pos):
             self.menu.on_back_to_menu_click()
 

@@ -50,7 +50,7 @@ class BaseMenu:
 
         # Game menu
         self.on_start()
-        
+
         print("Creating window...")
         self.screen = pygame.display.set_mode((1400, 900))
 
@@ -445,9 +445,6 @@ class BaseMenu:
     def on_ready_click(self):
         self.handlers.on_ready_click()
     
-    def on_leave_room_click(self):
-        self.handlers.on_leave_room_click()
-
     def on_back_to_menu_click(self):
         self.handlers.on_back_to_menu_click()
 
@@ -705,6 +702,86 @@ class BaseMenu:
         """Callback for file transfer progress updates."""
         print(f"File transfer progress: {direction} {file_path}: {progress*100:.1f}%")
 
+    def game_restarting_callback(self, winner: str, restart_delay: float, message: str):
+        """Callback when the server announces game is restarting."""
+        print(f"🎉 Game finished! Winner: {winner}")
+        print(f"⏳ Server will restart in {restart_delay} seconds...")
+        self.show_error_message(f"Game Over! Winner: {winner}\nServer restarting in {restart_delay} seconds...")
+
+    def reset_room_state(self):
+        """Reset all room-related states to initial values."""
+        self.patches_ready = False
+        self.in_room = False
+        self.room_code = ""
+        self.scroll_offset = 0
+        # Reset any other room-specific states here
+
+    def reset_ui_states(self):
+        """Reset all UI states to prevent button states from getting stuck."""
+        # Reset focus states
+        self.player_id_focused = False
+        self.join_room_code_focused = False
+        self.agent_prompt_focused = False
+        self.patch_name_focused = False
+
+        # Reset room UI states
+        self.patches_ready = False
+
+        # Reset agent menu states
+        self.agent_running = False
+        self.agent_results = None
+        self.show_fix_prompt = False
+        self.agent_values = None
+
+        # Reset text handler states
+        self.text_handler.agent_cursor_pos = 0
+        self.text_handler.agent_selection_start = 0
+        self.text_handler.agent_selection_end = 0
+        self.text_handler.agent_scroll_offset = 0
+        self.text_handler.patch_cursor_pos = 0
+        self.text_handler.patch_selection_start = 0
+        self.text_handler.patch_selection_end = 0
+        self.text_handler.patch_scroll_offset = 0
+
+        # Reset error message state
+        self.error_message = None
+        self.error_message_time = 0
+
+        # Reset target server info (for joining rooms)
+        if hasattr(self, 'target_server_ip'):
+            delattr(self, 'target_server_ip')
+        if hasattr(self, 'target_server_port'):
+            delattr(self, 'target_server_port')
+
+        # Reset connection attempt time
+        if hasattr(self, 'connection_attempt_time'):
+            delattr(self, 'connection_attempt_time')
+
+    def server_restarted_callback(self, message: str):
+        """Callback when the server has restarted and is ready for new games."""
+        print(f"🔄 {message}")
+        print("Returning to room lobby...")
+
+        # Reset room state and all UI states to clean slate
+        self.reset_room_state()
+        self.reset_ui_states()
+
+        # Always go to room state when server restarts
+        self.show_menu("room")
+        self.show_error_message("Server restarted. Ready for new game!")
+
+    def disconnected_callback(self):
+        """Callback when client gets disconnected from server."""
+        print("🔌 Disconnected from server")
+        print("Returning to room menu...")
+
+        # Reset room state since connection is lost
+        self.reset_room_state()
+
+        # Go back to room menu and show disconnection message
+        self.show_menu("room")
+        self.show_error_message("Disconnected from server. Please reconnect.")
+
     def on_start(self):
         from coding.non_callable_tools.helpers import cleanup_old_logs
         cleanup_old_logs()
@@ -714,12 +791,24 @@ class BaseMenu:
         """Start the game."""
         print("🚀 Launching game client...")
         # File sync should have already happened, patches applied
-        # Now exit the menu loop and start the game client
-        self.running = False  # Exit the menu loop
-        # Don't quit pygame here - run_client will handle it
 
-        # Start the game client after menu cleanup
-        run_client(network_client=self.client, player_id=self.player_id)
+        # Start the game client - it will run until it exits
+        try:
+            run_client(network_client=self.client, player_id=self.player_id)
+            print("Game client exited normally")
+        except SystemExit as e:
+            print(f"Game client exited with SystemExit: {e}")
+        except Exception as e:
+            print(f"Game client exited with error: {e}")
+
+        # Game client exited - return to room menu
+        print("🔄 Game client exited, returning to room...")
+
+        # Reset UI states to prevent button states from getting stuck
+        self.reset_ui_states()
+
+        self.show_menu("room")
+        self.show_error_message("Ready for new game!")
 
 
 if __name__ == "__main__":

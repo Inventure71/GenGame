@@ -97,10 +97,22 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             nonlocal running
             running = False
 
+        def on_game_restarting(winner, restart_delay, message):
+            print(f"🏆 Game finished! Winner: {winner}")
+            print(f"⏳ {message}")
+            # Don't exit yet - wait for server_restarted message
+
+        def on_server_restarted(message):
+            print(f"🔄 {message}")
+            nonlocal running
+            running = False  # Exit the game client to return to menu
+
         network_client.on_file_sync_received = on_file_sync_received
         network_client.on_game_state_received = on_game_state_received
         network_client.on_character_assigned = on_character_assigned
         network_client.on_disconnected = on_disconnected
+        network_client.on_game_restarting = on_game_restarting
+        network_client.on_server_restarted = on_server_restarted
 
         # Initialize local state
         game_over = False
@@ -213,6 +225,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         # Cleanup
         network_client.disconnect()
         # Don't quit pygame here - let the menu handle it
+        print("Game client exited cleanly")
 
     except Exception as e:
         print("\n" + "!"*70)
