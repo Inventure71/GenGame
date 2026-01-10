@@ -556,7 +556,7 @@ class BaseMenu:
         """Run the agent with the given prompt."""
         try:
             from agent import new_main
-            success, modelHandler, todo_list, prompt, backup_name = new_main(prompt=prompt, start_from_base="20260109000711_GameFolder", UI_called=True)
+            success, modelHandler, todo_list, prompt, backup_name = new_main(prompt=prompt, UI_called=True) #start_from_base="20260109000711_GameFolder",
             self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
             # Get test results
             from coding.tools.testing import run_all_tests
