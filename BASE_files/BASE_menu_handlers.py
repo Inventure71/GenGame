@@ -24,12 +24,12 @@ class MenuHandlers:
         self.menu.show_menu("room")
 
     def on_create_remote_room_click(self):
-        """Handle create remote room button click."""
+        """Handle remote public game button click."""
         if not self.menu.player_id.strip():
             self.menu.show_error_message("Error: Please enter a Player ID before creating a room")
             print("Error: Please enter a Player ID before creating a room")
             return
-        print("Create Remote Room clicked")
+        print("Remote Public Game clicked")
         if self.menu.network.create_remote_room():
             self.menu.show_menu("room")
         else:
@@ -67,7 +67,6 @@ class MenuHandlers:
     def on_join_room_back_click(self):
         """Handle back button from join room code menu."""
         print("Join Room Back clicked")
-        self.menu.join_room_code_focused = False
         self.menu.show_menu("main")
 
     def on_library_click(self):
@@ -138,15 +137,12 @@ class MenuHandlers:
 
         # Focus the text field if prompt is empty
         if not self.menu.agent_prompt.strip():
-            self.menu.agent_prompt_focused = True
+            # Components handle their own focus
             return
 
         self.menu.agent_running = True
         self.menu.agent_results = None
         self.menu.show_fix_prompt = False
-        # Unfocus text fields
-        self.menu.agent_prompt_focused = False
-        self.menu.patch_name_focused = False
 
         # Use the active patch as the starting point if one is loaded
         patch_to_load = self.menu.agent_active_patch_path
@@ -167,9 +163,6 @@ class MenuHandlers:
         print("Agent Fix clicked")
         self.menu.agent_running = True
         self.menu.show_fix_prompt = False
-        # Unfocus text fields
-        self.menu.agent_prompt_focused = False
-        self.menu.patch_name_focused = False
 
         # Run agent fix in a separate thread
         agent_thread = threading.Thread(target=self.menu.run_agent_fix, args=(self.menu.agent_results,))
@@ -197,7 +190,6 @@ class MenuHandlers:
             print(f"✓ Patch saved successfully: {patch_path}")
             # Clear the patch name field
             self.menu.patch_name = ""
-            self.menu.patch_name_focused = False
             # Refresh patch list
             self.menu.patch_manager.scan_patches()
         else:
@@ -208,21 +200,11 @@ class MenuHandlers:
         print("Agent Back clicked")
         # Reset agent state
         self.menu.agent_prompt = ""
-        self.menu.agent_prompt_focused = False
         self.menu.agent_running = False
         self.menu.agent_results = None
         # Reset patch state
         self.menu.patch_name = ""
-        self.menu.patch_name_focused = False
-        self.menu.text_handler.patch_cursor_pos = 0
-        self.menu.text_handler.patch_selection_start = 0
-        self.menu.text_handler.patch_selection_end = 0
-        self.menu.text_handler.patch_scroll_offset = 0
         self.menu.show_fix_prompt = False
-        self.menu.text_handler.agent_cursor_pos = 0
-        self.menu.text_handler.agent_selection_start = 0
-        self.menu.text_handler.agent_selection_end = 0
-        self.menu.text_handler.agent_scroll_offset = 0
         self.menu.agent_selected_patch_idx = -1
         self.menu.agent_active_patch_path = None
         self.menu.show_menu("main")
@@ -260,11 +242,38 @@ class MenuHandlers:
         load_thread = threading.Thread(target=load_task)
         load_thread.start()
 
+    def on_reset_to_base_click(self):
+        """Reset the workspace back to the base backup."""
+        print("Resetting to base backup...")
+
+        def reset_task():
+            try:
+                from coding.non_callable_tools.backup_handling import BackupHandler
+                # Restore the base backup directly
+                backup_handler = BackupHandler("__game_backups")
+                success = backup_handler.restore_backup(self.menu.base_working_backup, target_path="GameFolder")
+
+                if success:
+                    # Clear loaded patch state
+                    self.menu.agent_selected_patch_idx = -1
+                    self.menu.agent_active_patch_path = None
+                    print("✓ Successfully reset to base backup")
+                    self.menu.show_error_message("Reset to base game")
+                else:
+                    print("✗ Failed to reset to base backup")
+                    self.menu.show_error_message("Reset failed")
+            except Exception as e:
+                print(f"✗ Error resetting to base: {e}")
+                self.menu.show_error_message(f"Reset error: {e}")
+
+        reset_thread = threading.Thread(target=reset_task)
+        reset_thread.start()
+
     def on_save_current_state_click(self):
         """Handle saving the current GameFolder state to a patch (even if failed)."""
         if not self.menu.patch_name.strip():
             self.menu.show_error_message("Please enter a patch name first")
-            self.menu.patch_name_focused = True
+            # Components handle their own focus
             return
 
         print(f"Saving current state to patch: {self.menu.patch_name}")
@@ -288,7 +297,6 @@ class MenuHandlers:
         if success:
             print(f"✓ State saved successfully: {patch_path}")
             self.menu.patch_name = ""
-            self.menu.patch_name_focused = False
             # Refresh patch list
             self.menu.patch_manager.scan_patches()
             self.menu.show_error_message(f"Saved: {self.menu.patch_name}")

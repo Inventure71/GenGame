@@ -78,8 +78,8 @@ class MenuNetwork:
         self.connect_to_server("localhost", self.server_port)
 
     def create_remote_room(self):
-        """Create a remote room (accessible from other machines)."""
-        print("Creating remote room...")
+        """Create a remote public game (accessible from other machines)."""
+        print("Creating remote public game...")
         # For remote rooms, we need to get the external IP
         # TODO: Implement actual external IP detection (e.g., using services like ipify.org)
         # For now, we'll use 127.0.0.1 as placeholder - user should replace with actual external IP
@@ -88,7 +88,7 @@ class MenuNetwork:
         # Generate room code using the external IP
         self.menu.room_code = encrypt_code(REMOTE_DOMAIN, self.server_port, "REMOTE")
         print(f"Room code generated: {self.menu.room_code}")
-        print("NOTE: For remote rooms to work, replace the external_ip with your actual external IP address")
+        print("NOTE: For remote public games to work, replace the external_ip with your actual external IP address")
 
         # Connect to the remote server
         if not self.connect_to_server(REMOTE_DOMAIN, self.server_port):
