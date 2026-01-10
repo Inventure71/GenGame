@@ -34,8 +34,7 @@ from coding.non_callable_tools.action_logger import ActionLogger
 
 class BaseMenu:
     def __init__(self, action_logger=None):
-        #self.base_working_backup = None
-        self.base_working_backup = "20260110145521_GameFolder"
+        self.base_working_backup = "20260110145521_GameFolder" # Will be initialized in on_start or when loading patches
 
         print("Initializing BaseMenu...")
         # Initialize pygame if not already initialized
@@ -112,6 +111,9 @@ class BaseMenu:
         self.agent_results = None
         self.show_fix_prompt = False
         self.agent_values = None
+        self.agent_selected_patch_idx = -1  # Index of patch selected for loading
+        self.agent_active_patch_path = None # Path to the currently loaded patch
+        self.agent_scroll_offset = 0        # Scroll offset for patch list in agent menu
 
         # Patch saving state
         self.patch_name = ""
@@ -417,6 +419,14 @@ class BaseMenu:
                 max_offset = max(0, len(self.patch_manager.available_patches) - self.max_visible_patches)
                 self.scroll_offset = min(max_offset, self.scroll_offset + 1)
 
+        # Handle scrolling in agent menu patch list
+        elif self.current_menu == "agent" and not self.agent_prompt_focused and not self.patch_name_focused:
+            if event.key == pygame.K_UP:
+                self.agent_scroll_offset = max(0, self.agent_scroll_offset - 1)
+            elif event.key == pygame.K_DOWN:
+                max_offset = max(0, len(self.patch_manager.available_patches) - 14) # 14 is max_sidebar_patches
+                self.agent_scroll_offset = min(max_offset, self.agent_scroll_offset + 1)
+
     # Delegate all click handlers to the handlers module
     def on_create_local_room_click(self):
         self.handlers.on_create_local_room_click()
@@ -555,11 +565,17 @@ class BaseMenu:
         print("Supported platforms: macOS, Linux (xclip/xsel), Windows")
 
     # Agent functionality
-    def run_agent(self, prompt: str):
+    def run_agent(self, prompt: str, patch_to_load: str = None, needs_rebase: bool = True):
         """Run the agent with the given prompt."""
         try:
             from agent import new_main
-            success, modelHandler, todo_list, prompt, backup_name = new_main(prompt=prompt, start_from_base=self.base_working_backup, UI_called=True) #start_from_base="20260109000711_GameFolder",
+            success, modelHandler, todo_list, prompt, backup_name = new_main(
+                prompt=prompt, 
+                start_from_base=self.base_working_backup, 
+                patch_to_load=patch_to_load,
+                needs_rebase=needs_rebase,
+                UI_called=True
+            )
             self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
             # Get test results
             from coding.tools.testing import run_all_tests
@@ -735,6 +751,8 @@ class BaseMenu:
         self.agent_results = None
         self.show_fix_prompt = False
         self.agent_values = None
+        self.agent_selected_patch_idx = -1
+        self.agent_scroll_offset = 0
 
         # Reset text handler states
         self.text_handler.agent_cursor_pos = 0
@@ -789,6 +807,17 @@ class BaseMenu:
         from coding.non_callable_tools.helpers import cleanup_old_logs
         cleanup_old_logs()
         self.patch_to_apply = None
+        
+        # Ensure we have an initial base backup if none is set
+        if self.base_working_backup is None:
+            print("Creating initial safety backup...")
+            try:
+                from coding.non_callable_tools.backup_handling import BackupHandler
+                handler = BackupHandler("__game_backups")
+                _, self.base_working_backup = handler.create_backup("GameFolder")
+                print(f"Initial backup created: {self.base_working_backup}")
+            except Exception as e:
+                print(f"Warning: Failed to create initial backup: {e}")
     
     def start_game(self):
         """Start the game."""

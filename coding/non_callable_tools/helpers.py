@@ -2,13 +2,46 @@ import glob
 import os
 
 
-def open_file(file_path: str) -> str:
+def open_file(file_path: str) -> str | None:
+    """
+    Safely opens a text file and returns its content.
+    Returns None for binary files, missing files, or other errors.
+    Returns empty string for empty text files.
+    """
     if not os.path.exists(file_path):
-        return ""
-    # opens an .md or .py ecc file and returns the content
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-    return content
+        return None
+
+    try:
+        # Check file size first
+        file_size = os.path.getsize(file_path)
+        if file_size == 0:
+            return ""  # Empty file
+
+        # Check if file is binary by reading first few bytes
+        with open(file_path, 'rb') as f:
+            sample = f.read(min(1024, file_size))  # Read first 1KB or file size
+
+        # Check for null bytes or high ratio of non-ASCII characters
+        if b'\x00' in sample:
+            return None  # Binary file
+
+        # Count non-ASCII characters
+        non_ascii_count = sum(1 for byte in sample if byte > 127)
+        if len(sample) > 0 and (non_ascii_count / len(sample)) > 0.3:
+            # More than 30% non-ASCII characters - likely binary
+            return None
+
+        # Try to decode as UTF-8
+        sample.decode('utf-8')
+
+        # If we get here, it's likely text - read the full file
+        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        return content
+
+    except (UnicodeDecodeError, OSError, IOError, PermissionError):
+        # File is binary, corrupted, or inaccessible
+        return None
 
 def load_prompt(prompt_file: str, include_general_context: bool = True) -> str:
     prompt = open_file(prompt_file)

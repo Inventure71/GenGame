@@ -145,8 +145,18 @@ class MenuHandlers:
         self.menu.agent_prompt_focused = False
         self.menu.patch_name_focused = False
 
+        # Use the active patch as the starting point if one is loaded
+        patch_to_load = self.menu.agent_active_patch_path
+
         # Run agent in a separate thread to avoid blocking the UI
-        agent_thread = threading.Thread(target=self.menu.run_agent, args=(self.menu.agent_prompt,))
+        agent_thread = threading.Thread(
+            target=self.menu.run_agent, 
+            args=(self.menu.agent_prompt,), 
+            kwargs={
+                'patch_to_load': patch_to_load,
+                'needs_rebase': False # The UI handles rebase during "Load" or initial start
+            }
+        )
         agent_thread.start()
 
     def on_agent_fix_click(self):
@@ -171,8 +181,8 @@ class MenuHandlers:
         if not os.path.exists(patches_dir):
             os.makedirs(patches_dir)
 
-        # Get the backup name from agent values, fallback to "GameFolder"
-        backup_name = "GameFolder"
+        # Use current backup name from agent results if available, else from menu base
+        backup_name = self.menu.base_working_backup
         if self.menu.agent_values and "backup_name" in self.menu.agent_values:
             backup_name = self.menu.agent_values["backup_name"]
 
@@ -185,6 +195,8 @@ class MenuHandlers:
             # Clear the patch name field
             self.menu.patch_name = ""
             self.menu.patch_name_focused = False
+            # Refresh patch list
+            self.menu.patch_manager.scan_patches()
         else:
             print("✗ Failed to save patch")
 
@@ -208,4 +220,74 @@ class MenuHandlers:
         self.menu.text_handler.agent_selection_start = 0
         self.menu.text_handler.agent_selection_end = 0
         self.menu.text_handler.agent_scroll_offset = 0
+        self.menu.agent_selected_patch_idx = -1
+        self.menu.agent_active_patch_path = None
         self.menu.show_menu("main")
+
+    def on_load_patch_to_agent_click(self, patch_index: int):
+        """Handle loading a patch into the agent for updating."""
+        if patch_index < 0 or patch_index >= len(self.menu.patch_manager.available_patches):
+            return
+        
+        patch = self.menu.patch_manager.available_patches[patch_index]
+        print(f"Loading patch '{patch.name}' into workspace...")
+        
+        # We perform the loading in a background thread to keep UI responsive
+        def load_task():
+            from coding.non_callable_tools.version_control import VersionControl
+            vc = VersionControl()
+            success, errors = vc.apply_all_changes(
+                needs_rebase=True, 
+                path_to_BASE_backup="__game_backups", 
+                file_containing_patches=patch.file_path,
+                skip_warnings=True
+            )
+            if success:
+                self.menu.agent_selected_patch_idx = patch_index
+                self.menu.agent_active_patch_path = patch.file_path
+                # Update the base working backup to match the patch's base
+                backup_name, _, _ = vc.load_from_extension_file(patch.file_path)
+                self.menu.base_working_backup = backup_name
+                print(f"✓ Patch '{patch.name}' loaded. Ready for improvements.")
+                self.menu.show_error_message(f"Loaded: {patch.name}")
+            else:
+                print(f"✗ Failed to load patch: {errors}")
+                self.menu.show_error_message(f"Load failed: {errors}")
+
+        load_thread = threading.Thread(target=load_task)
+        load_thread.start()
+
+    def on_save_current_state_click(self):
+        """Handle saving the current GameFolder state to a patch (even if failed)."""
+        if not self.menu.patch_name.strip():
+            self.menu.show_error_message("Please enter a patch name first")
+            self.menu.patch_name_focused = True
+            return
+
+        print(f"Saving current state to patch: {self.menu.patch_name}")
+
+        patches_dir = "__patches"
+        if not os.path.exists(patches_dir):
+            os.makedirs(patches_dir)
+
+        # Use active backup (from loaded patch) or fallback to base working backup
+        backup_name = self.menu.base_working_backup
+        if not backup_name:
+            # If no backup is set, create a fresh one as the base
+            from coding.non_callable_tools.backup_handling import BackupHandler
+            handler = BackupHandler("__game_backups")
+            _, backup_name = handler.create_backup("GameFolder")
+            print(f"Created fresh backup for comparison: {backup_name}")
+
+        patch_path = os.path.join(patches_dir, f"{self.menu.patch_name}.json")
+        success = self.menu.action_logger.save_changes_to_extension_file(patch_path, name_of_backup=backup_name)
+
+        if success:
+            print(f"✓ State saved successfully: {patch_path}")
+            self.menu.patch_name = ""
+            self.menu.patch_name_focused = False
+            # Refresh patch list
+            self.menu.patch_manager.scan_patches()
+            self.menu.show_error_message(f"Saved: {self.menu.patch_name}")
+        else:
+            self.menu.show_error_message("Failed to save current state")

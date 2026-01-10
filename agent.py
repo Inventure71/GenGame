@@ -250,20 +250,52 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
         # Return success
         return True, modelHandler, todo_list, "", backup_name
 
-def new_main(prompt: str = None, start_from_base: str = None, UI_called=False):
+def new_main(prompt: str = None, start_from_base: str = None, patch_to_load: str = None, needs_rebase: bool = True, UI_called=False):
     load_dotenv()
     check_integrity()
 
     handler = BackupHandler("__game_backups")
-    if start_from_base is None:
-        backup_path, backup_name = handler.create_backup("GameFolder") 
-        print("Backup created at: ", backup_path)
+    backup_name = start_from_base
+    
+    if patch_to_load and needs_rebase:
+        print(f"Loading patch from {patch_to_load}...")
+        from coding.non_callable_tools.version_control import VersionControl
+        vc = VersionControl()
+        success, errors = vc.apply_all_changes(
+            needs_rebase=True, 
+            path_to_BASE_backup="__game_backups", 
+            file_containing_patches=patch_to_load,
+            skip_warnings=True
+        )
+        if not success:
+            print(f"Failed to load patch: {errors}")
+            return False, None, None, "", ""
+        
+        backup_name, _, _ = vc.load_from_extension_file(patch_to_load)
+        print(f"Patch loaded successfully. Base backup: {backup_name}")
 
-    else:
+    elif patch_to_load and not needs_rebase:
+        # We assume the UI already loaded the patch, but we still need the backup_name for saving
+        from coding.non_callable_tools.version_control import VersionControl
+        vc = VersionControl()
+        backup_name, _, _ = vc.load_from_extension_file(patch_to_load)
+        print(f"Using already loaded patch context. Base backup: {backup_name}")
+
+    elif start_from_base is None:
+        # No base specified and no patch to load - create a fresh starting point
+        backup_path, backup_name = handler.create_backup("GameFolder") 
+        print("Initial backup created at: ", backup_path)
+
+    elif start_from_base and needs_rebase:
+        # Rebase to a specific backup
         backup_path, backup_name = handler.restore_backup(start_from_base, target_path="GameFolder")
         print("Restored backup from: ", backup_path)
     
-    print("Backup name: ", backup_name)
+    else:
+        # Using existing state or start_from_base was already handled
+        print(f"Continuing with current state. Base backup: {backup_name}")
+    
+    print("Backup name for this session: ", backup_name)
 
     # start logger
     action_logger.start_session(visual=True)

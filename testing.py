@@ -179,7 +179,7 @@ def main_manual_repl():
         print("--------------------------------")
     
     if input("Save changes to extension file? (y/n): ").strip().lower() == 'y':
-        action_logger.save_changes_to_extension_file("patches.json", name_of_backup=backup_name)
+        action_logger.save_changes_to_extension_file("patches.json", name_of_backup=backup_name, base_backups_root="__game_backups")
 
     action_logger.end_session()
     print("Session ended.")

@@ -383,118 +383,188 @@ class MenuRenderers:
             self.menu.on_library_back_click()
 
     def render_agent_menu(self):
-        """Render the agent content creation menu."""
+        """Render the improved agent content creation menu with patch selection and state saving."""
         self.menu.screen.fill(self.menu.menu_background_color)
 
+        # Draw sidebar background
+        sidebar_width = 380
+        pygame.draw.rect(self.menu.screen, (30, 30, 45), (0, 0, sidebar_width, 900))
+        pygame.draw.line(self.menu.screen, (100, 100, 130), (sidebar_width, 0), (sidebar_width, 900), 2)
+
+        # --- SIDEBAR: PATCH LIST ---
+        self.menu.utils.draw_text("Available Patches", 190, 40, self.menu.button_font, center=True)
+        
+        # Scan patches if not done yet
+        if not self.menu.patch_manager.available_patches:
+            self.menu.patch_manager.scan_patches()
+
+        patches = self.menu.patch_manager.available_patches
+        patch_list_y = 80
+        patch_item_height = 50
+        max_sidebar_patches = 14
+        
+        visible_patches = patches[self.menu.agent_scroll_offset:self.menu.agent_scroll_offset + max_sidebar_patches]
+
+        for i, patch in enumerate(visible_patches):
+            actual_idx = self.menu.agent_scroll_offset + i
+            item_y = patch_list_y + i * patch_item_height
+            
+            # Highlight selected patch
+            is_selected = (self.menu.agent_selected_patch_idx == actual_idx)
+            item_color = (60, 60, 100) if is_selected else (45, 45, 65)
+            
+            item_rect = pygame.Rect(10, item_y, sidebar_width - 20, patch_item_height - 5)
+            is_hovered = item_rect.collidepoint(self.menu.mouse_pos)
+            if is_hovered and not is_selected:
+                item_color = (70, 70, 90)
+            
+            pygame.draw.rect(self.menu.screen, item_color, item_rect, border_radius=5)
+            pygame.draw.rect(self.menu.screen, (100, 100, 130), item_rect, 1, border_radius=5)
+            
+            # Patch name and info
+            name_text = patch.name if len(patch.name) < 25 else patch.name[:22] + "..."
+            self.menu.utils.draw_text(name_text, 25, item_y + 8, self.menu.small_font)
+            self.menu.utils.draw_text(f"Changes: {patch.num_changes}", 25, item_y + 26, self.menu.small_font, color=(180, 180, 180))
+
+            # Load Button for each patch
+            load_btn_width = 80
+            load_btn_rect = pygame.Rect(sidebar_width - load_btn_width - 20, item_y + 8, load_btn_width, 30)
+            load_hovered = load_btn_rect.collidepoint(self.menu.mouse_pos)
+            load_color = (100, 100, 200) if load_hovered else (70, 70, 150)
+            
+            pygame.draw.rect(self.menu.screen, load_color, load_btn_rect, border_radius=4)
+            load_text = self.menu.small_font.render("Load", True, (255, 255, 255))
+            load_text_rect = load_text.get_rect(center=load_btn_rect.center)
+            self.menu.screen.blit(load_text, load_text_rect)
+
+            if self.menu.utils.check_button_click(load_btn_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running:
+                self.menu.handlers.on_load_patch_to_agent_click(actual_idx)
+
+        # Sidebar scroll indicators
+        if self.menu.agent_scroll_offset > 0:
+            self.menu.utils.draw_text("▲", sidebar_width - 30, patch_list_y - 25, self.menu.small_font)
+        if self.menu.agent_scroll_offset + max_sidebar_patches < len(patches):
+            self.menu.utils.draw_text("▼", sidebar_width - 30, patch_list_y + (max_sidebar_patches * patch_item_height), self.menu.small_font)
+
+        # --- MAIN AREA: AGENT CONTROLS ---
+        main_x_center = sidebar_width + (1400 - sidebar_width) // 2
+        
         # Title
-        self.menu.utils.draw_text("Agent Content Creation", 700, 30, self.menu.menu_font, center=True)
+        self.menu.utils.draw_text("Agent Control Center", main_x_center, 40, self.menu.menu_font, center=True)
 
-        # Prompt text field
-        prompt_y = 80
-        prompt_width = 1000
-        prompt_height = 250
+        # Prompt Section
+        prompt_y = 110
+        prompt_width = 900
+        prompt_height = 280
+        prompt_x = main_x_center - prompt_width // 2
 
-        # Draw prompt label
-        self.menu.utils.draw_text("Paste your content request:", 700, prompt_y - 30, self.menu.utils.button_font, center=True)
+        self.menu.utils.draw_text("Describe features or improvements:", prompt_x, prompt_y - 30, self.menu.button_font)
 
-        # Draw prompt text field background
-        prompt_rect = pygame.Rect(700 - prompt_width//2, prompt_y, prompt_width, prompt_height)
+        prompt_rect = pygame.Rect(prompt_x, prompt_y, prompt_width, prompt_height)
         pygame.draw.rect(self.menu.screen, (40, 40, 50), prompt_rect)
         pygame.draw.rect(self.menu.screen, (100, 100, 120), prompt_rect, 2)
 
-        # Handle clicking on the prompt field
         if self.menu.utils.check_button_click(prompt_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running:
             self.menu.agent_prompt_focused = True
-            # Calculate cursor position from mouse click
             self.menu.text_handler.update_cursor_from_mouse_click(prompt_rect, prompt_y, self.menu.mouse_pos, self.menu.agent_prompt)
         elif self.menu.mouse_clicked and not prompt_rect.collidepoint(self.menu.mouse_pos):
             self.menu.agent_prompt_focused = False
 
-        # Draw focus border
         if self.menu.agent_prompt_focused:
             pygame.draw.rect(self.menu.screen, (150, 150, 180), prompt_rect, 3)
 
-        # Draw prompt text with selection and cursor
         self.menu.text_handler.draw_text_input(prompt_rect, prompt_y, prompt_width, prompt_height, self.menu.agent_prompt, self.menu.screen, self.menu.utils.button_font, self.menu.menu_text_color, self.menu.frame_count)
 
-        # Webserver URL display
-        url_y = prompt_y + prompt_height + 15
-        self.menu.utils.draw_text("Agent Monitor: http://127.0.0.1:8765", 700, url_y, self.menu.small_font, center=True)
-
-        # Paste and Send buttons
-        send_y = url_y + 35
-
-        # Paste Clipboard button
-        paste_button_width = 100
-        paste_rect = self.menu.utils.draw_button("Paste", 700 - self.menu.utils.button_width//2 - paste_button_width - 20, send_y,
-                                     paste_button_width, self.menu.utils.button_height,
-                                     self.menu.utils.check_button_hover(700 - self.menu.utils.button_width//2 - paste_button_width - 20, send_y, paste_button_width, self.menu.utils.button_height, self.menu.mouse_pos))
+        # Action Buttons Area
+        btn_y = prompt_y + prompt_height + 25
+        
+        # Paste Button
+        paste_rect = self.menu.utils.draw_button("Paste", prompt_x, btn_y, 150, 50, 
+                                     self.menu.utils.check_button_hover(prompt_x, btn_y, 150, 50, self.menu.mouse_pos))
         if self.menu.utils.check_button_click(paste_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running:
             self.menu.paste_clipboard()
 
-        # Send button
-        send_button_text = "Running Agent..." if self.menu.agent_running else "Send to Agent"
-        send_rect = self.menu.utils.draw_button(send_button_text, 700 - self.menu.utils.button_width//2, send_y,
-                                    self.menu.utils.button_width, self.menu.utils.button_height,
-                                    self.menu.utils.check_button_hover(700 - self.menu.utils.button_width//2, send_y, self.menu.utils.button_width, self.menu.utils.button_height, self.menu.mouse_pos))
-        if self.menu.utils.check_button_click(send_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running and self.menu.agent_prompt.strip():
+        # Run Button
+        run_text = "Running Agent..." if self.menu.agent_running else "Start Agent"
+        run_btn_width = 300
+        run_x = main_x_center - run_btn_width // 2
+        run_rect = self.menu.utils.draw_button(run_text, run_x, btn_y, run_btn_width, 50,
+                                   self.menu.utils.check_button_hover(run_x, btn_y, run_btn_width, 50, self.menu.mouse_pos))
+        if self.menu.utils.check_button_click(run_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running and self.menu.agent_prompt.strip():
             self.menu.on_agent_send_click()
 
-        # Results display
-        current_y = send_y + self.menu.utils.button_height + 40
-        if self.menu.agent_results:
-            self.menu.utils.draw_text(f"Test Results: {self.menu.agent_results['passed']}/{self.menu.agent_results['total']} passed",
-                          700, current_y, self.menu.utils.button_font, center=True)
-            current_y += 50
+        # Status & Monitor Info
+        monitor_y = btn_y + 70
+        self.menu.utils.draw_text("Live Monitor: http://127.0.0.1:8765", main_x_center, monitor_y, self.menu.small_font, center=True, color=(150, 200, 255))
 
-            # Fix button (only show if there were failures)
-            if self.menu.agent_results['passed'] < self.menu.agent_results['total']:
-                fix_rect = self.menu.utils.draw_button("Fix Issues?", 700 - self.menu.utils.button_width//2, current_y,
-                                           self.menu.utils.button_width, self.menu.utils.button_height,
-                                           self.menu.utils.check_button_hover(700 - self.menu.utils.button_width//2, current_y, self.menu.utils.button_width, self.menu.utils.button_height, self.menu.mouse_pos))
-                if self.menu.utils.check_button_click(fix_rect, self.menu.mouse_clicked, self.menu.mouse_pos):
+        # Divider
+        pygame.draw.line(self.menu.screen, (80, 80, 100), (sidebar_width + 50, monitor_y + 30), (1350, monitor_y + 30), 1)
+
+        # Results & Persistence Section
+        lower_y = monitor_y + 60
+
+        # Always show patch saving section (moved up so it's always visible)
+        save_panel_width = 600
+        save_panel_x = main_x_center - save_panel_width // 2
+
+        self.menu.utils.draw_text("Patch Name:", save_panel_x, lower_y + 10, self.menu.button_font)
+
+        patch_name_rect = pygame.Rect(save_panel_x + 150, lower_y, 300, 45)
+        pygame.draw.rect(self.menu.screen, (40, 40, 50), patch_name_rect)
+        pygame.draw.rect(self.menu.screen, (100, 100, 120), patch_name_rect, 2)
+
+        if self.menu.utils.check_button_click(patch_name_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running:
+            self.menu.patch_name_focused = True
+            self.menu.agent_prompt_focused = False
+            self.menu.text_handler.update_patch_cursor_from_mouse_click(patch_name_rect, lower_y, self.menu.mouse_pos, self.menu.patch_name)
+
+        if self.menu.patch_name_focused:
+            pygame.draw.rect(self.menu.screen, (150, 150, 180), patch_name_rect, 3)
+
+        self.menu.text_handler.draw_patch_text_input(patch_name_rect, lower_y, 300, 45, self.menu.patch_name, self.menu.screen, self.menu.button_font, self.menu.menu_text_color, self.menu.patch_name_focused)
+
+        button_y = lower_y + 60
+
+        # Save Patch Button
+        save_rect = self.menu.utils.draw_button("Save Patch", save_panel_x + 460, button_y, 140, 45,
+                                    self.menu.utils.check_button_hover(save_panel_x + 460, button_y, 140, 45, self.menu.mouse_pos))
+        if self.menu.utils.check_button_click(save_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and self.menu.patch_name.strip():
+            self.menu.on_agent_save_patch_click()
+
+        # "Save Current State" Button (Always available emergency save)
+        state_btn_width = 250
+        state_rect = self.menu.utils.draw_button("Save Current State", save_panel_x, button_y, state_btn_width, 45,
+                                     self.menu.utils.check_button_hover(save_panel_x, button_y, state_btn_width, 45, self.menu.mouse_pos))
+        if self.menu.utils.check_button_click(state_rect, self.menu.mouse_clicked, self.menu.mouse_pos):
+            self.menu.handlers.on_save_current_state_click()
+
+        # Show test results and fix button if we have results
+        if self.menu.agent_results or self.menu.agent_values:
+            results_y = button_y + 70
+
+            # Show Test Results if any
+            res_text = "Results pending..."
+            if self.menu.agent_results:
+                passed = self.menu.agent_results['passed']
+                total = self.menu.agent_results['total']
+                res_text = f"Tests: {passed}/{total} Passed"
+                color = (100, 255, 100) if passed == total else (255, 100, 100)
+                self.menu.utils.draw_text(res_text, main_x_center, results_y, self.menu.button_font, center=True, color=color)
+
+            # Fix Issues button (only show if there were failures)
+            if self.menu.agent_results and self.menu.agent_results['passed'] < self.menu.agent_results['total']:
+                fix_y = results_y + 50
+                fix_rect = self.menu.utils.draw_button("Fix Issues", main_x_center - 150, fix_y, 300, 50,
+                                           self.menu.utils.check_button_hover(main_x_center - 150, fix_y, 300, 50, self.menu.mouse_pos))
+                if self.menu.utils.check_button_click(fix_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running:
                     self.menu.on_agent_fix_click()
-                current_y += self.menu.utils.button_height + 30
 
-            # Patch saving section
-            # Draw label
-            self.menu.utils.draw_text("Patch Name:", 700, current_y, self.menu.utils.button_font, center=True)
-            current_y += 35
-
-            # Patch name input field
-            patch_name_width = 400
-            patch_name_height = 40
-            patch_name_rect = pygame.Rect(700 - patch_name_width//2, current_y, patch_name_width, patch_name_height)
-            pygame.draw.rect(self.menu.screen, (40, 40, 50), patch_name_rect)
-            pygame.draw.rect(self.menu.screen, (100, 100, 120), patch_name_rect, 2)
-
-            # Handle clicking on patch name field
-            if self.menu.utils.check_button_click(patch_name_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running:
-                self.menu.patch_name_focused = True
-                self.menu.agent_prompt_focused = False
-                self.menu.text_handler.update_patch_cursor_from_mouse_click(patch_name_rect, current_y, self.menu.mouse_pos, self.menu.patch_name)
-            elif self.menu.mouse_clicked and not patch_name_rect.collidepoint(self.menu.mouse_pos):
-                self.menu.patch_name_focused = False
-
-            # Draw focus border
-            if self.menu.patch_name_focused:
-                pygame.draw.rect(self.menu.screen, (150, 150, 180), patch_name_rect, 3)
-
-            # Draw patch name text
-            self.menu.text_handler.draw_patch_text_input(patch_name_rect, current_y, patch_name_width, patch_name_height, self.menu.patch_name, self.menu.screen, self.menu.utils.button_font, self.menu.menu_text_color, self.menu.patch_name_focused)
-            current_y += patch_name_height + 15
-
-            # Save patch button
-            save_patch_rect = self.menu.utils.draw_button("Save to Patch", 700 - self.menu.utils.button_width//2, current_y,
-                                             self.menu.utils.button_width, self.menu.utils.button_height,
-                                             self.menu.utils.check_button_hover(700 - self.menu.utils.button_width//2, current_y, self.menu.utils.button_width, self.menu.utils.button_height, self.menu.mouse_pos))
-            if self.menu.utils.check_button_click(save_patch_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running and self.menu.patch_name.strip():
-                self.menu.on_agent_save_patch_click()
-
-        # Back button at the bottom
-        back_y = 820
-        back_rect = self.menu.utils.draw_button("Back to Menu", 700 - self.menu.utils.button_width//2, back_y,
-                                    self.menu.utils.button_width, self.menu.utils.button_height,
-                                    self.menu.utils.check_button_hover(700 - self.menu.utils.button_width//2, back_y, self.menu.utils.button_width, self.menu.utils.button_height, self.menu.mouse_pos))
+        # Back Button
+        back_rect = self.menu.utils.draw_button("Back to Main Menu", main_x_center - 150, 820, 300, 50,
+                                    self.menu.utils.check_button_hover(main_x_center - 150, 820, 300, 50, self.menu.mouse_pos))
         if self.menu.utils.check_button_click(back_rect, self.menu.mouse_clicked, self.menu.mouse_pos) and not self.menu.agent_running:
             self.menu.on_agent_back_click()
+
+        # Show error messages at the bottom
+        if self.menu.error_message and pygame.time.get_ticks() - self.menu.error_message_time < 5000:
+            self.menu.utils.draw_text(self.menu.error_message, main_x_center, 880, self.menu.small_font, color=(255, 100, 100), center=True)

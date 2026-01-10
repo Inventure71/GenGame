@@ -51,13 +51,13 @@ class ActionLogger:
         # Register cleanup
         atexit.register(self._cleanup)
     
-    def save_changes_to_extension_file(self, file_path: str, name_of_backup: str = None):
+    def save_changes_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups"):
         # import only if not already imported
         if "VersionControl" not in globals():
             from coding.non_callable_tools.version_control import VersionControl
 
         version_control = VersionControl(self)
-        return version_control.save_to_extension_file(file_path, name_of_backup=name_of_backup)
+        return version_control.save_to_extension_file(file_path, name_of_backup=name_of_backup, base_backups_root=base_backups_root)
 
     def set_todo_list(self, todo_list):
         """Set reference to the TodoList for tracking."""
