@@ -59,6 +59,51 @@ Must read (in ONE parallel batch):
 - Naming: `test_<feature>_<scenario>`, `test_<feature>_edge_<condition>`
 - You are provied `GUIDE_Testing.md` for templates and pitfalls
 
+## ⚠️ PYGAME THREADING SAFETY - CRITICAL
+
+**pygame operations MUST run on main thread only. Background threads will crash on macOS.**
+
+### Threading Violations (Will Crash):
+```python
+# ❌ WRONG - Background thread
+def test_pygame_in_thread():
+    pygame.init()  # CRASHES: 'nextEventMatchingMask should only be called from the Main Thread!'
+
+# ❌ WRONG - Event handling in tests
+def test_with_events():
+    pygame.event.get()  # CRASHES if not main thread
+```
+
+### Thread-Safe Patterns:
+```python
+# ✅ CORRECT - Always use headless=True for Arena
+def test_game_logic():
+    arena = Arena(800, 600, headless=True)  # No pygame event handling
+    # Safe for any thread
+
+# ✅ CORRECT - Manual key simulation
+def test_input_handling():
+    arena = Arena(800, 600, headless=True)
+    # Simulate key presses directly:
+    arena.held_keycodes.add(pygame.K_d)  # Right movement
+    arena._capture_input()  # Processes held_keycodes without pygame events
+```
+
+### Arena Creation - ALWAYS headless:
+```python
+# ✅ CORRECT - All tests use headless mode
+arena = Arena(width, height, headless=True)
+character = Character("Test", "Desc", "", [100, 100])
+arena.add_character(character)
+# Test logic here...
+```
+
+### Why This Matters:
+- pytest runs tests in background threads on macOS
+- pygame event handling requires main thread access
+- Headless mode skips pygame event pumping entirely
+- Direct `held_keycodes` manipulation works without pygame
+
 ---
 
 ## MANDATORY: Core Functionality Tests

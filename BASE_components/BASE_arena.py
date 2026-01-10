@@ -289,11 +289,12 @@ class Arena:
                 self.ammo_pickups.append(ammo_pickup)
 
     def manage_weapon_spawns(self, delta_time: float):
-
         self.weapon_spawn_timer += delta_time
         if self.weapon_spawn_timer >= self.spawn_interval:
             self.weapon_spawn_timer = 0.0
-            if self.lootpool and len(self.weapon_pickups) < max(2, len(self.characters)):
+            # TODO: implement that it spawns a weapon every time a character dies
+            #if self.lootpool and len(self.weapon_pickups) < max(2, len(self.characters)):
+            if self.lootpool:
                 random.seed(self.spawn_count + 42)
                 self.spawn_count += 1
                 # Only spawn on platforms wide enough for weapon placement (need at least 40px width)
@@ -383,19 +384,21 @@ class Arena:
 
     def _capture_input(self):
         """Capture local player input."""
-        pygame.event.pump()
-        mx, my = pygame.mouse.get_pos()
-        world_mx, world_my = self.screen_to_world(mx, my)
-        pressed = pygame.mouse.get_pressed()
+        # Skip pygame event handling in headless mode to avoid main thread issues
+        if not self.headless:
+            pygame.event.pump()
+            mx, my = pygame.mouse.get_pos()
+            world_mx, world_my = self.screen_to_world(mx, my)
+            pressed = pygame.mouse.get_pressed()
 
-        # Handle events
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                self.running = False
-            elif event.type == pygame.KEYDOWN:
-                self.held_keycodes.add(event.key)
-            elif event.type == pygame.KEYUP:
-                self.held_keycodes.discard(event.key)
+            # Handle events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                elif event.type == pygame.KEYDOWN:
+                    self.held_keycodes.add(event.key)
+                elif event.type == pygame.KEYUP:
+                    self.held_keycodes.discard(event.key)
 
         # Process held keys for the first character (local player)
         if self.characters:
@@ -426,8 +429,8 @@ class Arena:
 
                 char.move(move_dir, self.platforms)
 
-                # Shooting
-                if pressed[0]:  # Left mouse button
+                # Shooting - only in non-headless mode
+                if not self.headless and pressed[0]:  # Left mouse button
                     proj = char.shoot([world_mx, world_my])
                     if proj:
                         if isinstance(proj, list):

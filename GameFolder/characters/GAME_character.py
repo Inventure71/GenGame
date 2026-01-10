@@ -18,6 +18,8 @@ class Character(BaseCharacter):
         self.shield_regen_rate = 1.0  # Shield points per second
         self.last_damage_time = 0  # Track when we last took damage
 
+        self.last_arena_height = 900  # to avoid hardcoding in collision logic
+
     def __setstate__(self, state):
         """Override to ensure shield properties are properly initialized from network data"""
         super().__setstate__(state)
@@ -49,8 +51,10 @@ class Character(BaseCharacter):
         if amount > 0:
             super().take_damage(amount)
 
-    def update(self, delta_time: float, platforms: list = None, arena_height: float = 600):
+    def update(self, delta_time: float, platforms: list = None, arena_height: float = 900):
         """Override to add shield regeneration"""
+        self.last_arena_height = arena_height
+
         # Call parent update first
         super().update(delta_time, platforms, arena_height)
 

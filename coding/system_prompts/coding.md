@@ -38,6 +38,41 @@ Each task includes a **Starting Context** with the current `GameFolder/` directo
 - New entities → own file in correct `GameFolder/` subdirectory.
 - Register new weapons/entities in `GameFolder/setup.py` inside `setup_battle_arena()`.
 
+## ⚠️ PYGAME THREADING SAFETY - CRITICAL
+
+**pygame operations MUST run on main thread only. Background threads will crash on macOS.**
+
+### When Implementing UI/Game Code:
+```python
+# ✅ CORRECT - Always check headless mode
+def _capture_input(self):
+    if not self.headless:  # Skip pygame calls in headless mode
+        pygame.event.pump()
+        events = pygame.event.get()
+        # Handle events...
+    # Process self.held_keycodes regardless of headless mode
+```
+
+### Threading-Safe Patterns:
+```python
+# ✅ CORRECT - Abstract UI operations
+class UIRenderer:
+    def get_events(self):
+        if self.headless:
+            return []  # No pygame events in headless
+        return pygame.event.get()  # Safe on main thread only
+
+# ✅ CORRECT - Direct state manipulation
+def simulate_key_press(arena, key):
+    arena.held_keycodes.add(key)  # Thread-safe, no pygame calls
+```
+
+### Why This Matters:
+- Tests run in background threads on macOS
+- pygame requires main thread for UI operations
+- All pygame code must be guarded with `if not self.headless`
+- Use direct state manipulation for testability
+
 ## Reading Files (Efficiency)
 - **Large Files**: ALWAYS use `get_file_outline` first to get class/method line ranges. Then read specific chunks.
 - **Small Files**: Read the whole file with `read_file`.

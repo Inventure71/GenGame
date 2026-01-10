@@ -33,7 +33,7 @@ from coding.non_callable_tools.action_logger import ActionLogger
 
 
 class BaseMenu:
-    def __init__(self):
+    def __init__(self, action_logger=None):
         print("Initializing BaseMenu...")
         # Initialize pygame if not already initialized
         if not pygame.get_init():
@@ -69,7 +69,7 @@ class BaseMenu:
         # Error message display
         self.error_message = None
         self.error_message_time = 0
-        
+
         print("Loading fonts...")
         try:
             self.menu_font = pygame.font.Font(None, 48)  # Title font
@@ -113,21 +113,21 @@ class BaseMenu:
         # Patch saving state
         self.patch_name = ""
         self.patch_name_focused = False
-        
+
         # Patch manager
         self.patch_manager = PatchManager()
         self.patches_ready = False  # Track if player marked patches as ready
         self.scroll_offset = 0  # For scrollable patch list
         self.max_visible_patches = 8  # Number of patches visible at once
-        
+
         # Initialize component classes
         self.network = MenuNetwork(self)
         self.renderers = MenuRenderers(self)
         self.handlers = MenuHandlers(self)
 
-        # Action logger for patch saving
-        self.action_logger = ActionLogger()
-        
+        # Action logger for patch saving - use provided instance or create new one
+        self.action_logger = action_logger if action_logger is not None else ActionLogger()
+
         print("BaseMenu initialization complete.")
 
     def show_menu(self, menu_name: str):

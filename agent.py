@@ -288,4 +288,4 @@ if __name__ == "__main__":
     #handler = BackupHandler("__game_backups")
     #handler.restore_backup("20260104161653_GameFolder", target_path="GameFolder")
     #handler.restore_backup("20260104003546_GameFolder", target_path="GameFolder")
-    new_main(start_from_base="20260109000711_GameFolder")#start_from_base="20260108141029_GameFolder")#start_from_base="20260104161653_GameFolder")
+    new_main()#start_from_base="20260109000711_GameFolder")#start_from_base="20260108141029_GameFolder")#start_from_base="20260104161653_GameFolder")

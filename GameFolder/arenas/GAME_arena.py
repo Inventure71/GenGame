@@ -49,6 +49,59 @@ class Arena(BaseArena):
         """Update the world simulation (alias for update method for test compatibility)."""
         self.update(delta_time)
 
+    def _capture_input(self):
+        """Capture local player input."""
+        # Skip pygame event handling in headless mode to avoid main thread issues
+        if not self.headless:
+            pygame.event.pump()
+            mx, my = pygame.mouse.get_pos()
+            world_mx, world_my = self.screen_to_world(mx, my)
+            pressed = pygame.mouse.get_pressed()
+
+            # Handle events
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                elif event.type == pygame.KEYDOWN:
+                    self.held_keycodes.add(event.key)
+                elif event.type == pygame.KEYUP:
+                    self.held_keycodes.discard(event.key)
+
+        # Process held keys for the first character (local player)
+        if self.characters:
+            char = self.characters[0]
+            if char.is_alive:
+                # Movement
+                move_dir = [0, 0]
+                for kc in self.held_keycodes:
+                    if kc == pygame.K_ESCAPE:
+                        self.running = False
+                    elif kc in (pygame.K_LEFT, pygame.K_a):
+                        move_dir[0] -= 1
+                    elif kc in (pygame.K_RIGHT, pygame.K_d):
+                        move_dir[0] += 1
+                    elif kc in (pygame.K_UP, pygame.K_w, pygame.K_SPACE):
+                        move_dir[1] += 1
+                    elif kc in (pygame.K_DOWN, pygame.K_s):
+                        move_dir[1] -= 1
+                    elif kc == pygame.K_q:
+                        # Drop weapon
+                        dropped = char.drop_weapon()
+                        if dropped:
+                            dropped.drop([char.location[0] + 80, char.location[1]])
+                            self.spawn_weapon(dropped)
+
+                char.move(move_dir, self.platforms)
+
+                # Shooting - only in non-headless mode
+                if not self.headless and pressed[0]:  # Left mouse button
+                    proj = char.shoot([world_mx, world_my])
+                    if proj:
+                        if isinstance(proj, list):
+                            self.projectiles.extend(proj)
+                        else:
+                            self.projectiles.append(proj)
+
 
 
     def handle_collisions(self, delta_time: float = 0.016):
