@@ -13,4 +13,5 @@ tt.py
 /__patches
 /__server_patches
 /__TEMP_SECURITY_BACKUP
+__config/
 

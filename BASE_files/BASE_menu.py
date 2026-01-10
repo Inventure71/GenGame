@@ -15,7 +15,7 @@ import threading
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
 from BASE_files.patch_manager import PatchManager
 from BASE_files.BASE_game_client import run_client
-from BASE_files.BASE_helpers import encrypt_code, decrypt_code
+from BASE_files.BASE_helpers import encrypt_code, decrypt_code, decrypt_api_key
 from BASE_files.BASE_menu_renderers import MenuRenderers
 from BASE_files.BASE_menu_handlers import MenuHandlers
 from BASE_files.BASE_menu_network import MenuNetwork
@@ -40,6 +40,8 @@ class BaseMenu:
         # Initialize pygame if not already initialized
         if not pygame.get_init():
             pygame.init()
+            # Enable key repeat for continuous input (delay=300ms, interval=35ms)
+            pygame.key.set_repeat(300, 35)
             print("Pygame initialized by BaseMenu.")
 
         # Initialize clipboard support
@@ -102,6 +104,16 @@ class BaseMenu:
         # Patch saving state
         self.patch_name = ""
 
+        # Settings state
+        self.settings_username = ""
+        self.settings_gemini_key = ""
+        self.settings_openai_key = ""
+        self.settings_model = "models/gemini-3-flash-preview"
+        self.selected_provider = "GEMINI"
+
+        # Load settings from config file
+        self._load_settings()
+
         # Patch manager
         self.patch_manager = PatchManager()
         self.patch_manager.scan_patches()  # Initial scan
@@ -120,6 +132,18 @@ class BaseMenu:
     def show_menu(self, menu_name: str):
         """Switch to a different menu."""
         self.current_menu = menu_name
+
+        # Set room state
+        if menu_name == "room":
+            self.in_room = True
+            # Reset PatchBrowser cache when entering room to ensure clean state
+            room_ui = self.renderers.managers.get("room")
+            if room_ui:
+                for comp in room_ui.components:
+                    if hasattr(comp, 'reset_cache'):
+                        comp.reset_cache()
+        else:
+            self.in_room = False
 
         # Scan patches when entering menus that use them
         if menu_name in ["room", "library", "agent"]:
@@ -197,6 +221,12 @@ class BaseMenu:
 
     def on_settings_click(self):
         self.handlers.on_settings_click()
+
+    def on_settings_save_click(self):
+        self.handlers.on_settings_save_click()
+
+    def on_settings_back_click(self):
+        self.handlers.on_settings_back_click()
 
     def on_quit_click(self):
         self.handlers.on_quit_click()
@@ -301,11 +331,15 @@ class BaseMenu:
         try:
             from agent import new_main
             success, modelHandler, todo_list, prompt, backup_name = new_main(
-                prompt=prompt, 
-                start_from_base=self.base_working_backup, 
+                prompt=prompt,
+                start_from_base=self.base_working_backup,
                 patch_to_load=patch_to_load,
                 needs_rebase=needs_rebase,
-                UI_called=True
+                UI_called=True,
+                provider=self.selected_provider,
+                model_name=self.settings_model,
+                gemini_api_key=self.settings_gemini_key if self.settings_gemini_key else None,
+                openai_api_key=self.settings_openai_key if self.settings_openai_key else None
             )
             self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
             # Get test results
@@ -460,6 +494,11 @@ class BaseMenu:
         """Callback when the server announces game is restarting."""
         print(f"🎉 Game finished! Winner: {winner}")
         print(f"⏳ Server will restart in {restart_delay} seconds...")
+
+        # Clear patch selections for fresh start
+        self.patch_manager.clear_selections()
+        print("✓ Patch selections cleared for next game")
+
         self.show_error_message(f"Game Over! Winner: {winner}\nServer restarting in {restart_delay} seconds...")
 
     def reset_room_state(self):
@@ -468,13 +507,6 @@ class BaseMenu:
         self.in_room = False
         self.room_code = ""
         self.scroll_offset = 0
-        # Reset any other room-specific states here
-
-    def reset_room_state(self):
-        """Reset all room-related states to initial values."""
-        self.patches_ready = False
-        self.in_room = False
-        self.room_code = ""
 
         # Reset connection attempt time
         if hasattr(self, 'connection_attempt_time'):
@@ -484,6 +516,14 @@ class BaseMenu:
         """Reset all UI states to prevent button states from getting stuck."""
         # Reset room UI states
         self.patches_ready = False
+        self.patch_manager.clear_selections()  # Clear patch selections
+
+        # Reset PatchBrowser cache to force visual refresh
+        room_ui = self.renderers.managers.get("room")
+        if room_ui:
+            for comp in room_ui.components:
+                if hasattr(comp, 'reset_cache'):
+                    comp.reset_cache()
 
         # Reset agent menu states
         self.agent_running = False
@@ -505,6 +545,13 @@ class BaseMenu:
         self.reset_room_state()
         self.reset_ui_states()
 
+        # Reconnect to the server if we were previously connected
+        if hasattr(self, 'target_server_ip') and hasattr(self, 'target_server_port'):
+            print(f"Reconnecting to server at {self.target_server_ip}:{self.target_server_port}...")
+            if not self.network.connect_to_server(self.target_server_ip, self.target_server_port):
+                self.show_error_message("Failed to reconnect to server")
+                print("Failed to reconnect to server")
+
         # Always go to room state when server restarts
         self.show_menu("room")
         self.show_error_message("Server restarted. Ready for new game!")
@@ -521,11 +568,35 @@ class BaseMenu:
         self.show_menu("room")
         self.show_error_message("Disconnected from server. Please reconnect.")
 
+    def _load_settings(self):
+        """Load settings from config file."""
+        import json
+        import os
+
+        config_path = os.path.join("__config", "settings.json")
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, 'r') as f:
+                    settings = json.load(f)
+                self.settings_username = settings.get("username", "")
+                self.settings_gemini_key = decrypt_api_key(settings.get("gemini_api_key", ""))
+                self.settings_openai_key = decrypt_api_key(settings.get("openai_api_key", ""))
+                self.selected_provider = settings.get("selected_provider", "GEMINI")
+                self.settings_model = settings.get("model", "models/gemini-3-flash-preview")
+
+                # Set player_id to username from settings if available
+                if self.settings_username:
+                    self.player_id = self.settings_username
+
+                print("Settings loaded successfully")
+            except Exception as e:
+                print(f"Failed to load settings: {e}")
+
     def on_start(self):
         from coding.non_callable_tools.helpers import cleanup_old_logs
         cleanup_old_logs()
         self.patch_to_apply = None
-        
+
         # Ensure we have an initial base backup if none is set
         if self.base_working_backup is None:
             print("Creating initial safety backup...")

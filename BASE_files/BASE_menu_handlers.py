@@ -5,6 +5,7 @@ These methods handle user interactions and menu navigation.
 
 import os
 import threading
+from BASE_files.BASE_helpers import encrypt_api_key, decrypt_api_key
 
 
 class MenuHandlers:
@@ -82,7 +83,7 @@ class MenuHandlers:
     def on_settings_click(self):
         """Handle settings button click."""
         print("Settings clicked")
-        # TODO: Show settings menu
+        self.menu.show_menu("settings")
 
     def on_quit_click(self):
         """Handle quit button click."""
@@ -109,6 +110,10 @@ class MenuHandlers:
     def on_back_to_menu_click(self):
         """Handle back to menu button click."""
         print("Back to Menu clicked")
+
+        # Clear patch selections when leaving room
+        self.menu.patch_manager.clear_selections()
+        print("✓ Patch selections cleared")
 
         # Disconnect client first
         if self.menu.client and self.menu.client.connected:
@@ -268,6 +273,40 @@ class MenuHandlers:
 
         reset_thread = threading.Thread(target=reset_task)
         reset_thread.start()
+
+    def on_settings_save_click(self):
+        """Handle settings save button click."""
+        print("Settings Save clicked")
+        # Save settings to a config file
+        import json
+        import os
+
+        config_dir = "__config"
+        if not os.path.exists(config_dir):
+            os.makedirs(config_dir)
+
+        config_path = os.path.join(config_dir, "settings.json")
+        settings = {
+            "username": self.menu.settings_username,
+            "gemini_api_key": encrypt_api_key(self.menu.settings_gemini_key),
+            "openai_api_key": encrypt_api_key(self.menu.settings_openai_key),
+            "selected_provider": self.menu.selected_provider,
+            "model": self.menu.settings_model
+        }
+
+        try:
+            with open(config_path, 'w') as f:
+                json.dump(settings, f, indent=2)
+            print(f"Settings saved to {config_path}")
+            self.menu.show_error_message("Settings saved successfully!")
+        except Exception as e:
+            print(f"Failed to save settings: {e}")
+            self.menu.show_error_message(f"Failed to save settings: {e}")
+
+    def on_settings_back_click(self):
+        """Handle settings back button click."""
+        print("Settings Back clicked")
+        self.menu.show_menu("main")
 
     def on_save_current_state_click(self):
         """Handle saving the current GameFolder state to a patch (even if failed)."""

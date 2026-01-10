@@ -5,14 +5,15 @@ from coding.non_callable_tools.action_logger import action_logger
 import json
 
 class OpenAIHandler:
-    def __init__(self, thinking_model, model_name: str = "models/gpt-5", force_url: str = None):
+    def __init__(self, thinking_model, model_name: str = "models/gpt-5", force_url: str = None, api_key: str = None):
         if force_url is not None:
             self.client = OpenAI(
                 base_url=force_url,
                 api_key="ollama"
             )
         else:
-            api_key = os.getenv("OPENAI_API_KEY_PAID")
+            if api_key is None:
+                api_key = os.getenv("OPENAI_API_KEY_PAID")
             self.client = OpenAI(api_key=api_key)
         
         self.thinking_model = thinking_model

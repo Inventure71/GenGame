@@ -250,7 +250,7 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
         # Return success
         return True, modelHandler, todo_list, "", backup_name
 
-def new_main(prompt: str = None, start_from_base: str = None, patch_to_load: str = None, needs_rebase: bool = True, UI_called=False):
+def new_main(prompt: str = None, start_from_base: str = None, patch_to_load: str = None, needs_rebase: bool = True, UI_called=False, provider: str = "GEMINI", model_name: str = "models/gemini-3-flash-preview", gemini_api_key: str = None, openai_api_key: str = None):
     load_dotenv()
     check_integrity()
 
@@ -300,7 +300,14 @@ def new_main(prompt: str = None, start_from_base: str = None, patch_to_load: str
     # start logger
     action_logger.start_session(visual=True)
 
-    modelHandler = GenericHandler(thinking_model=True, provider="GEMINI", model_name="models/gemini-3-flash-preview")
+    # Select the appropriate API key based on provider
+    selected_api_key = None
+    if provider == "GEMINI" and gemini_api_key:
+        selected_api_key = gemini_api_key
+    elif provider == "OPENAI" and openai_api_key:
+        selected_api_key = openai_api_key
+
+    modelHandler = GenericHandler(thinking_model=True, provider=provider, model_name=model_name, api_key=selected_api_key)
     
     todo_list = TodoList()
 

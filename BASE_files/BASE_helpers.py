@@ -1,4 +1,8 @@
 import socket
+import base64
+import hashlib
+import platform
+import os
 
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SECRET_OFFSET = 717171 
@@ -80,3 +84,46 @@ def decrypt_code(code: str):
         return full_ip, port
     
     return None, None
+
+def _get_encryption_key():
+    """Generate a consistent encryption key based on system information."""
+    system_info = platform.system() + platform.node() + str(os.getuid())
+    return hashlib.sha256(system_info.encode()).digest()[:16]  # 16 bytes for XOR key
+
+def encrypt_api_key(api_key: str) -> str:
+    """Encrypt an API key for secure storage."""
+    if not api_key:
+        return ""
+
+    key = _get_encryption_key()
+    # XOR encryption
+    encrypted = bytearray()
+    key_len = len(key)
+    api_bytes = api_key.encode('utf-8')
+
+    for i, byte in enumerate(api_bytes):
+        encrypted.append(byte ^ key[i % key_len])
+
+    # Base64 encode for safe storage
+    return base64.b64encode(encrypted).decode('utf-8')
+
+def decrypt_api_key(encrypted_key: str) -> str:
+    """Decrypt an API key from secure storage."""
+    if not encrypted_key:
+        return ""
+
+    try:
+        key = _get_encryption_key()
+        # Base64 decode
+        encrypted = base64.b64decode(encrypted_key)
+        key_len = len(key)
+
+        # XOR decryption (same as encryption)
+        decrypted = bytearray()
+        for i, byte in enumerate(encrypted):
+            decrypted.append(byte ^ key[i % key_len])
+
+        return decrypted.decode('utf-8')
+    except Exception:
+        # If decryption fails, return empty string
+        return ""

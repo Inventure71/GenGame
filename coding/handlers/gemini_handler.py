@@ -7,8 +7,9 @@ from coding.non_callable_tools.action_logger import action_logger
 
 
 class GeminiHandler:
-    def __init__(self, thinking_model, model_name: str = "models/gemini-3-flash-preview"):
-        api_key = os.getenv("GEMINI_API_KEY_PAID")
+    def __init__(self, thinking_model, model_name: str = "models/gemini-3-flash-preview", api_key: str = None):
+        if api_key is None:
+            api_key = os.getenv("GEMINI_API_KEY_PAID")
         self.client = genai.Client(api_key=api_key)
         self.thinking_model = thinking_model
         self.model_name = model_name

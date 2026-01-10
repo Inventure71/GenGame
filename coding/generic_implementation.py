@@ -4,11 +4,11 @@ from coding.handlers.openai_handler import OpenAIHandler
 from coding.non_callable_tools.todo_list import TodoList
 
 class GenericHandler:
-    def __init__(self, thinking_model, model_name: str = "models/gemini-3-flash-preview", provider: str = "GEMINI"):
+    def __init__(self, thinking_model, model_name: str = "models/gemini-3-flash-preview", provider: str = "GEMINI", api_key: str = None):
         if provider == "GEMINI":
-            self.client = GeminiHandler(thinking_model=thinking_model, model_name=model_name)
+            self.client = GeminiHandler(thinking_model=thinking_model, model_name=model_name, api_key=api_key)
         elif provider == "OPENAI":
-            self.client = OpenAIHandler(thinking_model=thinking_model, model_name=model_name)
+            self.client = OpenAIHandler(thinking_model=thinking_model, model_name=model_name, api_key=api_key)
         elif provider == "OLLAMA":
             self.client = OpenAIHandler(thinking_model=thinking_model, model_name=model_name, force_url="http://localhost:11434/v1")
         else:

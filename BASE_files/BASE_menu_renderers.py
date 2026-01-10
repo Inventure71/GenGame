@@ -6,9 +6,9 @@ These methods handle rendering of different menu screens using a component-based
 import pygame
 from BASE_files.BASE_helpers import decrypt_code
 from BASE_files.BASE_ui_components import (
-    UIManager, Button, TextField, Label, Panel, 
-    ScrollableList, RoomStatusBar, PatchBrowser, 
-    AgentWorkspace, NotificationOverlay
+    UIManager, Button, TextField, Label, Panel,
+    ScrollableList, RoomStatusBar, PatchBrowser,
+    AgentWorkspace, TextFieldWithPaste, NotificationOverlay
 )
 
 class MenuRenderers:
@@ -21,7 +21,7 @@ class MenuRenderers:
 
     def _init_managers(self):
         """Initialize UIManagers for each menu state."""
-        for state in ["main", "join_room_code", "room", "library", "agent"]:
+        for state in ["main", "join_room_code", "room", "library", "agent", "settings"]:
             self.managers[state] = UIManager(self.menu)
             # Add global notification overlay to every manager
             self.managers[state].add(NotificationOverlay(self.menu))
@@ -31,6 +31,37 @@ class MenuRenderers:
         self._setup_room_menu()
         self._setup_library_menu()
         self._setup_agent_menu()
+        self._setup_settings_menu()
+
+    def _setup_settings_menu(self):
+        ui = self.managers["settings"]
+        center_x = 700
+
+        ui.add(Label(center_x, 40, "Settings", self.menu.menu_font, center=True))
+
+        # Predefined Username
+        ui.add(Label(center_x - 200, 120, "Username:", self.menu.button_font))
+        ui.add(TextField(center_x - 200, 150, 400, 45, self.menu.button_font, name="settings_username"))
+
+        # API Keys
+        ui.add(Label(center_x - 200, 220, "API Keys:", self.menu.button_font))
+        ui.add(Label(center_x - 200, 250, "Gemini API Key:", self.menu.small_font))
+        ui.add(TextFieldWithPaste(center_x - 200, 270, 400, 45, self.menu, self.menu.button_font, name="settings_gemini_key"))
+        ui.add(Label(center_x - 200, 330, "OpenAI API Key:", self.menu.small_font))
+        ui.add(TextFieldWithPaste(center_x - 200, 350, 400, 45, self.menu, self.menu.button_font, name="settings_openai_key"))
+
+        # Provider Selection
+        ui.add(Label(center_x - 200, 420, "AI Provider:", self.menu.button_font))
+        ui.add(Button(center_x - 200, 450, 190, 45, "GEMINI", self.menu.button_font, lambda: self._on_provider_select("GEMINI"), name="btn_gemini"))
+        ui.add(Button(center_x + 10, 450, 190, 45, "OPENAI", self.menu.button_font, lambda: self._on_provider_select("OPENAI"), name="btn_openai"))
+
+        # Model Selection
+        ui.add(Label(center_x - 200, 520, "AI Model:", self.menu.button_font))
+        ui.add(TextField(center_x - 200, 550, 400, 45, self.menu.button_font, name="settings_model"))
+
+        # Save and Back buttons
+        ui.add(Button(center_x - 150, 650, 140, 50, "Save", self.menu.button_font, self.menu.on_settings_save_click, style="primary"))
+        ui.add(Button(center_x + 10, 650, 140, 50, "Back", self.menu.button_font, self.menu.on_settings_back_click))
 
     def _setup_main_menu(self):
         ui = self.managers["main"]
@@ -63,12 +94,12 @@ class MenuRenderers:
     def _setup_join_room_menu(self):
         ui = self.managers["join_room_code"]
         center_x = 700
-        
+
         ui.add(Label(center_x, 80, "Join Room", self.menu.menu_font, center=True))
         ui.add(Label(center_x, 140, "Enter the room code to join:", self.menu.button_font, center=True))
-        
-        ui.add(TextField(center_x - 200, 200, 400, 50, self.menu.button_font, placeholder="Enter room code", name="join_code"))
-        
+
+        ui.add(TextFieldWithPaste(center_x - 200, 200, 400, 50, self.menu, self.menu.button_font, placeholder="Enter room code", name="join_code"))
+
         ui.add(Button(center_x - 150, 320, 300, 60, "Join Room", self.menu.button_font, self.menu.on_join_room_with_code_click, style="primary"))
         ui.add(Button(center_x - 150, 400, 300, 60, "Back to Menu", self.menu.button_font, self.menu.on_join_room_back_click))
 
@@ -152,11 +183,31 @@ class MenuRenderers:
 
     def _sync_state_to_components(self, ui):
         """Dynamic sync of menu variables to UI components."""
+
+        # Auto-reconnect if in room state and not connected
+        if self.menu.current_menu == "room" and self.menu.in_room:
+            if not (self.menu.client and self.menu.client.connected):
+                if hasattr(self.menu, 'target_server_ip') and hasattr(self.menu, 'target_server_port'):
+                    print(f"Auto-reconnecting to server at {self.menu.target_server_ip}:{self.menu.target_server_port}...")
+                    if self.menu.network.connect_to_server(self.menu.target_server_ip, self.menu.target_server_port):
+                        print("Reconnected successfully!")
+                    else:
+                        print("Failed to auto-reconnect")
+
+
         # This bridge replaces the dynamic parts of old renderers
         for comp in ui.components:
             if comp.name == "player_id":
-                if not comp.focused: comp.text = self.menu.player_id
-                else: self.menu.player_id = comp.text
+                if not comp.focused:
+                    # Use settings username as default if player_id is empty
+                    if not self.menu.player_id and getattr(self.menu, 'settings_username', ''):
+                        comp.text = self.menu.settings_username
+                    else:
+                        comp.text = self.menu.player_id
+                else:
+                    self.menu.player_id = comp.text
+                    # Also update settings username to keep them in sync
+                    self.menu.settings_username = comp.text
             elif comp.name == "join_code":
                 if not comp.focused: comp.text = self.menu.join_room_code
                 else: self.menu.join_room_code = comp.text
@@ -173,6 +224,25 @@ class MenuRenderers:
                     comp.color = (100, 255, 100) if passed == total else (255, 100, 100)
             elif comp.name == "fix_btn":
                 comp.visible = bool(self.menu.agent_results and self.menu.agent_results['passed'] < self.menu.agent_results['total'])
+            elif comp.name == "settings_username":
+                if not comp.focused: comp.text = getattr(self.menu, 'settings_username', '')
+                else: self.menu.settings_username = comp.text
+            elif comp.name == "settings_gemini_key":
+                if not comp.focused: comp.text = getattr(self.menu, 'settings_gemini_key', '')
+                else: self.menu.settings_gemini_key = comp.text
+            elif comp.name == "settings_openai_key":
+                if not comp.focused: comp.text = getattr(self.menu, 'settings_openai_key', '')
+                else: self.menu.settings_openai_key = comp.text
+            elif comp.name == "settings_model":
+                if not comp.focused: comp.text = getattr(self.menu, 'settings_model', '')
+                else: self.menu.settings_model = comp.text
+            elif comp.name in ["btn_gemini", "btn_openai"] and self.menu.current_menu == "settings":
+                # Update button styles based on selected provider
+                provider = getattr(self.menu, 'selected_provider', 'GEMINI')
+                if comp.name == "btn_gemini":
+                    comp.style = "primary" if provider == "GEMINI" else "normal"
+                elif comp.name == "btn_openai":
+                    comp.style = "primary" if provider == "OPENAI" else "normal"
             elif comp.name == "sidebar_patches" and self.menu.current_menu == "agent":
                 # Refresh if count changed, loaded patch changed, or it's empty
                 current_loaded_idx = getattr(self.menu, 'agent_selected_patch_idx', -1)
@@ -212,3 +282,16 @@ class MenuRenderers:
     def render_room_menu(self): self.render()
     def render_library_menu(self): self.render()
     def render_agent_menu(self): self.render()
+    def render_settings_menu(self): self.render()
+
+
+    def _on_provider_select(self, provider):
+        """Handle provider selection in settings."""
+        self.menu.selected_provider = provider
+        # Update button styles to show selection
+        ui = self.managers["settings"]
+        for comp in ui.components:
+            if comp.name == "btn_gemini":
+                comp.style = "primary" if provider == "GEMINI" else "normal"
+            elif comp.name == "btn_openai":
+                comp.style = "primary" if provider == "OPENAI" else "normal"

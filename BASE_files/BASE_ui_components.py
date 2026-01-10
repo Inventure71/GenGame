@@ -557,6 +557,11 @@ class PatchBrowser(UIComponent):
         """Get a hash of the current selection state."""
         return hash(tuple(patch.selected for patch in self.menu.patch_manager.available_patches))
 
+    def reset_cache(self):
+        """Reset cached state to force refresh."""
+        self.last_patch_count = -1
+        self.last_selection_hash = -1
+
     def update(self, mouse_pos):
         super().update(mouse_pos)
         self.list.update(mouse_pos)
@@ -669,6 +674,65 @@ class AgentWorkspace(UIComponent):
         mon_surf = self.menu.small_font.render(mon_text, True, (150, 200, 255))
         mon_rect = mon_surf.get_rect(center=(self.rect.centerx, self.rect.y + 370))
         screen.blit(mon_surf, mon_rect)
+
+class TextFieldWithPaste(UIComponent):
+    """Composite component with text field and paste button."""
+    def __init__(self, x, y, width, height, menu, font, placeholder="", name=None):
+        super().__init__(x, y, width, height, name=name)
+        self.menu = menu
+        self.text_field = TextField(x, y, width - 60, height, font, placeholder=placeholder)
+        self.paste_button = Button(x + width - 55, y, 55, height, "Paste", menu.small_font, self._on_paste_click)
+
+    def update(self, mouse_pos):
+        super().update(mouse_pos)
+        self.text_field.update(mouse_pos)
+        self.paste_button.update(mouse_pos)
+
+    def handle_event(self, event):
+        # Handle mouse clicks
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.text_field.rect.collidepoint(event.pos):
+                self.text_field.focused = True
+                return self.text_field.handle_event(event)
+            elif self.paste_button.rect.collidepoint(event.pos):
+                return self.paste_button.handle_event(event)
+            else:
+                self.text_field.focused = False
+                return True  # Consume event
+
+        # For keyboard events when this component is focused, delegate to text field
+        if event.type in (pygame.KEYDOWN, pygame.KEYUP) and self.focused:
+            return self.text_field.handle_event(event)
+
+        return False
+
+    def _on_paste_click(self):
+        text = self.menu.paste_clipboard()
+        if text:
+            self.text_field.text += text
+            self.text_field.cursor_pos = len(self.text_field.text)
+
+    def render(self, screen):
+        self.text_field.render(screen)
+        self.paste_button.render(screen)
+
+    @property
+    def text(self):
+        return self.text_field.text
+
+    @text.setter
+    def text(self, value):
+        self.text_field.text = value
+
+    @property
+    def focused(self):
+        return self._focused
+
+    @focused.setter
+    def focused(self, value):
+        self._focused = value
+        if value:
+            self.text_field.focused = True
 
 class NotificationOverlay(UIComponent):
     """Global message display component."""

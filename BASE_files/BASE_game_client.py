@@ -36,6 +36,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
         # Initialize Pygame (safe to call multiple times)
         pygame.init()
+        # Disable key repeat for precise game control
+        pygame.key.set_repeat()
         width, height = 1400, 900  # Match server arena dimensions
         screen = pygame.display.set_mode((width, height))
         pygame.display.set_caption(f"GenGame Client - {player_id}")
