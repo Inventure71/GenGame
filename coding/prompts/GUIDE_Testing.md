@@ -284,6 +284,23 @@ def test_ability_requires_alive_state():
     assert result is False, "Dead character should not use abilities"
 ```
 
+## NEW FEATURES TEST PATTERNS
+
+**Character Size**: Test `char.width == 30` and `char.height == 30` after creation
+
+**Invulnerability System**:
+- Test `char.is_invulnerable == True` immediately after `char.respawn()` (not on `__init__`)
+- Test damage is blocked when `is_invulnerable == True`
+- Test invulnerability expires after 8.0 seconds via `char.update(delta_time)`
+
+**Floor Platform**: Test characters cannot phase through floor (`plat.rect.y == arena_height`) but can phase through other platforms
+
+**Ammo Scarcity**: Test `ammo_spawn_interval == 12.0`, ammo amounts `[5,10,15]`, max concurrent `2`
+
+**Mirrored Ammo**: Test when ammo spawns at `[x,y]`, second pickup spawns at `[arena.width-x, y]` if valid platform exists
+
+**Weapon Permanence**: Test dropped/death weapons don't respawn as pickups (`len(arena.weapon_pickups)` remains 0)
+
 ## RUNNING TESTS
 ```bash
 python -m BASE_components.BASE_tests

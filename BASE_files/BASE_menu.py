@@ -34,7 +34,8 @@ from coding.non_callable_tools.action_logger import ActionLogger
 
 class BaseMenu:
     def __init__(self, action_logger=None):
-        self.base_working_backup = "20260110145521_GameFolder" # Will be initialized in on_start or when loading patches
+        self.base_working_backup = None
+        #self.base_working_backup = "20260110145521_GameFolder" # Will be initialized in on_start or when loading patches
 
         print("Initializing BaseMenu...")
         # Initialize pygame if not already initialized

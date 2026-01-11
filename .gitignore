@@ -15,3 +15,6 @@ tt.py
 /__TEMP_SECURITY_BACKUP
 __config/
 
+.dockerignore
+docker-compose.yml
+Dockerfile

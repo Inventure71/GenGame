@@ -96,7 +96,7 @@ class BaseUI:
         # Draw player indicators in top-right
         start_x = self.arena_width - self.circle_radius - self.padding
         start_y = self.circle_radius + self.padding
-        spacing = self.circle_radius * 2 + 30
+        spacing = self.circle_radius * 3 + 20  # Increased spacing for better separation
         
         for i, char in enumerate(characters):
             if char.is_eliminated:

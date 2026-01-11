@@ -36,7 +36,7 @@ class Character(BaseCharacter):
 
     def take_damage(self, amount: float):
         """Override to implement shield system - shields take damage first"""
-        if not self.is_alive or amount <= 0:
+        if not self.is_alive or amount <= 0 or self.is_invulnerable:
             return
 
         self.last_damage_time = time.time()
@@ -51,12 +51,12 @@ class Character(BaseCharacter):
         if amount > 0:
             super().take_damage(amount)
 
-    def update(self, delta_time: float, platforms: list = None, arena_height: float = 900):
+    def update(self, delta_time: float, platforms: list = None, arena_height: float = 900, arena_width: float = 1400):
         """Override to add shield regeneration"""
         self.last_arena_height = arena_height
 
         # Call parent update first
-        super().update(delta_time, platforms, arena_height)
+        super().update(delta_time, platforms, arena_height, arena_width)
 
         # Shield regeneration (only if alive and not recently damaged)
         current_time = time.time()
@@ -100,7 +100,7 @@ class Character(BaseCharacter):
         pygame.draw.rect(screen, (40, 40, 40), (self.location[0], py_y - 6, bar_width, 3))  # Background
         pygame.draw.rect(screen, bar_color, (self.location[0], py_y - 6, bar_width * flight_ratio, 3))  # Flight
 
-    def apply_gravity(self, arena_height: float = 600, platforms: list = None):
+    def apply_gravity(self, arena_height: float = 600, platforms: list = None, arena_width: float = 800):
         """
         Override to remove floor boundary - allow falling out of arena.
         """
@@ -121,12 +121,17 @@ class Character(BaseCharacter):
         self.on_ground = False
 
         # Check platforms
-        if platforms and not self.is_dropping and self.vertical_velocity <= 0:
+        if platforms and self.vertical_velocity <= 0:
             char_rect = self.get_rect()
             # Feet position in screen coordinates
             py_feet_y = arena_height - self.location[1]
 
             for plat in platforms:
+                # Don't allow dropping through floor-like platforms (wide platforms)
+                is_floor = (plat.rect.width > arena_width * 0.6)
+                if self.is_dropping and not is_floor:
+                    continue  # Skip collision with this platform if dropping through non-floor platforms
+
                 # Check if character is falling towards platform
                 # Character feet should be at or slightly below platform top
                 feet_at_platform_level = abs(py_feet_y - plat.rect.top) < 20  # Balanced tolerance

@@ -1,5 +1,6 @@
 import pygame
 import uuid
+import random
 from BASE_components.BASE_weapon import BaseWeapon
 from BASE_components.BASE_projectile import BaseProjectile
 from BASE_files.BASE_network import NetworkObject
@@ -8,7 +9,7 @@ class BaseCharacter(NetworkObject):
     # IMMUTABLE: Life system - all players have exactly 3 lives
     MAX_LIVES = 3
 
-    def __init__(self, name: str, description: str, image: str, location: [float, float], width: float = 50, height: float = 50):
+    def __init__(self, name: str, description: str, image: str, location: [float, float], width: float = 30, height: float = 30):
         # Initialize network capabilities first
         super().__init__()
         # Network identity is automatically set by NetworkObject.__init__
@@ -64,6 +65,10 @@ class BaseCharacter(NetworkObject):
         self.max_stamina = 100.0
         self.stamina = 100.0
         self.is_alive = True
+
+        """Invulnerability System"""
+        self.is_invulnerable = False
+        self.invulnerability_timer = 0.0
 
         """Attributes"""
         self.strength = 10.0
@@ -209,7 +214,7 @@ class BaseCharacter(NetworkObject):
             self.hover_time += duration
             self.vertical_velocity = 0 # stop falling while hovering
 
-    def apply_gravity(self, arena_height: float = 600, platforms: list = None):
+    def apply_gravity(self, arena_height: float = 600, platforms: list = None, arena_width: float = 800):
         if not self.is_alive:
             return
 
@@ -232,12 +237,18 @@ class BaseCharacter(NetworkObject):
             self.on_ground = False
             
             # Check platforms
-            if platforms and not self.is_dropping and self.vertical_velocity <= 0:
+            if platforms and self.vertical_velocity <= 0:
                 char_rect = self.get_rect()
                 # Feet position in screen coordinates
                 py_feet_y = arena_height - self.location[1]
-                
+
                 for plat in platforms:
+                    # Don't allow dropping through floor-like platforms (wide platforms)
+                    # Consider platforms wider than 60% of arena width as floors
+                    is_floor = (plat.rect.width > arena_width * 0.6)
+                    if self.is_dropping and not is_floor:
+                        continue  # Skip collision with this platform if dropping through non-floor platforms
+
                     # If feet are at or below platform top, but were above it
                     # We use a small buffer (20) to catch fast falling characters
                     overlap = py_feet_y - plat.rect.top
@@ -265,7 +276,7 @@ class BaseCharacter(NetworkObject):
 
     """Vitals & Combat"""
     def take_damage(self, amount: float):
-        if not self.is_alive or amount <= 0:
+        if not self.is_alive or amount <= 0 or self.is_invulnerable:
             return
         
         # Simple defense calculation
@@ -311,15 +322,15 @@ class BaseCharacter(NetworkObject):
             self.is_eliminated = True
             print(f"{self.name} has been eliminated from the game!")
 
-    def respawn(self, respawn_location: [float, float] = None):
+    def respawn(self, respawn_location: [float, float] = None, arena=None):
         if self.is_eliminated:
             return
-        
+
         if respawn_location:
             self.location = respawn_location.copy()
         else:
             self.location = self.spawn_location.copy()
-        
+
         # Reset vitals
         self.health = self.max_health
         self.stamina = self.max_stamina
@@ -327,10 +338,22 @@ class BaseCharacter(NetworkObject):
         self.vertical_velocity = 0.0
         self.on_ground = False
         self.flight_time_remaining = self.max_flight_time
-        
+
         # Drop weapon on death
         self.weapon = None
-        
+
+        # Activate brief invulnerability period on respawn
+        self.is_invulnerable = True
+        self.invulnerability_timer = 8.0
+
+        # Spawn a pistol near the respawn location if arena is provided
+        if arena is not None:
+            from GameFolder.weapons.Pistol import Pistol
+            pistol_offset = random.randint(50, 100)
+            pistol_x = min(arena.width - 30, self.location[0] + pistol_offset)
+            pistol = Pistol([pistol_x, self.location[1]])
+            arena.spawn_weapon(pistol)
+
         print(f"{self.name} has respawned!")
 
     def pickup_weapon(self, weapon):
@@ -341,9 +364,8 @@ class BaseCharacter(NetworkObject):
         return True
 
     def drop_weapon(self):
-        dropped_weapon = self.weapon
         self.weapon = None
-        return dropped_weapon
+        return None
 
     @staticmethod
     def get_input_data(held_keys, mouse_buttons, mouse_pos):
@@ -408,11 +430,9 @@ class BaseCharacter(NetworkObject):
 
         # 4. Weapon Management
         if input_data.get('drop_weapon', False):
-            dropped = self.drop_weapon()
-            if dropped:
-                arena.spawn_weapon(dropped)
+            self.drop_weapon()  # Weapon is permanently discarded
 
-    def update(self, delta_time: float, platforms: list = None, arena_height: float = 600):
+    def update(self, delta_time: float, platforms: list = None, arena_height: float = 600, arena_width: float = 800):
         """Per-frame update logic"""
         if not self.is_alive:
             return
@@ -432,7 +452,7 @@ class BaseCharacter(NetworkObject):
                 self.can_fly = False
                 self.is_currently_flying = False
 
-        self.apply_gravity(arena_height, platforms)
+        self.apply_gravity(arena_height, platforms, arena_width)
         self.regenerate_stamina(self.agility * 0.1 * delta_time)
 
         # Gradually recover multipliers
@@ -446,6 +466,13 @@ class BaseCharacter(NetworkObject):
             self.jump_height_multiplier = min(1.0, self.jump_height_multiplier + recovery_speed)
         elif self.jump_height_multiplier > 1.0:
             self.jump_height_multiplier = max(1.0, self.jump_height_multiplier - recovery_speed)
+
+        # Update invulnerability timer
+        if self.invulnerability_timer > 0:
+            self.invulnerability_timer -= delta_time
+            if self.invulnerability_timer <= 0:
+                self.invulnerability_timer = 0.0
+                self.is_invulnerable = False
 
 
     def draw(self, screen: pygame.Surface, arena_height: float):

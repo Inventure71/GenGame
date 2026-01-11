@@ -42,12 +42,15 @@ Hardcoding arena_height (e.g., `arena_height = 900`) will break tests that use d
 
 ### Key Attributes
 - `self.location`: `[x, y]` in **World Coordinates**.
+- `self.width` / `self.height`: Character dimensions (default 30x30 pixels).
 - `self.health` / `self.max_health`: Current/Max HP (default 100.0).
 - `self.is_alive`: Boolean flag set by `die()` method. **CRITICAL**: This is NOT a computed property! Setting `health = 0` directly will NOT update `is_alive`. Always use `take_damage()` or call `die()` explicitly.
 - `self.lives`: Fixed at 3 (Immutable).
 - `self.weapon`: The currently equipped `BaseWeapon` or `None`.
 - `self.on_ground`: Boolean flag updated by physics.
 - `self.vertical_velocity`: Current upward/downward velocity (used for jumping and falling).
+- `self.is_invulnerable`: Boolean flag for temporary invulnerability (default False).
+- `self.invulnerability_timer`: Time remaining for invulnerability in seconds (default 0.0).
 - **Two-Layer Damage System**:
   - **Shields** (GAME_character.py): Absorb damage before health.
     - `self.shield` / `self.max_shield`: Current/Max shield points (default 50.0).
@@ -71,10 +74,10 @@ Hardcoding arena_height (e.g., `arena_height = 900`) will break tests that use d
 - `update(delta_time, platforms, arena_height)`: Handles gravity, flight recharge, and multiplier recovery.
 - `shoot(target_pos)` / `secondary_fire(target_pos)` / `special_fire(target_pos, is_holding)`: Spawning logic for different fire modes.
 - `pickup_weapon(weapon)`: Equips a weapon if not already holding one. Returns `True` on success, `False` if already armed.
-- `drop_weapon()`: Drops the current weapon and returns it (or `None` if unarmed).
-- `take_damage(amount, attacker_id)`: Applies damage through shields and defense. Automatically calls `die()` when health reaches 0. Returns actual damage dealt.
+- `drop_weapon()`: Permanently discards the current weapon (weapon disappears from game).
+- `take_damage(amount, attacker_id)`: Applies damage through shields and defense. Automatically calls `die()` when health reaches 0. Returns actual damage dealt. No damage is applied if `is_invulnerable` is True.
 - `die()`: Sets `is_alive = False`, decrements `lives`, and handles death logic. **Always call this instead of setting health/is_alive directly**.
-- `respawn()`: Resets character to spawn position, restores full health/shield, and sets `is_alive = True`.
+- `respawn()`: Resets character to spawn position, restores full health/shield, sets `is_alive = True`, and activates 8.0 seconds of invulnerability. **Invulnerability only activates on respawn, not on initial character creation**.
 
 ---
 
@@ -114,7 +117,7 @@ Hardcoding arena_height (e.g., `arena_height = 900`) will break tests that use d
 - `reload()`: Restore ammo to max_ammo.
 
 ### Important Notes
-- **Ammo persists when dropped**: Weapons retain their ammo count when dropped on death.
+- **Weapons disappear permanently**: When dropped or on death, weapons are permanently removed from the game (no respawning as pickups).
 - **Override shoot() carefully**: If overriding, you must manually call `self.ammo -= self.ammo_per_shot` after checking `can_shoot()`.
 
 ### Projectile Attributes
@@ -150,13 +153,19 @@ The Arena handles the main game loop. Override methods in `GameFolder/arenas/GAM
 - `self.weapon_pickups`: List of weapons available for pickup.
 - `self.ammo_pickups`: List of ammo pickups available for collection.
 - `self.lootpool`: Dict mapping weapon names to their factory functions.
-- `self.ammo_spawn_interval`: Time between ammo spawns (default: 5.0 seconds).
+- `self.ammo_spawn_interval`: Time between ammo spawns (default: 12.0 seconds).
 
 ### Ammo Pickup System
 - Ammo pickups spawn automatically every `ammo_spawn_interval` seconds.
-- Maximum of 3 ammo pickups active at once.
+- Maximum of 2 ammo pickups active at once.
+- Ammo amounts: 5, 10, or 15 (scarcer than before).
+- **Mirrored spawns**: When ammo spawns at position [x, y], a second pickup may spawn at [width-x, y] if a valid platform exists there.
 - Characters automatically collect ammo when walking over it (if they have a weapon).
 - Use `spawn_ammo(ammo_pickup)` to manually add ammo to the arena.
+
+### Floor Platform
+- The main floor platform spans 90% of arena width (centered from 5% to 95% of width).
+- Characters cannot phase through the floor platform (unlike other platforms).
 
 ### Custom Collision Logic
 **Required for special projectiles**: If your projectiles have special behaviors (pulling, persistent beams, custom damage), you **MUST**:

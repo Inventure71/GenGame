@@ -6,6 +6,7 @@ from GameFolder.weapons.GAME_weapon import Weapon, StormBringer
 from GameFolder.weapons.BlackHoleGun import BlackHoleGun
 from GameFolder.weapons.OrbitalCannon import OrbitalCannon
 from GameFolder.weapons.TornadoGun import TornadoGun
+from GameFolder.weapons.Pistol import Pistol
 
 def setup_battle_arena(width: int = 1400, height: int = 900, headless: bool = False, player_names: list = None):
     """
@@ -44,7 +45,7 @@ def setup_battle_arena(width: int = 1400, height: int = 900, headless: bool = Fa
         if i < len(player_configs):
             config = player_configs[i]
             player = Character(name=player_name, description=config["description"], image="",
-                             location=config["location"], width=45, height=45)
+                             location=config["location"], width=30, height=30)
             player.color = config["color"]
             arena.add_character(player)
             print(f"Created character: {player_name} ({config['description']}) at {config['location']}")
@@ -53,7 +54,7 @@ def setup_battle_arena(width: int = 1400, height: int = 900, headless: bool = Fa
             x_pos = 150 + (i % 3) * 400
             y_pos = 140 + (i // 3) * 200
             player = Character(name=player_name, description=f"Player {i+1}", image="",
-                             location=[x_pos, y_pos], width=45, height=45)
+                             location=[x_pos, y_pos], width=30, height=30)
             player.color = (255, 255, 255)  # White as fallback
             arena.add_character(player)
             print(f"Created character: {player_name} (fallback) at [{x_pos}, {y_pos}]")
@@ -77,8 +78,8 @@ def setup_battle_arena(width: int = 1400, height: int = 900, headless: bool = Fa
     
     # 3. Setup Lootpool
     # Standard weapons using factory functions
-    #arena.register_weapon_type("Pistol", lambda loc: Weapon("Pistol", damage=12, cooldown=0.3, projectile_speed=25.0, location=loc))
-    
+    arena.register_weapon_type("Pistol", Pistol)
+
     # Special weapons classes
     arena.register_weapon_type("StormBringer", StormBringer)
     arena.register_weapon_type("BlackHoleGun", BlackHoleGun)

@@ -26,6 +26,32 @@ class GameUI(BaseUI):
         else:
             color = (255, 0, 0)
 
+        # Draw invulnerability effect (outermost glow) if character is invulnerable
+        if hasattr(character, 'is_invulnerable') and character.is_invulnerable:
+            # Simple glow effect - multiple concentric circles with decreasing alpha
+            timer_pct = max(0, min(1, character.invulnerability_timer / 8.0))  # Max 8.0 seconds
+            glow_intensity = int(150 * timer_pct) + 50  # Fade from 200 to 50
+
+            # Create glow surface once
+            glow_size = self.circle_radius * 2 + 16
+            glow_surf = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+
+            # Draw multiple glow circles with decreasing alpha
+            for i in range(3):
+                radius = self.circle_radius + 4 + i * 2
+                alpha = int(80 * timer_pct * (1 - i * 0.3))  # Fade with timer and distance
+                if alpha > 0:
+                    glow_color = (glow_intensity, glow_intensity, 255, alpha)
+                    pygame.draw.circle(glow_surf, glow_color,
+                                     (glow_size // 2, glow_size // 2), radius)
+
+            # Blit the glow surface
+            self.screen.blit(glow_surf, (x - glow_size // 2, y - glow_size // 2))
+
+            # Invulnerability border
+            border_color = (100, 100, min(255, glow_intensity))
+            pygame.draw.circle(self.screen, border_color, (x, y), self.circle_radius + 8, 2)
+
         # Draw shield ring (outer circle) if character has shield
         if hasattr(character, 'shield') and character.shield > 0:
             shield_pct = character.shield / character.max_shield

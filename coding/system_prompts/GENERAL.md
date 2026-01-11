@@ -38,7 +38,7 @@ To prevent "tunneling" (skipping over targets), follow these speed tiers:
 - **⚠️ Danger Zone**: 45.0+ (Will likely skip collisions and appear to vanish)
 
 ### Character Scale & Collision
-- **Default Size**: 50x50 pixels.
+- **Default Size**: 30x30 pixels.
 - **Scaling**: If a character is scaled down (e.g., `scale_ratio = 0.5`), the projectile speed safety limit drops proportionally (e.g., max safe speed = 25.0).
 
 ### Jump & Gravity Context

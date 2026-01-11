@@ -7,6 +7,7 @@ from BASE_components.BASE_character import BaseCharacter
 from BASE_components.BASE_platform import BasePlatform
 from BASE_components.BASE_ui import BaseUI
 from BASE_components.BASE_projectile import BaseProjectile
+from GameFolder.weapons.Pistol import Pistol
 
 
 class Arena:
@@ -69,8 +70,10 @@ class Arena:
         else:
             self.ui = None
         
-        # Default floor
-        self.platforms.append(BasePlatform(0, self.height, self.width, 20, (50, 50, 50)))
+        # Default floor - 90% width, centered horizontally
+        floor_width = int(self.width * 0.9)
+        floor_x = int(self.width * 0.05)
+        self.platforms.append(BasePlatform(floor_x, self.height, floor_width, 20, (50, 50, 50)))
 
         # Weapon spawning
         self.lootpool: Dict[str, callable] = {}
@@ -80,7 +83,7 @@ class Arena:
         
         # Ammo spawning
         self.ammo_spawn_timer = 0.0
-        self.ammo_spawn_interval = 5.0  # Spawn ammo every 5 seconds
+        self.ammo_spawn_interval = 12.0  # Spawn ammo every 12 seconds
         self.ammo_spawn_count = 0
         
         # Weapon name -> ID mapping for binary protocol
@@ -151,7 +154,7 @@ class Arena:
         self.check_winner()
         
         for char in self.characters:
-            char.update(delta_time, self.platforms, self.height)
+            char.update(delta_time, self.platforms, self.height, self.width)
         
         self.update_projectiles(delta_time)
         self.handle_collisions(delta_time)
@@ -177,7 +180,9 @@ class Arena:
                     self.respawn_timer[char.id] = self.respawn_delay
                 self.respawn_timer[char.id] -= delta_time
                 if self.respawn_timer[char.id] <= 0:
-                    char.respawn([self.width / 2, self.height - 100])
+                    respawn_x = self.width / 2
+                    respawn_y = self.height - 100
+                    char.respawn([respawn_x, respawn_y], self)  # Pass arena for pistol spawning
                     del self.respawn_timer[char.id]
 
     def check_winner(self):
@@ -313,8 +318,8 @@ class Arena:
         self.ammo_spawn_timer += delta_time
         if self.ammo_spawn_timer >= self.ammo_spawn_interval:
             self.ammo_spawn_timer = 0.0
-            # Limit total ammo pickups (max 3)
-            if len(self.ammo_pickups) < 3:
+            # Limit total ammo pickups (max 2)
+            if len(self.ammo_pickups) < 2:
                 random.seed(self.ammo_spawn_count + 100)
                 self.ammo_spawn_count += 1
                 # Only spawn on platforms wide enough
@@ -322,11 +327,25 @@ class Arena:
                 if not valid_platforms:
                     return
                 plat = random.choice(valid_platforms)
-                ammo_amount = random.choice([10, 15, 20])  # Random ammo amounts
+                ammo_amount = random.choice([5, 10, 15])  # Random ammo amounts
                 x_pos = random.randint(int(plat.rect.left), int(plat.rect.right - 20))
                 y_pos = self.height - plat.rect.top
                 ammo = BaseAmmoPickup([x_pos, y_pos], ammo_amount)
                 self.spawn_ammo(ammo)
+
+                # Try to spawn mirrored ammo pickup
+                mirrored_x = self.width - x_pos
+                # Check if there's a valid platform at the mirrored position
+                mirrored_platform = None
+                for p in self.platforms:
+                    if p.rect.left <= mirrored_x <= p.rect.right - 20 and p.rect.width >= 30:
+                        mirrored_platform = p
+                        break
+
+                # Spawn mirrored ammo if platform exists and we haven't exceeded limit
+                if mirrored_platform and len(self.ammo_pickups) < 2:
+                    mirrored_ammo = BaseAmmoPickup([mirrored_x, y_pos], ammo_amount)
+                    self.spawn_ammo(mirrored_ammo)
 
     def render(self):
         """Draw everything."""
@@ -380,7 +399,7 @@ class Arena:
 
         # Update all characters
         for char in self.characters:
-            char.update(delta_time, self.platforms, self.height)
+            char.update(delta_time, self.platforms, self.height, self.width)
 
     def _capture_input(self):
         """Capture local player input."""

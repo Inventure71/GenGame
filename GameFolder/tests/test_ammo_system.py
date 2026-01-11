@@ -149,17 +149,17 @@ def test_character_without_weapon_cannot_pickup_ammo():
 def test_ammo_spawns_automatically():
     """Arena should spawn ammo pickups automatically."""
     arena = Arena(800, 600, headless=True)
-    
+
     # Add a platform for spawning
     from GameFolder.platforms.GAME_platform import Platform
     arena.add_platform(Platform(100, 400, 200, 20))
-    
+
     initial_ammo_count = len(arena.ammo_pickups)
-    
-    # Simulate time passing to trigger ammo spawn
-    for _ in range(100):
-        arena.manage_ammo_spawns(0.1)  # 10 seconds total
-    
+
+    # Simulate time passing to trigger ammo spawn (need more than 12 seconds)
+    for _ in range(150):
+        arena.manage_ammo_spawns(0.1)  # 15 seconds total
+
     # Should have spawned ammo
     assert len(arena.ammo_pickups) > initial_ammo_count
 
