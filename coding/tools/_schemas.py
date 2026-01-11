@@ -150,9 +150,15 @@ TOOL_DEFINITIONS = {
     },
 
     # === TESTING ===
-    "run_all_tests": {
-        "name": "run_all_tests",
-        "description": "Run all tests (base + custom) and return structured results.",
+    "run_all_tests_tool": {
+        "name": "run_all_tests_tool",
+        "description": (
+            "Run all tests and return structured results with stdout logging from debug prints." 
+            "CRITICAL: Use ONCE per debugging cycle." 
+            "Add print() statements to all failing tests first, then run this tool to see debug output, then make fixes." 
+            "Never run multiple times in one response - that's inefficient debugging."
+        ),
+        
         "parameters": {
             "type": "object",
             "properties": {},

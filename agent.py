@@ -10,8 +10,16 @@ from coding.tools.code_analysis import find_function_usages, get_function_source
 from coding.non_callable_tools.action_logger import action_logger
 from coding.tools.testing import parse_test_results
 from BASE_components.BASE_tests import run_all_tests
+from coding.tools.testing import run_all_tests_tool
 from coding.non_callable_tools.helpers import load_prompt
 from coding.non_callable_tools.helpers import check_integrity
+
+def enchancer_feature(prompt: str, modelHandler: GenericHandler):
+    enchancer_sys_prompt = load_prompt("coding/system_prompts/enchancer.md")
+    tools = []
+    modelHandler.set_tools(tools)
+    modelHandler.setup_config("MEDIUM", enchancer_sys_prompt, tools=tools)
+    return modelHandler.generate_response(prompt=prompt, use_tools=False, use_history=False)
 
 def plan_feature(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, results: dict=None):
     if fix_mode:
@@ -132,6 +140,7 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
     modelHandler.summarize_chat_history(autocleanup=True)
     # First we generate the tests for the custom functions that were implemented
     # We still use the same tools
+    modelHandler.set_tools(all_tools)
     modelHandler.setup_config("MEDIUM", load_prompt("coding/system_prompts/testing.md"), tools=all_tools)
         
     # here we make sure that it runs until the todo isn't marked as completed
@@ -148,6 +157,51 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
     print("Tests created (REMEMBER THAT WE DIDN'T SUMMARIZE THE CHAT FOR NOW)")
     print("--------------------------------")
 
+def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
+    if len(modelHandler.chat_history) > 1:
+        print("------ Summarizing chat history ------")
+        modelHandler.summarize_chat_history(autocleanup=True)
+    
+    todo_list = TodoList() # brand new todo list for this fix, so that we don't clutter with useless info
+    todo_list.append_to_todo_list("Fix the tests", f"Fix all the tests that failed, in particular these are the logs: {str(results['failures'])}")
+    current_index = todo_list.index_of_current_task
+    
+    fix_sys_prompt = load_prompt("coding/system_prompts/fix_agent.md")
+
+    all_tools = [
+        read_file,
+        create_file,
+        get_directory,
+        get_tree_directory,
+        modify_file_inline,
+        list_functions_in_file,
+        find_function_usages,
+        get_function_source,
+        run_all_tests_tool,
+        todo_list.complete_task,
+    ]
+
+    modelHandler.set_tools(all_tools)
+    modelHandler.setup_config("MEDIUM", fix_sys_prompt, tools=all_tools)
+    
+    lines = [
+        "## Fix Task:",
+        f"{gather_context_fix(results=results)}",
+        "Fix all failing tests using the debugging workflow."
+        #f"{prompt}\n" # will this just be the same as above?
+    ]
+    if prompt:
+        lines.append(f"## User Comment:\n{prompt}")
+
+    full_prompt = "\n".join(lines)
+
+    print("--------------------------------")
+    print("PROMPT: ", full_prompt)
+    print("--------------------------------")
+    
+    modelHandler.ask_until_task_completed(todo_list, current_index, full_prompt, summarize_at_completion=False)
+    return todo_list
+
 def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None, UI_called=False):
     """
     Main game creation loop that plans, implements, tests, and optionally fixes issues.
@@ -163,34 +217,30 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
     if total_cleanup:
         modelHandler.clean_chat_history()
 
-    plan_feature(prompt, modelHandler, todo_list, fix_mode=fix_mode, results=results)
-    implement_feature(modelHandler, todo_list)
-    
     if not fix_mode:
-        generate_tests(prompt, modelHandler, todo_list)
-    else:
-        print("Skipping tests generation in fix mode")
+        # Link todo list to action logger for tracking
+        action_logger.set_todo_list(todo_list)
 
-    suite = run_all_tests(verbose=False)
-    # Convert TestSuite to dict format expected by parse_test_results
-    results = {
-        "success": suite.all_passed,
-        "total_tests": suite.total_tests,
-        "passed_tests": suite.passed_tests,
-        "failed_tests": suite.failed_tests,
-        "duration": suite.total_duration,
-        "summary": suite.get_summary(),
-        "failures": [
-            {
-                "test_name": result.test_name,
-                "source_file": result.source_file,
-                "error_msg": result.error_msg,
-                "traceback": result.error_traceback,
-                "duration": result.duration
-            }
-            for result in suite.results if not result.passed
-        ]
-    }
+        print("------ Enchanting prompt ------")
+        prompt = enchancer_feature(prompt, modelHandler)
+    
+        print("--------------------------------"*5)
+        print("Enchanced prompt:")
+        print(prompt)
+        print("--------------------------------"*5)
+
+        plan_feature(prompt, modelHandler, todo_list, fix_mode=fix_mode, results=results)
+        implement_feature(modelHandler, todo_list)
+    
+        generate_tests(prompt, modelHandler, todo_list)
+    
+    else:
+        print("------ Fixing system ------")
+        if results is None:
+            results = run_all_tests_tool()
+        todo_list = fix_system(prompt, modelHandler, results)
+
+    results = run_all_tests_tool()
     print("Tests results: ", results)
 
     issues_to_fix = parse_test_results(results)
@@ -206,8 +256,6 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
 
         if answer:
             print("Asking for a fix to model...")
-            print("Not cleaning up chat history in fix mode but we are summarizing it again in case last step wasn't summarized")
-            modelHandler.summarize_chat_history(autocleanup=True)
             # files involved in issues_to_fix
             fix_prompt = (
                 f"## The following tests failed, understand why and fix the issues\n"
@@ -229,7 +277,7 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
         
         # Return failure
         return False, modelHandler, todo_list, "", backup_name
-    
+
     else:
         print("Tests passed, continuing...")    
         # Tests passed - success!
@@ -318,7 +366,9 @@ def new_main(prompt: str = None, start_from_base: str = None, patch_to_load: str
     
     # Run the main loop (always returns 5 values now)
     success, modelHandler, todo_list, fix_prompt, backup_name = full_loop(
-        prompt, modelHandler, todo_list, 
+        prompt, 
+        modelHandler, 
+        todo_list, 
         fix_mode=False, 
         backup_name=backup_name, 
         total_cleanup=True, 

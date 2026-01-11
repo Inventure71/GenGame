@@ -17,6 +17,8 @@ class GenericHandler:
         self.thinking_model = thinking_model
         self.model_name = model_name
 
+        self.max_iterations_safety_cutoff = 10
+
         # Both the chat_history and full_history are stored by deafult in the starting client schema
         self.chat_history = []       # Main history (tool calls + text, NO thoughts, NO tool outputs)
         self.full_history = []       # Debug history (everything if needed)
@@ -125,7 +127,7 @@ class GenericHandler:
     
     def ask_until_task_completed(self, todo_list: TodoList, current_index: int, full_prompt: str, summarize_at_completion: bool) -> str:
         iteration_count = 0
-        while True:
+        while iteration_count < self.max_iterations_safety_cutoff:
             if iteration_count > 0:
                 full_prompt = "Continue the task until it is completed. Ensure you have addressed all requirements of the current task step."
             iteration_count += 1

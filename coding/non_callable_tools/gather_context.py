@@ -12,24 +12,17 @@ def get_full_directory_tree():
     )
     return context
 
+def gather_context_enchancer():
+    """Gathers context for the enchancer phase."""
+    lines = [
+        "## Context given:",
+        "Documentation of BASE game components:",
+        read_file('BASE_components/BASE_COMPONENTS_DOCS.md'),
+    ]
+    return "\n".join(lines)
+
 def gather_context_planning():
     """Gathers comprehensive context for the planning phase."""
-    #lines_old = [
-    #    "=== STARTING CONTEXT (Already gathered - do NOT re-read these files) ===",
-    #    "",
-    #    get_full_directory_tree(),
-    #    "",
-    #    "## BASE Components Contents (read-only, inherit from these):",
-    #]
-    
-    # Read all BASE_components files
-    #base_components_path = "BASE_components"
-    #for filename in sorted(os.listdir(base_components_path)):
-    #    if filename.endswith('.py') and not filename.startswith('__'):
-    #        filepath = os.path.join(base_components_path, filename)
-    #        lines.append(f"\n### {filename}")
-    #        lines.append(read_file(filepath))
-
     lines = [
         "=== STARTING CONTEXT (Already gathered - do NOT re-read these files) ===",
         "",

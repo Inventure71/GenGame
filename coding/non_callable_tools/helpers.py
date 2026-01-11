@@ -31,8 +31,13 @@ def open_file(file_path: str) -> str | None:
             # More than 30% non-ASCII characters - likely binary
             return None
 
-        # Try to decode as UTF-8
-        sample.decode('utf-8')
+        # Try to decode as UTF-8 (allow partial sequences)
+        try:
+            sample.decode('utf-8')
+        except UnicodeDecodeError:
+            # If decoding fails, it might be due to cutting off a multi-byte sequence
+            # Try with errors='replace' to see if it's still mostly valid text
+            sample.decode('utf-8', errors='replace')
 
         # If we get here, it's likely text - read the full file
         with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
@@ -45,6 +50,9 @@ def open_file(file_path: str) -> str | None:
 
 def load_prompt(prompt_file: str, include_general_context: bool = True) -> str:
     prompt = open_file(prompt_file)
+    if prompt is None:
+        raise FileNotFoundError(f"Prompt file {prompt_file} not found, from {os.getcwd()}")
+
     if include_general_context:
         general_content = open_file('coding/system_prompts/GENERAL.md')
         prompt += f"\n{general_content}"

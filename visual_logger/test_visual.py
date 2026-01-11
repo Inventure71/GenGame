@@ -4,7 +4,7 @@ Realistic Visual Logger Test - Simulates actual AI agent workflow exactly as the
 """
 from coding.non_callable_tools.action_logger import action_logger
 from coding.non_callable_tools.todo_list import TodoList
-from coding.tools.testing import run_all_tests
+from coding.tools.testing import run_all_tests_tool as run_all_tests
 import time
 import random
 

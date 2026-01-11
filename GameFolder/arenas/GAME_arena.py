@@ -278,4 +278,15 @@ class Arena(BaseArena):
                 )
 
                 if out_of_bounds:
-                    char.take_damage(self.out_of_bounds_damage_amount)
+                    # Calculate distance from arena center
+                    char_center_x = char.location[0] + (char.width * char.scale_ratio) / 2
+                    char_center_y = char.location[1] + (char.height * char.scale_ratio) / 2
+                    arena_center_x = self.width / 2
+                    arena_center_y = self.height / 2
+                    
+                    # Euclidean distance from center
+                    distance = ((char_center_x - arena_center_x) ** 2 + (char_center_y - arena_center_y) ** 2) ** 0.5
+                    
+                    # Scale damage: base damage + distance/10 (adjust divisor for desired scaling)
+                    damage = self.out_of_bounds_damage_amount + distance / 10
+                    char.take_damage(damage)

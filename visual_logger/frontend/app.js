@@ -79,6 +79,7 @@ class VisualLogger {
             todos: [],
             tests: [],
             testFilterFailures: false,
+            testDeduplicate: true,
             selectedFile: null,
             diffMode: 'split',
             theme: 'dark',
@@ -154,8 +155,10 @@ class VisualLogger {
             detailsTime: document.getElementById('detailsTime'),
             detailsArgs: document.getElementById('detailsArgs'),
             detailsResult: document.getElementById('detailsResult'),
+            detailsResults: document.getElementById('detailsResult'),
             detailsFiles: document.getElementById('detailsFiles'),
             testsFilterToggle: document.getElementById('testsFilterToggle'),
+            testsDeduplicateToggle: document.getElementById('testsDeduplicateToggle'),
             testsClearBtn: document.getElementById('testsClearBtn')
         };
     }
@@ -193,6 +196,15 @@ class VisualLogger {
             this.elements.testsFilterToggle.addEventListener('click', () => {
                 this.state.testFilterFailures = !this.state.testFilterFailures;
                 this.updateTestsFilterButton();
+                this.renderTests();
+            });
+        }
+
+        // Tests deduplicate toggle
+        if (this.elements.testsDeduplicateToggle) {
+            this.elements.testsDeduplicateToggle.addEventListener('click', () => {
+                this.state.testDeduplicate = !this.state.testDeduplicate;
+                this.updateTestsDeduplicateButton();
                 this.renderTests();
             });
         }
@@ -1467,6 +1479,12 @@ class VisualLogger {
         btn.textContent = this.state.testFilterFailures ? 'Show all tests' : 'Show failures only';
         btn.classList.toggle('active', this.state.testFilterFailures);
     }
+
+    updateTestsDeduplicateButton() {
+        const btn = this.elements.testsDeduplicateToggle;
+        if (!btn) return;
+        btn.classList.toggle('active', this.state.testDeduplicate);
+    }
     
     updateActionProgress() {
         this.elements.actionProgress.textContent = `Actions: ${this.state.actions.length}`;
@@ -1954,7 +1972,26 @@ class VisualLogger {
         
         container.innerHTML = '';
         
-        const filtered = this.state.tests.filter(t => !this.state.testFilterFailures || t.status === 'failed');
+        let filtered = this.state.tests;
+
+        // Deduplicate if enabled: keep only the last occurrence of each (source_file, test_name)
+        if (this.state.testDeduplicate) {
+            const seen = new Set();
+            // Iterate backwards to find the latest ones
+            const unique = [];
+            for (let i = filtered.length - 1; i >= 0; i--) {
+                const t = filtered[i];
+                const key = `${t.source_file}::${t.test_name}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    unique.unshift(t);
+                }
+            }
+            filtered = unique;
+        }
+
+        // Then filter by failures if needed
+        filtered = filtered.filter(t => !this.state.testFilterFailures || t.status === 'failed');
         
         if (filtered.length === 0) {
             container.innerHTML = `

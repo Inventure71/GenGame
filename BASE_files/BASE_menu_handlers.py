@@ -238,8 +238,21 @@ class MenuHandlers:
                 # Update the base working backup to match the patch's base
                 backup_name, _, _ = vc.load_from_extension_file(patch.file_path)
                 self.menu.base_working_backup = backup_name
-                print(f"✓ Patch '{patch.name}' loaded. Ready for improvements.")
-                self.menu.show_error_message(f"Loaded: {patch.name}")
+                
+                # Run tests after loading to check for issues
+                print("Running tests on loaded patch...")
+                from coding.tools.testing import run_all_tests_tool
+                test_results = run_all_tests_tool()
+                
+                # Set agent results so fix button can appear if tests failed
+                passed = test_results.get('passed_tests', 0)
+                total = test_results.get('total_tests', 0)
+                self.menu.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}
+                
+                print(f"✓ Patch '{patch.name}' loaded. Tests: {passed}/{total} passed.")
+                if passed < total:
+                    print("⚠️ Tests failed - Fix button is now available.")
+                self.menu.show_error_message(f"Loaded: {patch.name} ({passed}/{total} tests passed)")
             else:
                 print(f"✗ Failed to load patch: {errors}")
                 self.menu.show_error_message(f"Load failed: {errors}")

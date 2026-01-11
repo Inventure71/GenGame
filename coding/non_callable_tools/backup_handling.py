@@ -1,5 +1,6 @@
 import os
 import shutil
+import hashlib
 from datetime import datetime
 """
 Backup and restore system for directories, subdirectories, and files.
@@ -13,43 +14,81 @@ class BackupHandler:
         # Ensure backup folder exists
         os.makedirs(self.backup_folder, exist_ok=True)
 
+    def compute_directory_hash(self, path: str) -> str:
+        """
+        Compute SHA256 hash of entire directory content.
+        Includes all file paths and contents for 100% uniqueness.
+        """
+        hasher = hashlib.sha256()
+        
+        # Get all files in sorted order for consistent hashing
+        file_paths = []
+        for root, dirs, files in os.walk(path):
+            # Sort directories and files for consistent ordering
+            dirs.sort()
+            for file in sorted(files):
+                full_path = os.path.join(root, file)
+                rel_path = os.path.relpath(full_path, path)
+                file_paths.append((rel_path, full_path))
+        
+        # Hash each file: relative_path + content
+        for rel_path, full_path in file_paths:
+            try:
+                # Hash the relative path first
+                hasher.update(rel_path.encode('utf-8'))
+                hasher.update(b'\x00')  # Separator
+                
+                # Hash file content
+                with open(full_path, 'rb') as f:
+                    while chunk := f.read(8192):
+                        hasher.update(chunk)
+                
+                hasher.update(b'\x01')  # File separator
+            except (IOError, OSError):
+                # Skip unreadable files
+                continue
+
+        return hasher.hexdigest()
+
     def create_backup(self, path: str, recursive: bool = True, auto_naming: bool = True):
         """
         Create a backup of a file or directory.
-
+        
+        For hash-based naming, if a backup with the same hash already exists,
+        returns the existing backup instead of creating a duplicate.
+        
         Args:
             path: Path to the file or directory to backup
             recursive: If True, backup directories recursively (default: True)
-
+            auto_naming: If True, use hash-based naming (default: True)
+        
         Returns:
-            Path to the created backup
+            Tuple of (backup_path, backup_name)
         """
         if not os.path.exists(path):
             raise ValueError(f"Path {path} does not exist")
 
+        # Generate backup name
         if auto_naming:
-            backup_name = datetime.now().strftime("%Y%m%d%H%M%S") + "_" + os.path.basename(path)
+            backup_name = self.compute_directory_hash(path)
         else:
             backup_name = os.path.basename(path)
-        backup_path = os.path.join(self.backup_folder, backup_name)
         
+        backup_path = os.path.join(self.backup_folder, backup_name)
+
+        # If backup with this name already exists, return it (no duplicates)
+        if os.path.exists(backup_path):
+            print(f"Backup already exists: {backup_name}")
+            return backup_path, backup_name
+
+        # Create new backup
         if os.path.isfile(path):
-            # Backup file
+            # Backup single file
             shutil.copy2(path, backup_path)
-            return backup_path
+            return backup_path, backup_name
+            
         elif os.path.isdir(path):
             # Backup directory
-            if os.path.exists(backup_path):
-                # rename the already existing backup
-                new_backup_name = backup_name + "_" + datetime.now().strftime("%Y%m%d%H%M%S")
-                new_backup_path = os.path.join(self.backup_folder, new_backup_name)
-                shutil.move(backup_path, new_backup_path)
-                if os.path.exists(backup_path):
-                    print("ERROR: Failed to rename backup")
-                    input("Press Enter to continue...")
-                else:
-                    print("Renamed backup to ", new_backup_name)
-                    input("Press Enter to continue...")
             if recursive:
                 shutil.copytree(path, backup_path)
             else:

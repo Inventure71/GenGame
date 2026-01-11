@@ -39,7 +39,7 @@ def parse_test_results(results: dict) -> dict:
 
     return issues_to_fix
 
-def run_all_tests() -> dict:
+def run_all_tests_tool() -> dict:
     """
     Run all tests (base + custom) and return structured results.
 
@@ -85,7 +85,17 @@ def run_all_tests() -> dict:
         "failed_tests": suite.failed_tests,
         "duration": suite.total_duration,
         "summary": suite.get_summary(),
-        "failures": []
+        "failures": [
+            {
+                "test_name": result.test_name,
+                "source_file": result.source_file,
+                "error_msg": result.error_msg,
+                "traceback": result.error_traceback,
+                "duration": result.duration,
+                "stdout": result.stdout
+            }
+            for result in suite.results if not result.passed
+        ]
     }
 
 # TODO: cleanup maybe remove
@@ -144,5 +154,5 @@ def test_{feature_name}_edge_case():
 
 
 # Export the tools
-__all__ = ['run_all_tests', 'get_test_file_template']
+__all__ = ['run_all_tests_tool', 'get_test_file_template']
 

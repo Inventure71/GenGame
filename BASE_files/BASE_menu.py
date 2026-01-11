@@ -35,7 +35,6 @@ from coding.non_callable_tools.action_logger import ActionLogger
 class BaseMenu:
     def __init__(self, action_logger=None):
         self.base_working_backup = None
-        #self.base_working_backup = "20260110145521_GameFolder" # Will be initialized in on_start or when loading patches
 
         print("Initializing BaseMenu...")
         # Initialize pygame if not already initialized
@@ -344,8 +343,8 @@ class BaseMenu:
             )
             self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
             # Get test results
-            from coding.tools.testing import run_all_tests
-            test_results = run_all_tests()
+            from coding.tools.testing import run_all_tests_tool
+            test_results = run_all_tests_tool()
 
             # Use dictionary properties directly
             passed = test_results.get('passed_tests', 0)
@@ -361,40 +360,93 @@ class BaseMenu:
 
     def run_agent_fix(self, results):
         """Run the agent in fix mode."""
-        try:
-            if self.agent_values is None:
-                print("No agent values to run agent fix")
-                self.show_error_message("No agent values to run agent fix")
-                return
-                
+        try:                        
             from agent import full_loop
+            
+            # Ensure we are working with the raw test results dictionary
+            raw_results = results.get('test_output', results) if results else None
+            
+            if self.agent_values is None:
+                # Initialize session for fixing a loaded patch
+                print("Creating new agent session for patch fixing...")
+                from coding.generic_implementation import GenericHandler
+                from coding.non_callable_tools.todo_list import TodoList
+                
+                selected_api_key = None
+                if self.selected_provider == "GEMINI" and self.settings_gemini_key:
+                    selected_api_key = self.settings_gemini_key
+                elif self.selected_provider == "OPENAI" and self.settings_openai_key:
+                    selected_api_key = self.settings_openai_key
+                
+                modelHandler = GenericHandler(
+                    thinking_model=True, 
+                    provider=self.selected_provider, 
+                    model_name=self.settings_model, 
+                    api_key=selected_api_key
+                )
+                
+                todo_list = TodoList()
+                backup_name = self.base_working_backup
+                
+                # Pre-parse results for the starting prompt
+                from coding.tools.testing import parse_test_results
+                issues_to_fix = parse_test_results(raw_results)
+                prompt = (
+                    f"## The following tests failed, understand why and fix the issues\n"
+                    f"{issues_to_fix}\n"
+                )
+                
+                self.agent_values = {
+                    "success": False,
+                    "modelHandler": modelHandler,
+                    "todo_list": todo_list,
+                    "prompt": prompt,
+                    "backup_name": backup_name
+                }
 
-            success = self.agent_values["success"]
+                # Start visual logging session for the agent session
+                self.action_logger.start_session(visual=True)
+
+            
+            # Extract state for the fix call
             modelHandler = self.agent_values["modelHandler"] 
             todo_list = self.agent_values["todo_list"]
             prompt = self.agent_values["prompt"]
-
             backup_name = self.agent_values.get("backup_name", "GameFolder")
-            success, modelHandler, todo_list, prompt, backup_name = full_loop(prompt=prompt, modelHandler=modelHandler, todo_list=todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results, UI_called=True)
+
+            # Call loop with raw results
+            success, modelHandler, todo_list, prompt, backup_name = full_loop(
+                prompt=prompt, 
+                modelHandler=modelHandler, 
+                todo_list=todo_list, 
+                fix_mode=True, 
+                backup_name=backup_name, 
+                total_cleanup=False, 
+                results=raw_results, 
+                UI_called=True
+            )
+            
+            # Update state with results from the fix session
             if success:
                 self.agent_values = None
             else:
                 self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
 
-            # Get updated test results
-            from coding.tools.testing import run_all_tests
-            test_results = run_all_tests()
-
-            # Use dictionary properties directly
+            # Update UI with new test results
+            from coding.tools.testing import run_all_tests_tool
+            test_results = run_all_tests_tool()
             passed = test_results.get('passed_tests', 0)
             total = test_results.get('total_tests', 0)
-
             self.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}
 
         except Exception as e:
+            import traceback
             print(f"Error running agent fix: {e}")
+            traceback.print_exc()
             self.agent_results = {'passed': 0, 'total': 0, 'error': str(e)}
         finally:
+            # End the visual logging session
+            self.action_logger.end_session()
             self.agent_running = False
 
     # Callback methods (used by network client)

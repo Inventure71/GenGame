@@ -18,6 +18,8 @@ import time
 import traceback
 import importlib.util
 import inspect
+from io import StringIO
+from contextlib import contextmanager
 from typing import List, Callable, Optional, Type, Any
 from dataclasses import dataclass, field
 from coding.non_callable_tools.helpers import clear_python_cache
@@ -39,6 +41,7 @@ class TestResult:
     error_msg: Optional[str] = None
     error_traceback: Optional[str] = None
     source_file: str = "BASE_tests.py"
+    stdout: str = ""
     
     def __str__(self):
         status = "✓ PASS" if self.passed else "✗ FAIL"
@@ -134,6 +137,21 @@ class TestSuite:
 
 
 # =============================================================================
+# STDOUT CAPTURE HELPER
+# =============================================================================
+
+@contextmanager
+def capture_stdout():
+    """Context manager to capture stdout. helper for test execution."""
+    old_stdout = sys.stdout
+    sys.stdout = captured_output = StringIO()
+    try:
+        yield captured_output
+    finally:
+        sys.stdout = old_stdout
+
+
+# =============================================================================
 # TEST RUNNER
 # =============================================================================
 
@@ -208,38 +226,42 @@ class TestRunner:
         test_name = test_func.__name__
         start_time = time.time()
         
-        try:
-            # Execute the test with arguments
-            test_func(*args)
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=True,
-                duration=duration,
-                source_file=source_file
-            )
-        except AssertionError as e:
-            # Test failed with assertion
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=False,
-                duration=duration,
-                error_msg=str(e),
-                error_traceback=traceback.format_exc(),
-                source_file=source_file
-            )
-        except Exception as e:
-            # Test crashed with unexpected error
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=False,
-                duration=duration,
-                error_msg=f"Unexpected error: {type(e).__name__}: {str(e)}",
-                error_traceback=traceback.format_exc(),
-                source_file=source_file
-            )
+        with capture_stdout() as output:
+            try:
+                # Execute the test with arguments
+                test_func(*args)
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=True,
+                    duration=duration,
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
+            except AssertionError as e:
+                # Test failed with assertion
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=False,
+                    duration=duration,
+                    error_msg=str(e),
+                    error_traceback=traceback.format_exc(),
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
+            except Exception as e:
+                # Test crashed with unexpected error
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=False,
+                    duration=duration,
+                    error_msg=f"Unexpected error: {type(e).__name__}: {str(e)}",
+                    error_traceback=traceback.format_exc(),
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
     
     def run_test(self, test_func: Callable, source_file: str = "BASE_tests.py") -> TestResult:
         """
@@ -255,38 +277,42 @@ class TestRunner:
         test_name = test_func.__name__
         start_time = time.time()
         
-        try:
-            # Execute the test
-            test_func()
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=True,
-                duration=duration,
-                source_file=source_file
-            )
-        except AssertionError as e:
-            # Test failed with assertion
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=False,
-                duration=duration,
-                error_msg=str(e),
-                error_traceback=traceback.format_exc(),
-                source_file=source_file
-            )
-        except Exception as e:
-            # Test crashed with unexpected error
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=False,
-                duration=duration,
-                error_msg=f"Unexpected error: {type(e).__name__}: {str(e)}",
-                error_traceback=traceback.format_exc(),
-                source_file=source_file
-            )
+        with capture_stdout() as output:
+            try:
+                # Execute the test
+                test_func()
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=True,
+                    duration=duration,
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
+            except AssertionError as e:
+                # Test failed with assertion
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=False,
+                    duration=duration,
+                    error_msg=str(e),
+                    error_traceback=traceback.format_exc(),
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
+            except Exception as e:
+                # Test crashed with unexpected error
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=False,
+                    duration=duration,
+                    error_msg=f"Unexpected error: {type(e).__name__}: {str(e)}",
+                    error_traceback=traceback.format_exc(),
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
     
     def run_tests(self, test_functions: List[Callable], source_file: str = "BASE_tests.py") -> TestSuite:
         """
