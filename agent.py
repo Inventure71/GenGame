@@ -315,6 +315,8 @@ def new_main(prompt: str = None, start_from_base: str = None, patch_to_load: str
             file_containing_patches=patch_to_load,
             skip_warnings=True
         )
+        from BASE_files.BASE_helpers import reload_game_code
+        reloaded_setup = reload_game_code()
         if not success:
             print(f"Failed to load patch: {errors}")
             return False, None, None, "", ""

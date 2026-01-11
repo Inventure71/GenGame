@@ -8,6 +8,7 @@ This server runs the game simulation without graphics and broadcasts game state 
 import socket
 import threading
 import time
+from datetime import datetime
 import pickle
 import os
 import sys
@@ -15,16 +16,15 @@ import glob
 from typing import Dict, List, Set, Tuple, Optional
 from collections import defaultdict
 import select
+from BASE_files.BASE_helpers import reload_game_code
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from GameFolder.setup import setup_battle_arena
+import GameFolder.setup
 from coding.non_callable_tools.version_control import VersionControl
 from coding.tools.conflict_resolution import get_all_conflicts
 from testing import auto_fix_conflicts
-
-
 
 
 class GameServer:
@@ -92,6 +92,12 @@ class GameServer:
         self.client_backups: Dict[str, str] = {}  # player_id -> backup_name
         self.client_backup_transfers: Dict[str, Dict] = {}  # (player_id:backup_name) -> transfer info
 
+        # Backup transfer tracking
+        self.backup_transfer_in_progress = False
+        self.backup_transfer_client = None
+        self.backup_transfer_name = None
+        self.backup_transfer_start_time = 0.0
+
         print(f"Server initialized on {host}:{port}")
 
     def _load_game_files(self):
@@ -125,7 +131,7 @@ class GameServer:
             'backup_name': backup_name
         }
         self._send_message_to_client(player_id, message)
-        print(f"Requested backup '{backup_name}' from {player_id}")
+        print(f"📨 BACKUP REQUEST: Server sent backup request to client '{player_id}' for backup '{backup_name}'")
 
     def start(self):
         """Start the server."""
@@ -197,9 +203,17 @@ class GameServer:
         # Get list of connected player names (these are already the custom names)
         connected_player_names = list(self.clients.keys())
         print(f"Recreating arena with players: {connected_player_names}")
+        
+        # CRITICAL FIX: Always re-import setup to get the fresh module object after a reload!
+        # The global 'GameFolder.setup' might point to the old module object.
+        if 'GameFolder.setup' in sys.modules:
+             setup_module = sys.modules['GameFolder.setup']
+        else:
+             import GameFolder.setup
+             setup_module = GameFolder.setup
 
         # Recreate arena with actual player names
-        self.arena = setup_battle_arena(width=1400, height=900, headless=True, player_names=connected_player_names)
+        self.arena = setup_module.setup_battle_arena(width=1400, height=900, headless=True, player_names=connected_player_names)
 
         # Set character IDs to match player names
         for i, character in enumerate(self.arena.characters):
@@ -491,11 +505,10 @@ class GameServer:
             self.input_queues[player_id].append(message)
         elif msg_type == 'request_file_sync':
             # Client requested file synchronization
-            # If this is the first file sync request, recreate the arena with current players
-            if not hasattr(self, '_arena_initialized'):
-                self._recreate_arena_with_players()
-                self._arena_initialized = True
-
+            # IMPORTANT: Do NOT create arena here - wait until client finishes reloading classes
+            # This is because client and server share sys.modules when running in same process.
+            # Send file_sync first, client will reload classes, then we create arena.
+            
             # Always send file_sync to ensure client loads latest classes
             # This is safe now because game hasn't started yet
             self._send_file_sync(player_id)
@@ -542,6 +555,7 @@ class GameServer:
                     self.waiting_for_patch_sync = False
                     self.clients_patch_received.clear()
                     self.clients_patch_ready.clear()
+                    self._recreate_arena_with_players()  # CRITICAL: Recreate arena with NEW classes
                     self._notify_all_clients_game_start()
                 else:
                     print("❌ Cannot start game - patch application failed on some clients:")
@@ -558,8 +572,20 @@ class GameServer:
                     self.clients_patch_ready.clear()
                     self.clients_patch_failed.clear()
         elif msg_type == 'file_sync_ack':
-            # Client acknowledged file sync
+            # Client acknowledged file sync - NOW it's safe to create/recreate arena
+            # because the client has reloaded its classes and updated sys.modules
             print(f"{player_id} acknowledged file sync")
+            
+            # Recreate arena with fresh classes from sys.modules
+            # This ensures Character instances match the class in sys.modules
+            if not hasattr(self, '_arena_initialized'):
+                self._recreate_arena_with_players()
+                self._arena_initialized = True
+            else:
+                # Already initialized - but if classes changed, we need to recreate
+                # This handles the case where the client reconnects after game over
+                # and triggers a reload that updates sys.modules
+                pass  # For now, arena stays as is for returning players
         elif msg_type == 'player_name':
             # Client sent their requested player name
             requested_name = message.get('player_name')
@@ -624,8 +650,16 @@ class GameServer:
             # Client requesting a file
             self._handle_file_request(player_id, message)
         elif msg_type == 'file_chunk':
-            # Client sending a file chunk
-            self._handle_file_chunk(player_id, message)
+            # Client sending a file chunk - check if it's a backup chunk
+            if message.get('is_backup', False):
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 📦 ROUTING: Routing backup chunk {message.get('chunk_num', '?')} to _handle_backup_chunk")
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 🔍 DEBUG SERVER: Received backup chunk from {player_id} - backup: {message.get('backup_name', 'unknown')}")
+                self._handle_backup_chunk(player_id, message)
+            else:
+                print(f"📦 ROUTING: Routing regular file chunk to _handle_file_chunk")
+                self._handle_file_chunk(player_id, message)
         elif msg_type == 'file_ack':
             # Client acknowledging file receipt
             success = message.get('success', True)
@@ -657,7 +691,9 @@ class GameServer:
             # Check if all clients are ready
             if self.clients_ready_status == set(self.clients.keys()):
                 print("All clients ready - initiating patch merge and distribution")
-                self._merge_and_distribute_patches()
+                # Run patch merge in separate thread to avoid blocking network processing
+                merge_thread = threading.Thread(target=self._merge_and_distribute_patches, daemon=True)
+                merge_thread.start()
 
     def _handle_file_request(self, player_id: str, message: dict):
         """Handle a file request from a client."""
@@ -788,8 +824,25 @@ class GameServer:
         total_chunks = message.get('total_chunks')
         chunk_data = message.get('data')
 
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        print(f"[{timestamp}] 📦 BACKUP CHUNK: Received chunk {chunk_num+1 if isinstance(chunk_num, int) else '?'} from {player_id} for '{backup_name}'")
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        print(f"[{timestamp}] 🔍 DEBUG: Message details - backup: {backup_name}, chunk: {chunk_num}/{total_chunks}, data_size: {len(chunk_data) if chunk_data else 0} bytes")
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        print(f"[{timestamp}] 🔍 DEBUG: Current transfer state - in_progress: {getattr(self, 'backup_transfer_in_progress', False)}, expected_backup: {getattr(self, 'backup_transfer_name', 'None')}")
+
         if not all([backup_name, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
-            print(f"Invalid backup chunk from {player_id}")
+            print(f"❌ BACKUP CHUNK: Invalid backup chunk from {player_id}: missing or invalid fields")
+            return
+
+        # Reject invalid total_chunks
+        if total_chunks <= 0:
+            print(f"❌ BACKUP CHUNK: Invalid total_chunks {total_chunks} from {player_id}")
+            return
+
+        # Validate chunk_num bounds
+        if chunk_num < 0 or chunk_num >= total_chunks:
+            print(f"❌ BACKUP CHUNK: Invalid chunk_num {chunk_num} (should be 0-{total_chunks-1}) from {player_id}")
             return
 
         # Initialize backup transfer tracking if needed
@@ -798,6 +851,7 @@ class GameServer:
 
         client_key = f"{player_id}:{backup_name}"
         if client_key not in self.client_backup_transfers:
+            print(f"📁 BACKUP CHUNK: Starting new transfer for '{backup_name}' from {player_id} ({total_chunks} chunks total)")
             self.client_backup_transfers[client_key] = {
                 'chunks': {},
                 'total_chunks': total_chunks,
@@ -810,21 +864,73 @@ class GameServer:
         if chunk_num not in transfer['chunks']:
             transfer['chunks'][chunk_num] = chunk_data
             transfer['received_chunks'] += 1
+            progress = transfer['received_chunks'] / total_chunks * 100
+            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            print(f"[{timestamp}] ✅ BACKUP CHUNK: Stored chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' from {player_id}")
+            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            print(f"[{timestamp}] 📊 DEBUG: Chunk received - backup: {backup_name}, received: {transfer['received_chunks']}/{total_chunks}")
+        else:
+            print(f"⚠️ BACKUP CHUNK: Duplicate chunk {chunk_num} for '{backup_name}' from {player_id}")
 
         # Check if backup is complete
         if transfer['received_chunks'] == total_chunks:
-            self._assemble_client_backup(player_id, backup_name)
+            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            print(f"[{timestamp}] 🎯 BACKUP CHUNK: All {total_chunks} chunks received for '{backup_name}' from {player_id}, starting assembly...")
+            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            print(f"[{timestamp}] 🔄 DEBUG: Starting backup assembly for {backup_name}")
+            success = self._assemble_client_backup(player_id, backup_name)
+            if success:
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] ✅ DEBUG: Backup assembly successful for {backup_name}")
+                if hasattr(self, 'backup_transfer_in_progress') and self.backup_transfer_in_progress:
+                    if backup_name == getattr(self, 'backup_transfer_name', None):
+                        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                        print(f"[{timestamp}] 🎉 BACKUP TRANSFER: Successfully completed transfer of '{backup_name}'")
+                        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                        print(f"[{timestamp}] 🚩 DEBUG: Setting backup_transfer_complete_event for {backup_name}")
+                        self.backup_transfer_in_progress = False
+                        # Signal completion to waiting thread
+                        if hasattr(self, 'backup_transfer_complete_event'):
+                            self.backup_transfer_complete_event.set()
+                            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                            print(f"[{timestamp}] 🎯 DEBUG: backup_transfer_complete_event.set() called")
+                        else:
+                            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                            print(f"[{timestamp}] ⚠️ DEBUG: backup_transfer_complete_event not found!")
+            else:
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 💥 BACKUP TRANSFER: Assembly failed for '{backup_name}' from {player_id}")
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] ❌ DEBUG: Backup assembly failed - setting event anyway")
+                # Signal failure to waiting thread
+                if hasattr(self, 'backup_transfer_complete_event'):
+                    self.backup_transfer_complete_event.set()
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 🎯 DEBUG: backup_transfer_complete_event.set() called (failure)")
+                else:
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] ⚠️ DEBUG: backup_transfer_complete_event not found on failure!")
 
-    def _assemble_client_backup(self, player_id: str, backup_name: str):
+    def _assemble_client_backup(self, player_id: str, backup_name: str) -> bool:
         """Assemble a complete backup from client chunks and extract it."""
         client_key = f"{player_id}:{backup_name}"
+        if client_key not in self.client_backup_transfers:
+            print(f"❌ BACKUP ASSEMBLY: No transfer data found for '{backup_name}' from {player_id}")
+            return False
+
         transfer = self.client_backup_transfers[client_key]
+        print(f"🔧 BACKUP ASSEMBLY: Starting assembly of '{backup_name}' from {player_id} ({transfer['total_chunks']} chunks)")
 
         try:
             # Assemble the compressed backup data
             backup_data = b''
             for i in range(transfer['total_chunks']):
+                if i not in transfer['chunks']:
+                    print(f"❌ BACKUP ASSEMBLY: Missing chunk {i} for backup {backup_name}")
+                    return False
                 backup_data += transfer['chunks'][i]
+
+            print(f"📦 BACKUP ASSEMBLY: Assembled {len(backup_data)} bytes of compressed data for '{backup_name}'")
 
             # Save to __game_backups directory
             backup_dir = "__game_backups"
@@ -834,18 +940,71 @@ class GameServer:
             import tarfile
             import io
 
+            print(f"📂 BACKUP ASSEMBLY: Extracting '{backup_name}' to {backup_dir}/")
             with io.BytesIO(backup_data) as bio:
                 with tarfile.open(fileobj=bio, mode='r:gz') as tar:
                     # Extract to backup directory
                     tar.extractall(path=backup_dir)
 
-            print(f"Received and extracted backup '{backup_name}' from {player_id}")
+            print(f"✅ BACKUP ASSEMBLY: Successfully extracted backup '{backup_name}' from {player_id}")
+
+            # Verify backup integrity by checking hash matches name
+            extracted_backup_path = os.path.join(backup_dir, backup_name)
+            if os.path.exists(extracted_backup_path):
+                from coding.non_callable_tools.backup_handling import BackupHandler
+                backup_handler = BackupHandler()
+                computed_hash = backup_handler.compute_directory_hash(extracted_backup_path)
+                if computed_hash != backup_name:
+                    print(f"❌ BACKUP ASSEMBLY: Hash verification FAILED for '{backup_name}' from {player_id}")
+                    print(f"   Expected hash: {backup_name}")
+                    print(f"   Computed hash: {computed_hash}")
+                    
+                    # Clean up corrupted backup
+                    import shutil
+                    if os.path.isdir(extracted_backup_path):
+                        shutil.rmtree(extracted_backup_path)
+                    elif os.path.isfile(extracted_backup_path):
+                        os.remove(extracted_backup_path)
+                    
+                    # Send failure acknowledgment
+                    error_message = {
+                        'type': 'backup_transfer_failed',
+                        'backup_name': backup_name,
+                        'error': f'Hash verification failed: expected {backup_name}, got {computed_hash}'
+                    }
+                    self._send_message_to_client(player_id, error_message)
+                    print(f"📤 BACKUP ASSEMBLY: Sent hash verification failure acknowledgment to {player_id}")
+                    return False
+                else:
+                    print(f"✅ BACKUP ASSEMBLY: Hash verification PASSED for '{backup_name}' from {player_id}")
+
 
             # Clean up transfer data
             del self.client_backup_transfers[client_key]
 
+            # Send success acknowledgment to client
+            ack_message = {
+                'type': 'backup_transfer_success',
+                'backup_name': backup_name
+            }
+            self._send_message_to_client(player_id, ack_message)
+            print(f"📤 BACKUP ASSEMBLY: Sent success acknowledgment to {player_id} for '{backup_name}'")
+
+            return True
+
         except Exception as e:
-            print(f"Failed to assemble backup {backup_name} from {player_id}: {e}")
+            print(f"❌ BACKUP ASSEMBLY: Failed to assemble backup {backup_name} from {player_id}: {e}")
+
+            # Send failure acknowledgment
+            error_message = {
+                'type': 'backup_transfer_failed',
+                'backup_name': backup_name,
+                'error': str(e)
+            }
+            self._send_message_to_client(player_id, error_message)
+            print(f"📤 BACKUP ASSEMBLY: Sent failure acknowledgment to {player_id} for '{backup_name}': {e}")
+
+            return False
 
     def _assemble_client_file(self, player_id: str, file_path: str):
         """Assemble a complete file from client chunks."""
@@ -902,14 +1061,16 @@ class GameServer:
     def _send_message_to_client(self, player_id: str, message: dict):
         """Send a message to a specific client."""
         if player_id not in self.clients:
+            print(f"⚠️ MSG SEND: Cannot send message to {player_id} - client not found in self.clients")
             return
 
         try:
             data = pickle.dumps(message)
             length_bytes = len(data).to_bytes(4, byteorder='big')
             self._send_data_safe(self.clients[player_id], length_bytes + data)
+            print(f"📤 MSG SEND: Successfully sent '{message.get('type', 'unknown')}' message to {player_id}")
         except Exception as e:
-            print(f"Failed to send message to {player_id}: {e}")
+            print(f"❌ MSG SEND: Failed to send '{message.get('type', 'unknown')}' message to {player_id}: {e}")
             # Client might have disconnected
             self._remove_client(player_id)
     
@@ -1009,11 +1170,39 @@ class GameServer:
                         break
 
                 if requesting_client:
+                    print(f"🔄 BACKUP TRANSFER: Server missing backup '{required_backup}', requesting from client '{requesting_client}'")
+
+                    # Set up backup transfer tracking
+                    self.backup_transfer_in_progress = True
+                    self.backup_transfer_client = requesting_client
+                    self.backup_transfer_name = required_backup
+                    self.backup_transfer_start_time = time.time()
+                    self.backup_transfer_complete_event = threading.Event()
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 🔧 DEBUG: Backup transfer setup - client: {requesting_client}, backup: {required_backup}, event created")
+
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 📨 DEBUG: About to request backup {required_backup} from client {requesting_client}")
                     self._request_backup_from_client(requesting_client, required_backup)
-                    print(f"⏳ Waiting for backup transfer...")
-                    # For now, assume backup transfer completes (would need async handling in production)
-                    import time
-                    time.sleep(2)  # Brief delay to allow transfer
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 📤 BACKUP TRANSFER: Sent request to {requesting_client} for backup '{required_backup}'")
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 🎪 DEBUG: backup_transfer_in_progress: {self.backup_transfer_in_progress}, event exists: {hasattr(self, 'backup_transfer_complete_event')}")
+                    print(f"⏳ BACKUP TRANSFER: Waiting for backup transfer (30s timeout)...")
+
+                    # Wait for backup transfer to complete with timeout
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] ⏳ DEBUG: Starting to wait for backup transfer event (30s timeout)")
+                    if not self.backup_transfer_complete_event.wait(timeout=30.0):
+                        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                        print(f"[{timestamp}] ❌ BACKUP TRANSFER: TIMEOUT - Backup '{required_backup}' not received within 30 seconds")
+                        self._notify_patch_merge_failed(f"Backup transfer timeout for '{required_backup}'")
+                        return
+
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] ✅ DEBUG: Backup transfer event received - proceeding with merge")
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] ✅ BACKUP TRANSFER: Successfully received backup '{required_backup}'")
                 else:
                     print(f"❌ No client has backup '{required_backup}'")
                     self._notify_patch_merge_failed(f"Required backup '{required_backup}' not available")
@@ -1085,7 +1274,18 @@ class GameServer:
                 file_containing_patches=output_path,
                 skip_warnings=True
             )
+            self.arena = None  # CRITICAL: Stop game loop from using old objects before reload
+            reloaded_setup = reload_game_code() 
+            if reloaded_setup:
+                # Re-import the setup function since it was imported at startup
+                from GameFolder.setup import setup_battle_arena
+                print("✅ Server GameFolder modules deep reloaded with merged patches")
+            else:
+                print("⚠️ Server GameFolder reload failed, may use old code")
+
             self._load_game_files()  # Reload with patched code
+
+            self.arena = None
             print("✅ Server GameFolder updated with merged patches")
         except Exception as e:
             print(f"❌ Failed to apply patches to server: {e}")
@@ -1185,7 +1385,8 @@ class GameServer:
         
         for player_id in self.clients.keys():
             self._send_patch_file(player_id, patch_path)
-    
+
+
     def _notify_patch_merge_failed(self, reason: str):
         """Notify all clients that patch merge failed."""
         print(f"Notifying clients: {reason}")
@@ -1454,8 +1655,30 @@ class GameServer:
 
 
         # Serialize once
-        data = pickle.dumps(game_state)
-        length_bytes = len(data).to_bytes(4, byteorder='big')
+        try:
+            data = pickle.dumps(game_state)
+            length_bytes = len(data).to_bytes(4, byteorder='big')
+        except Exception as e:
+            print(f"⚠️ Failed to serialize game state: {e}")
+            # DEBUG: Diagnose class mismatch
+            try:
+                if self.arena and self.arena.characters:
+                    char = self.arena.characters[0]
+                    print(f"DEBUG: Character instance class: {char.__class__}")
+                    print(f"DEBUG: Character instance class ID: {id(char.__class__)}")
+                    import sys
+                    if 'GameFolder.characters.GAME_character' in sys.modules:
+                         mod = sys.modules['GameFolder.characters.GAME_character']
+                         print(f"DEBUG: Sys Module Character class ID: {id(getattr(mod, 'Character', None))}")
+                         if id(char.__class__) != id(getattr(mod, 'Character', None)):
+                              print("❌ CRITICAL: Class ID Mismatch detected!")
+                    else:
+                        print("DEBUG: GameFolder.characters.GAME_character not in sys.modules")
+            except Exception as debug_e:
+                print(f"Error during debug printing: {debug_e}")
+            
+            # Skip this broadcast frame to prevent server crash
+            return
 
         # Send to all clients
         disconnected_clients = []

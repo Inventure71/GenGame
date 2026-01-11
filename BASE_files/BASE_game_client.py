@@ -58,15 +58,19 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         def reload_game_classes():
             """Reload game classes from GameFolder after patches are applied."""
             try:
-                import GameFolder.setup as game_setup
-                importlib.reload(game_setup)  # Ensure we get the latest version
-
-                # Import game-specific classes for modularity
-                nonlocal ui, Character
-                ui = game_setup.GameUI(screen, width, height)
-                Character = game_setup.Character
-
-                print("✓ Game classes reloaded after patch application")
+                from BASE_files.BASE_helpers import reload_game_code
+                reloaded_setup = reload_game_code()
+                
+                if reloaded_setup:
+                    # Import game-specific classes for modularity
+                    nonlocal ui, Character
+                    entity_manager.clear() # Clear old entities before reloading
+                    ui = reloaded_setup.GameUI(screen, width, height)
+                    Character = reloaded_setup.Character
+                    
+                    print("✓ Game classes deep reloaded after patch application")
+                else:
+                    print("⚠️ Failed to deep reload game classes")
 
             except Exception as e:
                 print(f"Failed to reload game classes: {e}")
@@ -76,16 +80,20 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             if sync_game_files(files):
                 # Import the setup function from the synchronized GameFolder
                 try:
-                    import GameFolder.setup as game_setup
-                    importlib.reload(game_setup)  # Ensure we get the latest version
-
-                    # Import game-specific classes for modularity
-                    nonlocal ui, Character
-                    ui = game_setup.GameUI(screen, width, height)
-                    Character = game_setup.Character
-
-                    print("✓ Game files synchronized and classes loaded")
-                    network_client.acknowledge_file_sync()
+                    from BASE_files.BASE_helpers import reload_game_code
+                    reloaded_setup = reload_game_code()
+                    
+                    if reloaded_setup:
+                        # Import game-specific classes for modularity
+                        nonlocal ui, Character
+                        entity_manager.clear() # Clear old entities before reloading
+                        ui = reloaded_setup.GameUI(screen, width, height)
+                        Character = reloaded_setup.Character
+                        
+                        print("✓ Game files synchronized and classes deep reloaded")
+                        network_client.acknowledge_file_sync()
+                    else:
+                        print("⚠️ Failed to deep reload after file sync")
 
                 except Exception as e:
                     print(f"Failed to load synchronized game: {e}")
@@ -95,20 +103,22 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             """Callback when game start is received - ensure classes are loaded."""
             print("Game start received - ensuring classes are loaded...")
 
-            # Always reload classes when game starts to ensure latest code
             try:
-                import GameFolder.setup as game_setup
-                importlib.reload(game_setup)
-
-                nonlocal ui, Character
-                ui = game_setup.GameUI(screen, width, height)
-                Character = game_setup.Character
-
-                print("✓ Game classes loaded/updated for game start")
+                from BASE_files.BASE_helpers import reload_game_code
+                reloaded_setup = reload_game_code()
+                
+                if reloaded_setup:
+                    nonlocal ui, Character
+                    entity_manager.clear() # Clear old entities before reloading
+                    ui = reloaded_setup.GameUI(screen, width, height)
+                    Character = reloaded_setup.Character
+                    
+                    print("✓ Game classes deep reloaded for game start")
+                else:
+                    print("⚠️ Failed to deep reload for game start")
 
             except Exception as e:
-                print(f"Failed to load game classes: {e}")
-                # Continue anyway - might still work with cached classes
+                print(f"Failed to reload game classes for game start: {e}")
 
         def on_game_state_received(game_state):
             entity_manager.update_from_server(game_state)

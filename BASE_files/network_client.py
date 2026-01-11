@@ -13,6 +13,7 @@ import importlib
 from typing import Dict, List, Optional, Callable, Any
 from collections import deque
 import select
+from datetime import datetime
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -385,11 +386,24 @@ class NetworkClient:
         while self.outgoing_queue:
             try:
                 message = self.outgoing_queue.popleft()
+                msg_type = message.get('type', 'unknown')
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 📤 DEBUG CLIENT: Sending message type '{msg_type}' - queue size now: {len(self.outgoing_queue)}")
+                if msg_type == 'file_chunk' and message.get('is_backup'):
+                    chunk_num = message.get('chunk_num', '?')
+                    total_chunks = message.get('total_chunks', '?')
+                    backup_name = message.get('backup_name', 'unknown')
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 📤 DEBUG CLIENT: Sending backup chunk {chunk_num+1 if isinstance(chunk_num, int) else chunk_num}/{total_chunks} for '{backup_name}'")
+
                 data = pickle.dumps(message)
                 length_bytes = len(data).to_bytes(4, byteorder='big')
                 self._send_data_safe(length_bytes + data)
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] ✅ DEBUG CLIENT: Successfully sent message type '{msg_type}'")
             except Exception as e:
-                print(f"Send error: {e}")
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] ❌ DEBUG CLIENT: Send error for message type '{message.get('type', 'unknown')}': {e}")
                 self.disconnect()
                 break
 
@@ -402,6 +416,9 @@ class NetworkClient:
     def _handle_message(self, message: dict):
         """Handle a received message."""
         msg_type = message.get('type')
+
+        # Debug: Log all received messages
+        print(f"📨 CLIENT MSG: Received message type '{msg_type}' from server")
 
         if msg_type == 'file_sync':
             if self.on_file_sync_received:
@@ -458,19 +475,52 @@ class NetworkClient:
             print(f"🔄 {msg}")
             if self.on_server_restarted:
                 self.on_server_restarted(msg)
+        elif msg_type == 'backup_transfer_success':
+            backup_name = message.get('backup_name')
+            print(f"🎉 BACKUP ACK: Server confirmed backup '{backup_name}' received and extracted successfully!")
+        elif msg_type == 'backup_transfer_failed':
+            backup_name = message.get('backup_name')
+            error = message.get('error', 'Unknown error')
+            print(f"💥 BACKUP ACK: Server reported backup '{backup_name}' transfer/extraction failed: {error}")
         elif msg_type == 'request_backup':
             backup_name = message.get('backup_name')
+            print(f"🔄 BACKUP REQUEST: Client received backup request for '{backup_name}'")
             if backup_name:
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 📤 BACKUP REQUEST: Client calling _send_backup_to_server for '{backup_name}'")
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 🔍 DEBUG CLIENT: About to call _send_backup_to_server")
                 self._send_backup_to_server(backup_name)
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 🔍 DEBUG CLIENT: _send_backup_to_server completed")
+            else:
+                print(f"❌ BACKUP REQUEST: Invalid backup request - no backup_name provided")
 
     def _send_backup_to_server(self, backup_name: str):
         """Send a backup folder to the server."""
         try:
+            import os
+            cwd = os.getcwd()
+            print(f"📍 BACKUP SEND: Current working directory: {cwd}")
+
             backup_path = f"__game_backups/{backup_name}"
+            abs_backup_path = os.path.abspath(backup_path)
+            print(f"📍 BACKUP SEND: Looking for backup at: {abs_backup_path}")
 
             if not os.path.exists(backup_path):
-                print(f"Backup {backup_name} not found locally")
+                print(f"❌ BACKUP SEND: Backup {backup_name} not found locally at {backup_path}")
+                print(f"❌ BACKUP SEND: Absolute path: {abs_backup_path}")
+                # List contents of __game_backups if it exists
+                game_backups_dir = "__game_backups"
+                if os.path.exists(game_backups_dir):
+                    contents = os.listdir(game_backups_dir)
+                    print(f"❌ BACKUP SEND: Contents of __game_backups: {contents}")
+                else:
+                    print(f"❌ BACKUP SEND: __game_backups directory does not exist")
                 return
+
+            print(f"✅ BACKUP SEND: Found backup '{backup_name}' at {backup_path}")
+            print(f"📤 BACKUP SEND: Starting to send backup '{backup_name}' from {backup_path}")
 
             # Create a temporary compressed archive
             import tempfile
@@ -484,40 +534,41 @@ class NetworkClient:
             with tarfile.open(temp_path, 'w:gz') as tar:
                 tar.add(backup_path, arcname=backup_name)
 
-            # Read and send in chunks
+            # Calculate total chunks BEFORE sending any chunks
             chunk_size = 64 * 1024  # 64KB chunks
+            file_size = os.path.getsize(temp_path)
+            total_chunks = (file_size + chunk_size - 1) // chunk_size
+
+            print(f"📦 BACKUP SEND: Compressed '{backup_name}' to {file_size} bytes, will send in {total_chunks} chunks")
+
+            # Read and send in chunks
             with open(temp_path, 'rb') as f:
-                chunk_num = 0
-                while True:
+                for chunk_num in range(total_chunks):
                     chunk_data = f.read(chunk_size)
-                    if not chunk_data:
-                        break
 
                     chunk_message = {
                         'type': 'file_chunk',
                         'backup_name': backup_name,
                         'chunk_num': chunk_num,
-                        'total_chunks': -1,  # Will be set by client
+                        'total_chunks': total_chunks,  # Now included in EVERY chunk
                         'data': chunk_data,
                         'is_backup': True
                     }
 
-                    # Calculate total chunks on first chunk
-                    if chunk_num == 0:
-                        file_size = os.path.getsize(temp_path)
-                        total_chunks = (file_size + chunk_size - 1) // chunk_size
-                        chunk_message['total_chunks'] = total_chunks
-
                     self.outgoing_queue.append(chunk_message)
-                    chunk_num += 1
+                    progress = (chunk_num + 1) / total_chunks * 100
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 📤 BACKUP SEND: Queued chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' - data size: {len(chunk_data)} bytes")
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
 
-            print(f"Sent backup {backup_name} to server ({chunk_num} chunks)")
+            print(f"✅ BACKUP SEND: Successfully queued all {total_chunks} chunks for backup '{backup_name}' to server")
 
             # Clean up temp file
             os.unlink(temp_path)
 
         except Exception as e:
-            print(f"Failed to send backup {backup_name}: {e}")
+            print(f"❌ BACKUP SEND: Failed to send backup {backup_name}: {e}")
 
     def _handle_file_chunk(self, message: dict):
         """Handle incoming file chunk."""
@@ -912,6 +963,7 @@ class EntityManager:
         if network_id in self.platforms:
             del self.platforms[network_id]
 
+
     def get_entities_by_type(self, entity_type: type) -> List[Any]:
         """Get all entities of a specific type."""
         return [entity for entity in self.entities.values() if isinstance(entity, entity_type)]
@@ -919,6 +971,12 @@ class EntityManager:
     def get_entity(self, network_id: str) -> Optional[Any]:
         """Get a specific entity by network ID."""
         return self.entities.get(network_id)
+        
+    def clear(self):
+        """Clear all entities and state."""
+        self.entities.clear()
+        self.platforms.clear()
+        self.interpolation_buffers.clear()
 
     def draw_all(self, screen, arena_height: float):
         """Draw all entities and platforms."""

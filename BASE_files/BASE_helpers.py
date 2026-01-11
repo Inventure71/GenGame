@@ -3,6 +3,10 @@ import base64
 import hashlib
 import platform
 import os
+import sys
+import importlib
+import traceback
+import types
 
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SECRET_OFFSET = 717171 
@@ -127,3 +131,51 @@ def decrypt_api_key(encrypted_key: str) -> str:
     except Exception:
         # If decryption fails, return empty string
         return ""
+
+def reload_game_code() -> types.ModuleType:
+    print("🔄 Performing deep reload of game code...")
+    
+    # 1. Identify all loaded GameFolder modules
+    game_modules = [
+        (name, module) for name, module in sys.modules.items() 
+        if name.startswith('GameFolder') and module is not None
+    ]
+    
+    # DEBUG: Check initial state of Character class in setup if loaded
+    if 'GameFolder.setup' in sys.modules:
+        try:
+             import GameFolder.setup
+             if hasattr(GameFolder.setup, 'Character'):
+                 print(f"DEBUG: Before reload, GameFolder.setup.Character ID: {id(GameFolder.setup.Character)}")
+        except: pass
+
+    # 2. Reload all dependencies first
+    for name, module in game_modules:
+        if name == 'GameFolder.setup':
+            continue
+        try:
+            importlib.reload(module)
+        except Exception as e:
+            # CRITICAL FIX: Print the error so you know the patch failed!
+            print(f"❌ Failed to reload {name}: {e}")
+            traceback.print_exc() 
+            
+    # 3. Explicitly reload the entry point (setup.py) last
+    # STRATEGY CHANGE: Use del + import to force fresh namespace population from reloaded dependencies
+    try:
+        if 'GameFolder.setup' in sys.modules:
+            print("Force-clearing GameFolder.setup from sys.modules to ensure clean import...")
+            del sys.modules['GameFolder.setup']
+            
+        import GameFolder.setup
+        
+        # Verify the class ID
+        if hasattr(GameFolder.setup, 'Character'):
+             print(f"DEBUG: After reload, GameFolder.setup.Character ID: {id(GameFolder.setup.Character)}")
+        
+        print("✅ Game code deep reload complete.")
+        return sys.modules['GameFolder.setup']
+    except Exception as e:
+        print(f"❌ CRITICAL: Failed to reload setup.py: {e}")
+        traceback.print_exc()
+        return None
