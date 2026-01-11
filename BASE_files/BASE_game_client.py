@@ -55,6 +55,22 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             assigned_character = assignment.get('assigned_character')
             print(f"Assigned to control: {assigned_character}")
 
+        def reload_game_classes():
+            """Reload game classes from GameFolder after patches are applied."""
+            try:
+                import GameFolder.setup as game_setup
+                importlib.reload(game_setup)  # Ensure we get the latest version
+
+                # Import game-specific classes for modularity
+                nonlocal ui, Character
+                ui = game_setup.GameUI(screen, width, height)
+                Character = game_setup.Character
+
+                print("✓ Game classes reloaded after patch application")
+
+            except Exception as e:
+                print(f"Failed to reload game classes: {e}")
+
         def on_file_sync_received(files):
             print("Received file sync from server...")
             if sync_game_files(files):
@@ -74,6 +90,25 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 except Exception as e:
                     print(f"Failed to load synchronized game: {e}")
                     network_client.disconnect()
+
+        def on_game_start():
+            """Callback when game start is received - ensure classes are loaded."""
+            print("Game start received - ensuring classes are loaded...")
+
+            # Always reload classes when game starts to ensure latest code
+            try:
+                import GameFolder.setup as game_setup
+                importlib.reload(game_setup)
+
+                nonlocal ui, Character
+                ui = game_setup.GameUI(screen, width, height)
+                Character = game_setup.Character
+
+                print("✓ Game classes loaded/updated for game start")
+
+            except Exception as e:
+                print(f"Failed to load game classes: {e}")
+                # Continue anyway - might still work with cached classes
 
         def on_game_state_received(game_state):
             entity_manager.update_from_server(game_state)
@@ -110,6 +145,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             running = False  # Exit the game client to return to menu
 
         network_client.on_file_sync_received = on_file_sync_received
+        network_client.on_game_start = on_game_start
         network_client.on_game_state_received = on_game_state_received
         network_client.on_character_assigned = on_character_assigned
         network_client.on_disconnected = on_disconnected

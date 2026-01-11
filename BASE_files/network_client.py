@@ -458,6 +458,66 @@ class NetworkClient:
             print(f"🔄 {msg}")
             if self.on_server_restarted:
                 self.on_server_restarted(msg)
+        elif msg_type == 'request_backup':
+            backup_name = message.get('backup_name')
+            if backup_name:
+                self._send_backup_to_server(backup_name)
+
+    def _send_backup_to_server(self, backup_name: str):
+        """Send a backup folder to the server."""
+        try:
+            backup_path = f"__game_backups/{backup_name}"
+
+            if not os.path.exists(backup_path):
+                print(f"Backup {backup_name} not found locally")
+                return
+
+            # Create a temporary compressed archive
+            import tempfile
+            import tarfile
+            import gzip
+
+            with tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False) as temp_file:
+                temp_path = temp_file.name
+
+            # Create compressed tar archive
+            with tarfile.open(temp_path, 'w:gz') as tar:
+                tar.add(backup_path, arcname=backup_name)
+
+            # Read and send in chunks
+            chunk_size = 64 * 1024  # 64KB chunks
+            with open(temp_path, 'rb') as f:
+                chunk_num = 0
+                while True:
+                    chunk_data = f.read(chunk_size)
+                    if not chunk_data:
+                        break
+
+                    chunk_message = {
+                        'type': 'file_chunk',
+                        'backup_name': backup_name,
+                        'chunk_num': chunk_num,
+                        'total_chunks': -1,  # Will be set by client
+                        'data': chunk_data,
+                        'is_backup': True
+                    }
+
+                    # Calculate total chunks on first chunk
+                    if chunk_num == 0:
+                        file_size = os.path.getsize(temp_path)
+                        total_chunks = (file_size + chunk_size - 1) // chunk_size
+                        chunk_message['total_chunks'] = total_chunks
+
+                    self.outgoing_queue.append(chunk_message)
+                    chunk_num += 1
+
+            print(f"Sent backup {backup_name} to server ({chunk_num} chunks)")
+
+            # Clean up temp file
+            os.unlink(temp_path)
+
+        except Exception as e:
+            print(f"Failed to send backup {backup_name}: {e}")
 
     def _handle_file_chunk(self, message: dict):
         """Handle incoming file chunk."""

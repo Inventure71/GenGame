@@ -89,6 +89,8 @@ class GameServer:
         self.client_patches: Dict[str, List[Dict]] = {}  # player_id -> list of patch info
         self.client_patch_files: Dict[str, Dict] = {}  # (player_id, patch_name) -> {'chunks': {}, 'total': N}
         self.clients_ready_status: Set[str] = set()  # Track which clients marked as ready
+        self.client_backups: Dict[str, str] = {}  # player_id -> backup_name
+        self.client_backup_transfers: Dict[str, Dict] = {}  # (player_id:backup_name) -> transfer info
 
         print(f"Server initialized on {host}:{port}")
 
@@ -108,6 +110,22 @@ class GameServer:
                         print(f"Loaded game file: {rel_path}")
                     except Exception as e:
                         print(f"Failed to load {rel_path}: {e}")
+
+    def _get_available_backups(self) -> set:
+        """Get set of backup names server has available."""
+        backup_dir = "__game_backups"
+        if not os.path.exists(backup_dir):
+            return set()
+        return {d for d in os.listdir(backup_dir) if os.path.isdir(os.path.join(backup_dir, d))}
+
+    def _request_backup_from_client(self, player_id: str, backup_name: str):
+        """Request backup transfer from client."""
+        message = {
+            'type': 'request_backup',
+            'backup_name': backup_name
+        }
+        self._send_message_to_client(player_id, message)
+        print(f"Requested backup '{backup_name}' from {player_id}")
 
     def start(self):
         """Start the server."""
@@ -478,6 +496,8 @@ class GameServer:
                 self._recreate_arena_with_players()
                 self._arena_initialized = True
 
+            # Always send file_sync to ensure client loads latest classes
+            # This is safe now because game hasn't started yet
             self._send_file_sync(player_id)
         elif msg_type == 'request_start_game':
             # Client requested to start the game - send merge patch to all clients
@@ -618,7 +638,14 @@ class GameServer:
             # Client sent their patch selection
             patches = message.get('patches', [])
             self.client_patches[player_id] = patches
-            print(f"{player_id} selected {len(patches)} patch(es)")
+
+            # Extract backup name from first patch (all patches should have same base)
+            backup_name = None
+            if patches:
+                backup_name = patches[0].get('base_backup')
+                self.client_backups[player_id] = backup_name
+
+            print(f"{player_id} selected {len(patches)} patch(es) from backup '{backup_name}'")
         elif msg_type == 'patch_chunk':
             # Client sending a patch file chunk
             self._handle_patch_chunk(player_id, message)
@@ -720,9 +747,15 @@ class GameServer:
         chunk_num = message.get('chunk_num')
         total_chunks = message.get('total_chunks')
         chunk_data = message.get('data')
+        is_backup = message.get('is_backup', False)
 
         if not all([file_path, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
             print(f"Invalid file chunk from {player_id}")
+            return
+
+        # Handle backup transfers differently
+        if is_backup:
+            self._handle_backup_chunk(player_id, message)
             return
 
         # Initialize file transfer tracking if needed
@@ -747,6 +780,72 @@ class GameServer:
         # Check if file is complete
         if transfer['received_chunks'] == total_chunks:
             self._assemble_client_file(player_id, file_path)
+
+    def _handle_backup_chunk(self, player_id: str, message: dict):
+        """Handle a backup file chunk received from a client."""
+        backup_name = message.get('backup_name')
+        chunk_num = message.get('chunk_num')
+        total_chunks = message.get('total_chunks')
+        chunk_data = message.get('data')
+
+        if not all([backup_name, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
+            print(f"Invalid backup chunk from {player_id}")
+            return
+
+        # Initialize backup transfer tracking if needed
+        if not hasattr(self, 'client_backup_transfers'):
+            self.client_backup_transfers = {}
+
+        client_key = f"{player_id}:{backup_name}"
+        if client_key not in self.client_backup_transfers:
+            self.client_backup_transfers[client_key] = {
+                'chunks': {},
+                'total_chunks': total_chunks,
+                'received_chunks': 0
+            }
+
+        transfer = self.client_backup_transfers[client_key]
+
+        # Store chunk if not already received
+        if chunk_num not in transfer['chunks']:
+            transfer['chunks'][chunk_num] = chunk_data
+            transfer['received_chunks'] += 1
+
+        # Check if backup is complete
+        if transfer['received_chunks'] == total_chunks:
+            self._assemble_client_backup(player_id, backup_name)
+
+    def _assemble_client_backup(self, player_id: str, backup_name: str):
+        """Assemble a complete backup from client chunks and extract it."""
+        client_key = f"{player_id}:{backup_name}"
+        transfer = self.client_backup_transfers[client_key]
+
+        try:
+            # Assemble the compressed backup data
+            backup_data = b''
+            for i in range(transfer['total_chunks']):
+                backup_data += transfer['chunks'][i]
+
+            # Save to __game_backups directory
+            backup_dir = "__game_backups"
+            os.makedirs(backup_dir, exist_ok=True)
+
+            # Extract the compressed tar archive
+            import tarfile
+            import io
+
+            with io.BytesIO(backup_data) as bio:
+                with tarfile.open(fileobj=bio, mode='r:gz') as tar:
+                    # Extract to backup directory
+                    tar.extractall(path=backup_dir)
+
+            print(f"Received and extracted backup '{backup_name}' from {player_id}")
+
+            # Clean up transfer data
+            del self.client_backup_transfers[client_key]
+
+        except Exception as e:
+            print(f"Failed to assemble backup {backup_name} from {player_id}: {e}")
 
     def _assemble_client_file(self, player_id: str, file_path: str):
         """Assemble a complete file from client chunks."""
@@ -892,7 +991,34 @@ class GameServer:
             return
         
         print("✅ Base backup validation passed")
-        
+
+        # Step 1.5: Ensure server has required backup
+        required_backup = None
+        if all_patches_info and all_patches_info[0]:
+            required_backup = all_patches_info[0][0].get('base_backup')
+
+        if required_backup:
+            available_backups = self._get_available_backups()
+            if required_backup not in available_backups:
+                print(f"⚠️  Server missing backup '{required_backup}', requesting from client")
+                # Find a client that has this backup
+                requesting_client = None
+                for client_id, backup_name in self.client_backups.items():
+                    if backup_name == required_backup:
+                        requesting_client = client_id
+                        break
+
+                if requesting_client:
+                    self._request_backup_from_client(requesting_client, required_backup)
+                    print(f"⏳ Waiting for backup transfer...")
+                    # For now, assume backup transfer completes (would need async handling in production)
+                    import time
+                    time.sleep(2)  # Brief delay to allow transfer
+                else:
+                    print(f"❌ No client has backup '{required_backup}'")
+                    self._notify_patch_merge_failed(f"Required backup '{required_backup}' not available")
+                    return
+
         # Step 2: Collect all patch file paths
         all_patch_paths = []
         for player_id, patches_info in self.client_patches.items():
@@ -948,8 +1074,26 @@ class GameServer:
             self._notify_patch_merge_failed("Patches are incompatible - could not resolve conflicts after 3 attempts")
             return
         
-        print("\n✅ MERGE SUCCESSFUL - Distributing to clients")
-        
+        print("\n✅ MERGE SUCCESSFUL - Applying to server")
+
+        # Apply merged patch to server's GameFolder
+        try:
+            vc = VersionControl()
+            vc.apply_all_changes(
+                needs_rebase=True,
+                path_to_BASE_backup="__game_backups",
+                file_containing_patches=output_path,
+                skip_warnings=True
+            )
+            self._load_game_files()  # Reload with patched code
+            print("✅ Server GameFolder updated with merged patches")
+        except Exception as e:
+            print(f"❌ Failed to apply patches to server: {e}")
+            self._notify_patch_merge_failed(f"Server patch application failed: {e}")
+            return
+
+        print("Distributing to clients")
+
         # Step 5: Send merged patch to all clients
         self._initiate_game_start_with_patch_sync(output_path)
     
