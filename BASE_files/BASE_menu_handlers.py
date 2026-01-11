@@ -304,7 +304,8 @@ class MenuHandlers:
             "gemini_api_key": encrypt_api_key(self.menu.settings_gemini_key),
             "openai_api_key": encrypt_api_key(self.menu.settings_openai_key),
             "selected_provider": self.menu.selected_provider,
-            "model": self.menu.settings_model
+            "model": self.menu.settings_model,
+            "base_working_backup": self.menu.base_working_backup
         }
 
         try:

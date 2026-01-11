@@ -34,8 +34,6 @@ from coding.non_callable_tools.action_logger import ActionLogger
 
 class BaseMenu:
     def __init__(self, action_logger=None):
-        self.base_working_backup = None
-
         print("Initializing BaseMenu...")
         # Initialize pygame if not already initialized
         if not pygame.get_init():
@@ -51,9 +49,6 @@ class BaseMenu:
             print("Clipboard support initialized.")
         except:
             print("Warning: Clipboard support not available.")
-
-        # Game menu
-        self.on_start()
 
         print("Creating window...")
         self.screen = pygame.display.set_mode((1400, 900))
@@ -104,16 +99,6 @@ class BaseMenu:
         # Patch saving state
         self.patch_name = ""
 
-        # Settings state
-        self.settings_username = ""
-        self.settings_gemini_key = ""
-        self.settings_openai_key = ""
-        self.settings_model = "models/gemini-3-flash-preview"
-        self.selected_provider = "GEMINI"
-
-        # Load settings from config file
-        self._load_settings()
-
         # Patch manager
         self.patch_manager = PatchManager()
         self.patch_manager.scan_patches()  # Initial scan
@@ -126,6 +111,17 @@ class BaseMenu:
 
         # Action logger for patch saving - use provided instance or create new one
         self.action_logger = action_logger if action_logger is not None else ActionLogger()
+
+        # Settings state
+        self.settings_username = ""
+        self.settings_gemini_key = ""
+        self.settings_openai_key = ""
+        self.settings_model = "models/gemini-3-flash-preview"
+        self.selected_provider = "GEMINI"
+        self.base_working_backup = None
+
+        # Game menu
+        self.on_start() # includes loading settings
 
         print("BaseMenu initialization complete.")
 
@@ -636,7 +632,8 @@ class BaseMenu:
                 self.settings_openai_key = decrypt_api_key(settings.get("openai_api_key", ""))
                 self.selected_provider = settings.get("selected_provider", "GEMINI")
                 self.settings_model = settings.get("model", "models/gemini-3-flash-preview")
-
+                self.base_working_backup = settings.get("base_working_backup", None)
+                
                 # Set player_id to username from settings if available
                 if self.settings_username:
                     self.player_id = self.settings_username
@@ -646,20 +643,28 @@ class BaseMenu:
                 print(f"Failed to load settings: {e}")
 
     def on_start(self):
+        self._load_settings()
         from coding.non_callable_tools.helpers import cleanup_old_logs
         cleanup_old_logs()
         self.patch_to_apply = None
+
+        from coding.non_callable_tools.backup_handling import BackupHandler
+        handler = BackupHandler("__game_backups")
 
         # Ensure we have an initial base backup if none is set
         if self.base_working_backup is None:
             print("Creating initial safety backup...")
             try:
-                from coding.non_callable_tools.backup_handling import BackupHandler
-                handler = BackupHandler("__game_backups")
                 _, self.base_working_backup = handler.create_backup("GameFolder")
                 print(f"Initial backup created: {self.base_working_backup}")
+                self.handlers.on_settings_save_click()
+
             except Exception as e:
                 print(f"Warning: Failed to create initial backup: {e}")
+        else:
+            print(f"Restoring from backup: {self.base_working_backup}")
+            _, self.base_working_backup = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
+            print(f"Backup restored: {self.base_working_backup}")
     
     def start_game(self):
         """Start the game."""
