@@ -53,6 +53,19 @@ def load_prompt(prompt_file: str, include_general_context: bool = True) -> str:
     if prompt is None:
         raise FileNotFoundError(f"Prompt file {prompt_file} not found, from {os.getcwd()}")
 
+    # Handle {include:path} directives
+    import re
+    include_pattern = r'\{include:([^}]+)\}'
+    def replace_include(match):
+        include_path = match.group(1)
+        full_path = f"coding/system_prompts/{include_path}"
+        included_content = open_file(full_path)
+        if included_content is None:
+            raise FileNotFoundError(f"Include file {full_path} not found")
+        return included_content
+
+    prompt = re.sub(include_pattern, replace_include, prompt)
+
     if include_general_context:
         general_content = open_file('coding/system_prompts/GENERAL.md')
         prompt += f"\n{general_content}"

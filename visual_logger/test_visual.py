@@ -254,8 +254,8 @@ def main():
 
         # Simulate model responding with MULTIPLE tool calls in ONE response
         parallel_analysis = [
-            {"name": "read_file", "args": {"path": "BASE_components/BASE_weapon.py"}},
-            {"name": "read_file", "args": {"path": "GameFolder/weapons/GAME_weapon.py"}},
+            {"name": "read_file", "args": {"file_path": "BASE_components/BASE_weapon.py"}},
+            {"name": "read_file", "args": {"file_path": "GameFolder/weapons/GAME_weapon.py"}},
             {"name": "get_tree_directory", "args": {"path": "GameFolder/weapons"}},
             {"name": "list_functions_in_file", "args": {"file_path": "GameFolder/weapons/BlackHoleGun.py"}},
         ]
@@ -269,7 +269,7 @@ def main():
         parallel_inspection = [
             {"name": "find_function_usages", "args": {"function_name": "fire", "directory_path": "GameFolder/weapons"}},
             {"name": "get_function_source", "args": {"file_path": "GameFolder/weapons/TornadoGun.py", "function_name": "fire"}},
-            {"name": "read_file", "args": {"path": "BASE_components/BASE_projectile.py"}},
+            {"name": "read_file", "args": {"file_path": "BASE_components/BASE_projectile.py"}},
         ]
 
         simulate_model_response_with_tools(
@@ -419,7 +419,7 @@ class PlasmaProjectile(Projectile):
 
         # Model responds with tools to check setup
         integration_tools = [
-            {"name": "read_file", "args": {"path": "GameFolder/setup.py"}},
+            {"name": "read_file", "args": {"file_path": "GameFolder/setup.py"}},
             {"name": "list_functions_in_file", "args": {"file_path": "GameFolder/setup.py"}},
         ]
 

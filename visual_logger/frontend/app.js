@@ -965,7 +965,7 @@ class VisualLogger {
         }
 
         graphDef += '    classDef success fill:#162420,stroke:#00ff9f,stroke-width:2px,color:#e6edf3;\n';
-        graphDef += '    classDef error fill:#2d1a1a,stroke:#ff6b6b,stroke-width:2px,color:#e6edf3;\n';
+        graphDef += '    classDef error fill:#4a1515,stroke:#ff4444,stroke-width:2px,color:#ff4444;\n';
         graphDef += '    classDef thought fill:#1a1a2e,stroke:#6e7681,stroke-width:1px,stroke-dasharray:5 5,color:#8b949e;\n';
         graphDef += '    classDef modelText fill:#0d1117,stroke:#58a6ff,stroke-width:1px,stroke-dasharray:3 3,color:#58a6ff;\n';
         graphDef += '    classDef complete fill:#1a3a1a,stroke:#4ade80,stroke-width:3px,color:#e6edf3;\n';
@@ -1052,9 +1052,15 @@ class VisualLogger {
             
             // Special styling for complete_task
             if (action.name === 'complete_task') {
-                nodeDef = `    ${nodeId}[["✓ ${name}"]]:::complete;\n`;
+                const isFailed = action.success === false || (action.result && String(action.result).trim().startsWith('Error:'));
+                if (isFailed) {
+                    nodeDef = `    ${nodeId}[["✗ ${name}"]]:::error;\n`;
+                } else {
+                    nodeDef = `    ${nodeId}[["✓ ${name}"]]:::complete;\n`;
+                }
             } else {
-                const styleClass = action.success === false ? ':::error' : ':::success';
+                const isFailed = action.success === false || (action.result && String(action.result).trim().startsWith('Error:'));
+                const styleClass = isFailed ? ':::error' : ':::success';
                 nodeDef = `    ${nodeId}["${name}${argsSummary}"]${styleClass};\n`;
             }
             

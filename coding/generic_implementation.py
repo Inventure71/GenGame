@@ -1,7 +1,12 @@
+from typing import Dict, Any
 from coding.non_callable_tools.helpers import load_prompt
 from coding.handlers.gemini_handler import GeminiHandler
 from coding.handlers.openai_handler import OpenAIHandler
 from coding.non_callable_tools.todo_list import TodoList
+from coding.standardized_types import StandardizedResponse, StandardizedToolCall, StandardizedToolResult
+from google.genai import types
+
+from coding.non_callable_tools.action_logger import action_logger
 
 class GenericHandler:
     def __init__(self, thinking_model, model_name: str = "models/gemini-3-flash-preview", provider: str = "GEMINI", api_key: str = None):
@@ -121,7 +126,8 @@ class GenericHandler:
             active_config = self.client.temporary_no_tools_config()
             
         # 2. Get the answer        
-        final_text = self.client.ask_model(turn_history, active_config, history_to_update=chat_history_to_update)
+        final_text = self.ask_model_WORK_IN_PROGRESS(turn_history, active_config, history_to_update=chat_history_to_update)
+        #final_text = self.client.ask_model(turn_history, active_config, history_to_update=chat_history_to_update)
         
         return final_text
     
@@ -155,4 +161,157 @@ class GenericHandler:
             else:
                 print("Agent has not completed the task yet")
 
-    
+    def ask_model_WORK_IN_PROGRESS(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None) -> str:
+        """
+        Generalized ask_model that works with any provider through BaseHandler interface.
+        The common logic is here, provider-specific details are handled by the client.
+        """
+        turns = 0
+        max_turns = 30  # Safety cutoff
+        stop_loop = False
+        
+        # Local list to track the conversation turn including tool outputs 
+        # so the model can actually see the results of its actions during THIS turn.
+        # But we will NOT append the tool outputs to self.chat_history.
+        current_turn_log = [] 
+        
+        while turns < max_turns and not stop_loop:
+            turns += 1
+            print(f"DEBUG: Turn {turns}", flush=True)
+
+            # We use history + current_turn_log for the API call
+            # This ensures the model sees the tool outputs for the current interaction loop
+            api_history = history + current_turn_log
+
+            # 1. Make API call (provider-specific)
+            try:
+                response = self.client.make_api_call(api_history, config)
+            except Exception as e:
+                print(f"API call failed: {e}")
+                raise e
+            
+            # 2. Parse response into standardized format (provider-specific → standardized)
+            standardized_response = self.client.parse_response(response)
+            
+            # 3. Display thoughts and text content (standardized)
+            for thought in standardized_response.thoughts:
+                print(f"\n[THOUGHT]: {thought}", flush=True)
+                action_logger.log_thinking(thought, chat_history=api_history)
+            
+            for text in standardized_response.text_parts:
+                print(f"\n[MODEL]: {text}", flush=True)
+                action_logger.log_model_text(text, chat_history=api_history)
+
+            # 4. Handle History (provider-specific logic)
+            self.client.add_response_to_history(response, current_turn_log, history_to_update)
+
+            # 5. Process Tool Calls (standardized)
+            tool_calls = standardized_response.tool_calls
+            print(f"DEBUG: In one turn we have {len(tool_calls)} tool calls", flush=True)
+
+            # Extract token usage (provider-specific)
+            input_tokens, output_tokens = self.client.extract_token_usage(response)
+            
+            if not tool_calls:
+                # Log the model request for token tracking (no tools)
+                action_logger.log_model_request(input_tokens, output_tokens, tool_calls=None, chat_history=api_history)
+                # Return text only
+                return "\n".join(standardized_response.text_parts)
+            
+            # Execute all tool calls and collect results for logging
+            tool_call_results = []
+
+            all_tools_success = True
+            regular_tools = [tc for tc in tool_calls if tc.name != "complete_task"]
+            complete_task_calls = [tc for tc in tool_calls if tc.name == "complete_task"]
+
+            for tool_calls_list in [regular_tools, complete_task_calls]:
+                for tool_call in tool_calls_list:
+                    name = tool_call.name
+                    args = tool_call.args
+
+                    print(f"DEBUG: Executing {name}({args})", flush=True)
+
+                    try:
+                        if name in self.client.tool_map:
+                            if name == "complete_task" and not all_tools_success:
+                                print(f"DEBUG: complete_task was called but not all tools were successful, so we will not call it really", flush=True)
+                                result = {"error": "Error: Not all tools were successful this turn so completing task is not possible"}
+                                result_str = result["error"]
+
+                            else:
+                                result = self.client.tool_map[name](**args)
+                                if not isinstance(result, dict):
+                                    result = {"result": result}
+                                result_str = str(result.get("result", result))
+
+                            if result_str.startswith("Error:"): # We consider any error as a failure
+                                success = False
+                                all_tools_success = False
+                            else:
+                                success = True
+                            # Log individual action for visual logger
+                            action_logger.log_action(name, dict(args), result_str, success=success, chat_history=api_history)
+                            # Collect result for batch token tracking
+                            tool_call_results.append(StandardizedToolResult(
+                                name=name,
+                                args=dict(args),
+                                result=result_str,
+                                success=success,
+                                call_id=tool_call.call_id
+                            ))
+                        else:
+                            all_tools_success = False
+                            result = {"error": f"Tool '{name}' not found."}
+                            result_str = result["error"]
+                            action_logger.log_action(name, dict(args), result["error"], success=False, chat_history=api_history)
+                            tool_call_results.append(StandardizedToolResult(
+                                name=name,
+                                args=dict(args),
+                                result=result_str,
+                                success=False,
+                                call_id=tool_call.call_id
+                            ))
+                    except Exception as e:
+                        result = {"error": str(e)}
+                        all_tools_success = False
+                        result_str = result["error"]
+                        action_logger.log_action(name, dict(args), str(e), success=False, chat_history=api_history)
+                        tool_call_results.append(StandardizedToolResult(
+                            name=name,
+                            args=dict(args),
+                            result=str(e),
+                            success=False,
+                            call_id=tool_call.call_id
+                        ))
+
+                    if name == "complete_task" and all_tools_success:
+                        print(f"DEBUG: model ran complete_task, so we will stop the loop FORCEFULLY", flush=True)
+                        stop_loop = True
+                        break
+
+            # Log the model request with token usage and all tool calls (parallel if > 1)
+            tool_call_dicts = [
+            {
+                "name": result.name,
+                "args": result.args,
+                "result": result.result,
+                "success": result.success
+            }
+            for result in tool_call_results
+            ]
+            action_logger.log_model_request(input_tokens, output_tokens, tool_calls=tool_call_dicts, chat_history=api_history)
+
+            # 6. Format and handle all tool outputs at once
+            # Format all tool responses in provider-specific format
+            tool_responses_formatted = self.client.format_tool_responses(tool_call_results)
+            # Add them to current turn log
+            self.client.add_tool_outputs_to_turn_log(tool_responses_formatted, current_turn_log)
+            
+            # CRITICAL: We DO NOT append tool_output_content to history_to_update
+            # The user specifically requested to avoid saving tool responses/outputs to history.
+            # We only saved the assistant's text message (without tool call details).
+            
+            # Loop continues... model sees (history + current_turn_log) next iteration
+        
+        return ""

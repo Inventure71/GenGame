@@ -204,16 +204,20 @@ class ActionLogger:
     def log_model_request(self, input_tokens: int, output_tokens: int, tool_calls: list = None, chat_history: list = None):
         """
         Log a model API request with token usage and optional parallel tool calls.
-        
+
         Args:
             input_tokens: Number of input tokens for this request
             output_tokens: Number of output tokens
             tool_calls: List of tool call dicts [{name, args, result, success}, ...] if parallel tools were called
             chat_history: The history that was sent to the model
         """
+        # Ensure tokens are integers (defensive programming)
+        input_tokens = int(input_tokens) if input_tokens is not None else 0
+        output_tokens = int(output_tokens) if output_tokens is not None else 0
+
         self.request_count += 1
         cumulative_before = self.cumulative_input_tokens + self.cumulative_output_tokens
-        
+
         # Update cumulative totals
         self.cumulative_input_tokens += input_tokens
         self.cumulative_output_tokens += output_tokens
@@ -324,14 +328,16 @@ class ActionLogger:
                 # Handle Gemini-style objects
                 else:
                     entry = {"role": content.role, "parts": []}
-                    for part in content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            # Skip thoughts for brevity
-                            if not getattr(part, 'thought', False):
-                                entry["parts"].append({"type": "text", "text": part.text})
-                        elif hasattr(part, 'function_call') and part.function_call:
-                            fc = part.function_call
-                            entry["parts"].append({"type": "function_call", "name": fc.name, "args": dict(fc.args) if fc.args else {}})
+                    # Check if content has parts
+                    if hasattr(content, 'parts') and content.parts:
+                        for part in content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                # Skip thoughts for brevity
+                                if not getattr(part, 'thought', False):
+                                    entry["parts"].append({"type": "text", "text": part.text})
+                            elif hasattr(part, 'function_call') and part.function_call:
+                                fc = part.function_call
+                                entry["parts"].append({"type": "function_call", "name": fc.name, "args": dict(fc.args) if fc.args else {}})
                     if entry["parts"]:  # Only add non-empty entries
                         serialized.append(entry)
             except Exception:

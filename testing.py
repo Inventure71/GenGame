@@ -375,6 +375,7 @@ def main_version_control_interactive():
 
 if __name__ == "__main__":
     print(run_all_tests_tool())
+    #print(load_prompt("coding/system_prompts/fix_agent.md"))
     #handler = BackupHandler("__game_backups")
     #print(handler.compute_directory_hash("GameFolder"))
 

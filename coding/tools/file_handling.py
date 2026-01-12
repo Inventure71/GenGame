@@ -84,6 +84,8 @@ def create_file(path: str = None, **kwargs):
         print(f"[TOOL LOG] create_file output: {result}")
         return result
 
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+
     action_logger.snapshot_file(path)
     
     with open(path, 'w') as f:
@@ -95,35 +97,35 @@ def create_file(path: str = None, **kwargs):
     print(f"[TOOL LOG] create_file output: {result}")
     return result
 
-def read_file(path: str, start_line: int = None, end_line: int = None):
+def read_file(file_path: str, start_line: int = None, end_line: int = None):
     """
     Reads and returns the content of the file at the specified path if allowed.
     Lines are prefixed with line numbers for easier diff creation.
 
     Args:
-        path: The path of the file to read.
+        file_path: The file path to read.
         start_line: Optional starting line number (1-indexed, inclusive). If None, reads from the beginning.
         end_line: Optional ending line number (1-indexed, inclusive). If None, reads to the end.
 
     Returns:
-        str: The file content with line numbers, or an error message if the path is not allowed or the file doesn't exist.
-    
+        str: The file content with line numbers, or an error message if the file_path is not allowed or the file doesn't exist.
+
     Note: When using line ranges, consider expanding the range beyond what you need for better context.
           Example: If you need lines 16-20, request 10-30 to see surrounding code.
     """
     print(f"[TOOL LOG] read_file called with:")
-    print(f"  path: {path}")
+    print(f"  file_path: {file_path}")
     print(f"  start_line: {start_line}")
     print(f"  end_line: {end_line}")
-    
-    allowed = is_file_allowed(path)
+
+    allowed = is_file_allowed(file_path)
     if allowed is not True:
         result = f"Error: Failed to read file: {allowed}"
         print(f"[TOOL LOG] read_file output: {result}")
         return result
         
     try:
-        with open(path, 'r') as f:
+        with open(file_path, 'r') as f:
             lines = f.readlines()
             total_lines = len(lines)
             
@@ -144,17 +146,17 @@ def read_file(path: str, start_line: int = None, end_line: int = None):
                 
                 lines_subset = lines[start_idx:end_idx]
                 content_lines = "".join([f"{i+start_idx+1:{width}}|{line}" for i, line in enumerate(lines_subset)])
-                result = f"{path} (lines {start_idx+1}-{end_idx} of {total_lines})\n{content_lines}"
+                result = f"{file_path} (lines {start_idx+1}-{end_idx} of {total_lines})\n{content_lines}"
                 print(f"[TOOL LOG] read_file output: {len(result)} characters (lines {start_idx+1}-{end_idx} of {total_lines})")
             else:
                 # Read entire file
                 content_lines = "".join([f"{i+1:{width}}|{line}" for i, line in enumerate(lines)])
-                result = f"{path}\n{content_lines}"
+                result = f"{file_path}\n{content_lines}"
                 print(f"[TOOL LOG] read_file output: {len(result)} characters of file content")
-            
+
             return result
     except FileNotFoundError:
-        result = f"Error: File not found: {path}"
+        result = f"Error: File not found: {file_path}"
         print(f"[TOOL LOG] read_file output: {result}")
         return result
 

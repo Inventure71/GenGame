@@ -1,10 +1,12 @@
 import os
 import time
+import json
+from typing import Any, List, Optional
 from google import genai
 from google.genai import types
 from coding.tools._schemas import get_tool_declarations_gemini
 from coding.non_callable_tools.action_logger import action_logger
-
+from coding.standardized_types import StandardizedResponse, StandardizedToolCall, StandardizedToolResult
 
 class GeminiHandler:
     def __init__(self, thinking_model, model_name: str = "models/gemini-3-flash-preview", api_key: str = None):
@@ -45,7 +47,12 @@ class GeminiHandler:
 
     def convert_from_client_schema_to_text(self, content: types.Content):
         text_parts = []
-        role = content.role 
+        role = content.role
+
+        # Check if content has parts
+        if not hasattr(content, 'parts') or not content.parts:
+            return role, ""
+
         for part in content.parts:
             if part.text:
                 text_parts.append(part.text)
@@ -70,13 +77,26 @@ class GeminiHandler:
     def setup_config(self, thinking_level: str = "MEDIUM", system_instruction: str = None, tools: list = None):
         config_kwargs = {"system_instruction": system_instruction, "safety_settings": self.safety_settings}
         
+        thinking_budget_val = {
+            "AUTO": -1,
+            "NONE": 0,
+            "LOW": 4096,
+            "MEDIUM": 12288,
+            "HIGH": 20480
+        }
+
         if self.thinking_model:
             # For Gemini 2.5/3, include_thoughts is often required to see the process
-            config_kwargs["thinking_config"] = types.ThinkingConfig(
-                include_thoughts=True, 
-                thinking_level=thinking_level.lower()
-            )
-        
+            if self.model_name.startswith("models/gemini-3"):
+                config_kwargs["thinking_config"] = types.ThinkingConfig(
+                    include_thoughts=True, 
+                    thinking_level=thinking_level.lower()
+                )
+            else:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(
+                    include_thoughts=True,
+                    thinkingBudget=thinking_budget_val[thinking_level]
+                )
         if tools:
             self.available_tools = tools
             self.tool_map = {tool.__name__: tool for tool in tools}
@@ -88,8 +108,13 @@ class GeminiHandler:
     def filter_chat_history(self, most_recent_chat: list):
         filtered_chat = []
         for content in most_recent_chat:
+            # Check if content has parts
+            if not hasattr(content, 'parts') or not content.parts:
+                filtered_chat.append(content)
+                continue
+
             has_function_call = any(getattr(p, 'function_call', None) for p in content.parts)
-            
+
             if has_function_call:
                 # Convert function calls to text descriptions
                 text_parts = []
@@ -103,7 +128,7 @@ class GeminiHandler:
                         )
                     elif part.text:
                         text_parts.append(part)
-                
+
                 if text_parts:
                     # Create new content with text-only parts
                     filtered_chat.append(
@@ -114,206 +139,123 @@ class GeminiHandler:
                 filtered_chat.append(content)
         return filtered_chat
 
-    def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None) -> str:        
-        turns = 0
-        max_turns = 30 # Safety cutoff
-        stop_loop = False
-        
-        # Local list to track the conversation turn including tool outputs 
-        # so the model can actually see the results of its actions during THIS turn.
-        # But we will NOT append the tool outputs to self.chat_history.
-        current_turn_log = [] 
-        
-        while turns < max_turns and not stop_loop:
-            turns += 1
-            print(f"DEBUG: Turn {turns}", flush=True)
+    def format_tool_responses(self, tool_results: List[StandardizedToolResult]):
+        """Format tool results for Gemini API"""
+        return [
+            types.Part.from_function_response(
+                name=result.name,
+                response={"result": result.result} if result.success else {"error": result.result}
+            )
+            for result in tool_results
+        ]
+    
+    def extract_token_usage(self, response: Any) -> tuple[int, int]:
+        """Extract token usage from Gemini response"""
+        if not response:
+            return 0, 0
 
-            # We use history + current_turn_log for the API call
-            # This ensures the model sees the tool outputs for the current interaction loop
-            api_history = history + current_turn_log
+        usage_meta = getattr(response, 'usage_metadata', None)
+        input_tokens = getattr(usage_meta, 'prompt_token_count', 0) if usage_meta else 0
+        output_tokens = getattr(usage_meta, 'candidates_token_count', 0) if usage_meta else 0
 
-            max_retries = 3
+        # Ensure we always return integers, never None
+        input_tokens = input_tokens if input_tokens is not None else 0
+        output_tokens = output_tokens if output_tokens is not None else 0
 
-            for attempt in range(max_retries):
-                try:
-                    response = self.client.models.generate_content(
-                        model=self.model_name,
-                        contents=api_history,
-                        config=config
-                    )
-                    break  # Success, exit retry loop
-                except Exception as e:
-                    if "500" in str(e) or "INTERNAL" in str(e):  # Server error
-                        if attempt < max_retries - 1:
-                            delay = (2 ** (attempt + 1))  # Exponential backoff: 2s, 4s, 8s
-                            print(f"Server error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
-                            time.sleep(delay)
-                            continue
-                        else:
-                            print(f"Failed after {max_retries} attempts: {e}")
-                            print(f"The request was: {api_history}")
-                            print(f"The config was: {config}")
-                            raise e
+        return input_tokens, output_tokens
+
+    def parse_response(self, response: Any) -> StandardizedResponse:
+        """Parse Gemini response into standardized format"""
+        if not response.candidates:
+            return StandardizedResponse([], [], [])
+
+        candidate = response.candidates[0]
+        model_content = candidate.content
+
+        # Check if content exists and has parts
+        if not model_content or not hasattr(model_content, 'parts') or not model_content.parts:
+            return StandardizedResponse([], [], [])
+
+        text_parts = []
+        thoughts = []
+        tool_calls = []
+
+        for part in model_content.parts:
+            if getattr(part, 'thought', False):
+                thoughts.append(part.text)
+            elif part.text and not getattr(part, 'thought', False):
+                text_parts.append(part.text)
+            elif part.function_call:
+                fc = part.function_call
+                tool_calls.append(StandardizedToolCall(
+                    name=fc.name,
+                    args=dict(fc.args),
+                    call_id=None  # Gemini doesn't use call_ids
+                ))
+
+        return StandardizedResponse(text_parts, thoughts, tool_calls)
+
+    def add_tool_outputs_to_turn_log(self, tool_responses_formatted, current_turn_log):
+        if tool_responses_formatted:
+            tool_output_content = self.convert_to_client_schema(role="tool", content=tool_responses_formatted)
+            current_turn_log.append(tool_output_content)
+
+    def make_api_call(self, api_history: list, config: types.GenerateContentConfig) -> types.GenerateContentResponse:
+        max_retries = 3
+
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=api_history,
+                    config=config
+                )
+                return response
+            except Exception as e:
+                if "500" in str(e) or "INTERNAL" in str(e):  # Server error
+                    if attempt < max_retries - 1:
+                        delay = (2 ** (attempt + 1))  # Exponential backoff: 2s, 4s, 8s
+                        print(f"Server error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                        time.sleep(delay)
+                        continue
                     else:
-                        # Non-server error, re-raise immediately
+                        print(f"Failed after {max_retries} attempts: {e}")
+                        print(f"The request was: {api_history}")
+                        print(f"The config was: {config}")
                         raise e
-            
-            if not response.candidates:
-                return "Error: No candidates."
+                else:
+                    # Non-server error, re-raise immediately
+                    raise e
 
-            candidate = response.candidates[0]
-            model_content = candidate.content
+    def add_response_to_history(self, response: Any, current_turn_log: List, history_to_update: Optional[List] = None):
+        """Add Gemini response to history"""
+        if not response.candidates:
+            return
 
-            if candidate.finish_reason != "STOP": 
-                print(f"DEBUG: Finish Reason: {candidate.finish_reason}")
-            
-            # Guard against None content or parts
-            if not model_content or not model_content.parts:
-                print(f"DEBUG: Empty response content, retrying...")
-                print(f"DEBUG 2: The request was: {api_history}")
-                continue
-                
-            if not model_content.role:
-                model_content.role = "model"
+        candidate = response.candidates[0]
+        model_content = candidate.content
 
-            # 1. Display thoughts and text
-            for part in model_content.parts:
-                if getattr(part, 'thought', False):
-                    print(f"\n[THOUGHT]: {part.text}", flush=True)
-                    action_logger.log_thinking(part.text, chat_history=api_history)
-                if part.text and not getattr(part, 'thought', False):
-                    print(f"\n[MODEL]: {part.text}", flush=True)
-                    action_logger.log_model_text(part.text, chat_history=api_history)
+        # Check if content exists and has parts
+        if not model_content or not hasattr(model_content, 'parts') or not model_content.parts:
+            return
 
-            # 2. Handle History (The Efficiency Logic)
+        has_tool_call = any(p.function_call for p in model_content.parts)
 
-            has_tool_call = any(p.function_call for p in model_content.parts)
+        if has_tool_call:
+            # Preserve exact SDK object
+            current_turn_log.append(model_content)
 
-            if has_tool_call:
-                # IMPORTANT: Preserve the exact SDK object with thought_signature fields intact.
-                current_turn_log.append(model_content)
-
-                #if update_history:
-                # OLD, keep to check if new works.Also preserve exact object in long-term history; do NOT rebuild parts.
-                if history_to_update is not None:
-                    # Filter thoughts out before saving to long-term memory
-                    clean_parts = [p for p in model_content.parts if not getattr(p, "thought", False)]
-                    if clean_parts:
-                        clean_content = self.convert_to_client_schema(role="model", content=clean_parts)
-                        history_to_update.append(clean_content)
-
-            else:
-                # Pure text: OK to strip thoughts to save tokens
+            if history_to_update is not None:
+                # Filter thoughts out before saving to long-term memory
                 clean_parts = [p for p in model_content.parts if not getattr(p, "thought", False)]
                 if clean_parts:
                     clean_content = self.convert_to_client_schema(role="model", content=clean_parts)
-                    current_turn_log.append(clean_content)
-                    if history_to_update is not None:
-                        history_to_update.append(clean_content)
-
-
-            # 3. Process Tool Calls
-            tool_calls = [p.function_call for p in model_content.parts if p.function_call]
-            print(f"DEBUG: In one turn we have {len(tool_calls)} tool calls", flush=True)
-
-            # Extract token usage from response
-            usage_meta = getattr(response, 'usage_metadata', None)
-            input_tokens = getattr(usage_meta, 'prompt_token_count', 0) if usage_meta else 0
-            output_tokens = getattr(usage_meta, 'candidates_token_count', 0) if usage_meta else 0
-            
-            if not tool_calls:
-                # Log the model request for token tracking (no tools)
-                action_logger.log_model_request(input_tokens, output_tokens, tool_calls=None, chat_history=api_history)
-                # Return text only
-                text_parts = [p.text for p in model_content.parts if p.text and not getattr(p, 'thought', False)]
-                return "".join(text_parts) if text_parts else ""
-            
-            # Execute all tool calls and collect results for logging
-            tool_call_results = []
-            tool_responses = []
-            
-            all_tools_success = True
-            regular_tools = [tc for tc in tool_calls if tc.name != "complete_task"]
-            complete_task_calls = [tc for tc in tool_calls if tc.name == "complete_task"]
-
-            for tool_calls_list in [regular_tools, complete_task_calls]:
-                for tool_call in tool_calls_list:
-                    name = tool_call.name
-                    args = tool_call.args
-                    
-                    print(f"DEBUG: Executing {name}({args})", flush=True)
-                    
-                    try:
-                        if name in self.tool_map:
-                            if name == "complete_task" and not all_tools_success:
-                                print(f"DEBUG: complete_task was called but not all tools were successful, so we will not call it really", flush=True)
-                                result = {"error": "Error: Not all tools were successful this turn so completing task is not possible"}
-                                result_str = result["error"]
-                            
-                            else:
-                                result = self.tool_map[name](**args)
-                                if not isinstance(result, dict):
-                                    result = {"result": result}
-                                result_str = str(result.get("result", result))
-
-                            if result_str.startswith("Error:"): # We consider any error as a failure
-                                success = False
-                                all_tools_success = False
-                            else:
-                                success = True
-                            # Log individual action for visual logger
-                            action_logger.log_action(name, dict(args), result_str, success=success, chat_history=api_history)
-                            # Collect result for batch token tracking
-                            tool_call_results.append({
-                                "name": name,
-                                "args": dict(args),
-                                "result": result_str,
-                                "success": success
-                            })
-                        else:
-                            all_tools_success = False
-                            result = {"error": f"Tool '{name}' not found."}
-                            result_str = result["error"]
-                            action_logger.log_action(name, dict(args), result["error"], success=False, chat_history=api_history)
-                            tool_call_results.append({
-                                "name": name,
-                                "args": dict(args),
-                                "result": result_str,
-                                "success": False
-                            })
-                    except Exception as e:
-                        result = {"error": str(e)}
-                        all_tools_success = False
-                        action_logger.log_action(name, dict(args), str(e), success=False, chat_history=api_history)
-                        tool_call_results.append({
-                            "name": name,
-                            "args": dict(args),
-                            "result": str(e),
-                            "success": False
-                        })
-                    
-                    tool_responses.append(
-                        types.Part.from_function_response(
-                            name=name,
-                            response=result
-                        )
-                    )
-
-                    if name == "complete_task" and all_tools_success:
-                        print(f"DEBUG: model ran complete_task, so we will stop the loop FORCEFULLY", flush=True)
-                        stop_loop = True
-                        break
-            
-            # Log the model request with token usage and all tool calls (parallel if > 1)
-            action_logger.log_model_request(input_tokens, output_tokens, tool_calls=tool_call_results, chat_history=api_history)
-            
-            # 4. Handle Tool Outputs
-            # We add the tool outputs to current_turn_log so the model can continue working
-            tool_output_content = self.convert_to_client_schema(role="tool", content=tool_responses)
-            current_turn_log.append(tool_output_content)
-            
-            # CRITICAL: We DO NOT append tool_output_content to self.chat_history
-            # The user specifically requested to avoid saving tool responses/outputs to history.
-            # We only saved the TOOL CALL (in the clean_content above).
-            
-            # Loop continues... model sees (history + current_turn_log) next iteration
+                    history_to_update.append(clean_content)
+        else:
+            # Pure text: OK to strip thoughts to save tokens
+            clean_parts = [p for p in model_content.parts if not getattr(p, "thought", False)]
+            if clean_parts:
+                clean_content = self.convert_to_client_schema(role="model", content=clean_parts)
+                current_turn_log.append(clean_content)
+                if history_to_update is not None:
+                    history_to_update.append(clean_content)

@@ -7,6 +7,7 @@ import traceback
 from pathlib import Path
 from typing import List, Optional, Tuple
 from coding.non_callable_tools.helpers import open_file
+from coding.tools.file_handling import create_file
 from coding.tools.security import is_file_allowed
 from coding.non_callable_tools.action_logger import action_logger
 
@@ -127,8 +128,12 @@ def modify_file_inline(file_path: str = None, diff_text: str = None, **kwargs) -
 
         if not os.path.exists(file_path):
             result = f"Error: File not found at path: {file_path}"
-            print(f"[TOOL LOG] modify_file_inline output: {result}")
-            return result
+            message =create_file(file_path)
+            if message.startswith("Error"):
+                print(f"[TOOL LOG] modify_file_inline output: {result}")
+                return message
+            else:
+                print(f"[TOOL LOG] Created file {file_path} for modification.")
 
         # Snapshot (best-effort)
         try:
@@ -151,13 +156,53 @@ def modify_file_inline(file_path: str = None, diff_text: str = None, **kwargs) -
         # --- 3. Sanitize Input ---
         clean_diff = diff_text.replace("\xa0", " ")
 
+        # --- 3.5. Special handling for empty/nearly-empty files with "create from scratch" diffs ---
+        original_lines = original_content.splitlines()
+        is_empty_file = (
+            len(original_lines) == 0 or  # Truly empty
+            (len(original_lines) == 1 and original_lines[0].strip() == "")  # Just whitespace/newline
+        )
+        
+        skip_normal_diff = False
+        if is_empty_file:
+            # Work with a clean version of diff_lines for parsing
+            temp_diff = clean_diff.strip()
+            diff_lines = temp_diff.splitlines()
+            
+            # Remove markdown code fences if present
+            if diff_lines and diff_lines[0].strip().startswith("```"):
+                diff_lines = diff_lines[1:]
+            if diff_lines and diff_lines[-1].strip().startswith("```"):
+                diff_lines = diff_lines[:-1]
+                
+            if diff_lines and diff_lines[0].startswith("@@ -0,0 "):
+                new_lines = []
+                in_hunk = False
+                for line in diff_lines:
+                    if line.startswith("@@"):
+                        in_hunk = True
+                        continue
+                    if not in_hunk:
+                        continue
+                        
+                    # FIX: If the line starts with '+', it's definitely content.
+                    if line.startswith("+"):
+                        new_lines.append(line[1:])
+                    # FIX: If the file is empty/new, lines starting with spaces 
+                    # are almost certainly Python indentation, not diff context.
+                    elif line.startswith(" "):
+                        new_lines.append(line[1:] if len(line) > 1 else "")
+                    # FIX: If it's malformed (no prefix at all), include it as-is.
+                    elif not line.startswith(("-", "\\")):
+                        new_lines.append(line)
         # --- 4. Apply Patch ---
-        try:
-            new_content, modified_ranges = _apply_unified_diff_safe(original_content, clean_diff)
-        except ValueError as ve:
-            result = f"Error: Failed to apply patch: {str(ve)}"
-            print(f"[TOOL LOG] modify_file_inline output: {result}")
-            return result
+        if not skip_normal_diff:
+            try:
+                new_content, modified_ranges = _apply_unified_diff_safe(original_content, clean_diff)
+            except ValueError as ve:
+                result = f"Error: Failed to apply patch: {str(ve)}"
+                print(f"[TOOL LOG] modify_file_inline output: {result}")
+                return result
 
         if new_content == original_content:
             result = "Warning: The diff was valid but resulted in identical content (no actual changes were made)."

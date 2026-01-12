@@ -30,6 +30,9 @@ You are a QA Engineer creating tests in `GameFolder/tests/` for new features.
 - Naming: `test_<feature>_<scenario>`, `test_<feature>_edge_<condition>`
 - You are provied `GUIDE_Testing.md` for templates and pitfalls
 
+## File Modification
+{include:tool_instructions/modify_file_inline.md}
+
 ## ⚠️ PYGAME THREADING SAFETY - CRITICAL
 
 **pygame operations MUST run on main thread only. Background threads will crash on macOS.**

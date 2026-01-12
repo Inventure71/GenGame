@@ -17,7 +17,7 @@ def gather_context_enchancer():
     lines = [
         "## Context given:",
         "Documentation of BASE game components:",
-        read_file('BASE_components/BASE_COMPONENTS_DOCS.md'),
+        read_file(file_path='BASE_components/BASE_COMPONENTS_DOCS.md'),
     ]
     return "\n".join(lines)
 
@@ -29,7 +29,7 @@ def gather_context_planning():
         get_full_directory_tree(),
         "",
         "## Documentation of BASE components:",
-        read_file("BASE_components/BASE_COMPONENTS_DOCS.md"),
+        read_file(file_path="BASE_components/BASE_COMPONENTS_DOCS.md"),
     ]
     
     # Read core game files
@@ -41,11 +41,11 @@ def gather_context_planning():
         'GameFolder/weapons/GAME_weapon.py',
     ]:
         lines.append(f"\n### {filepath}")
-        lines.append(read_file(filepath))
+        lines.append(read_file(file_path=filepath))
     
     # Setup configuration
     lines.append("\n## Setup Configuration:")
-    lines.append(read_file('GameFolder/setup.py'))
+    lines.append(read_file(file_path='GameFolder/setup.py'))
     
     lines.append("\n=== END OF STARTING CONTEXT ===")
     lines.append("\n⚡ REMINDER: Make ALL read_file calls in PARALLEL in ONE turn. Never read sequentially. ⚡")
@@ -97,7 +97,7 @@ def gather_context_testing():
         "- Effects ACCUMULATE across loop iterations",
         "",
         "## Testing Guide:",
-        read_file("coding/prompts/GUIDE_Testing.md"),
+        read_file(file_path="coding/prompts/GUIDE_Testing.md"),
         "",
         "=== END OF TESTING CONTEXT ==="
     ]

@@ -88,7 +88,7 @@ def implement_feature(modelHandler: GenericHandler, todo_list: TodoList):
     modelHandler.set_tools(all_tools)
     modelHandler.setup_config("LOW", coding_sys_prompt, tools=all_tools)
     print("Waiting 2 seconds for the API to be ready...")
-    time.sleep(2)
+    time.sleep(1)
 
     print("--------------------------------")
     print("\nAgent is working...\n")

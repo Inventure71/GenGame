@@ -22,7 +22,6 @@
 
 **Efficiency**:
 - Typical batch: 3-10+ calls (no artificial limits)
-- After `modify_file_inline`, use returned context; only re-read if accessing different sections
 - Context includes directory tree; refresh only after creating new files
 
 ## Common Pitfalls

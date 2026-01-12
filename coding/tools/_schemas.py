@@ -54,13 +54,14 @@ TOOL_DEFINITIONS = {
             "IMPORTANT: Only use paths you discovered via get_tree_directory! Never guess paths. "
             "STRATEGY: Use full read or better get_file_outline when you don't know the file. Use line ranges when you have partial context. "
             "ALWAYS expand ranges: If you need lines 16-20, request 10-30 for better context. "
+            "After `modify_file_inline`, use returned context; only re-read if accessing different sections"
             "Reads file content with line numbers. Use paths from Starting Context or get_tree_directory. "
             "Utilize as many of these as possible in a single turn for highest efficiency."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {
+                "file_path": {
                     "type": "string",
                     "description": "The file path to read - must be a path you discovered from get_tree_directory output"
                 },
@@ -73,7 +74,7 @@ TOOL_DEFINITIONS = {
                     "description": "Optional ending line number (1-indexed, inclusive). Use when you know approximately where to look."
                 }
             },
-            "required": ["path"]
+            "required": ["file_path"]
         }
     },
     
@@ -81,9 +82,14 @@ TOOL_DEFINITIONS = {
     "modify_file_inline": {
         "name": "modify_file_inline",
         "description": (
-            "Applies a unified diff patch to modify a file."
-            "Include 3 lines context before/after changes. Returns modified section for verification."
-            "IMPORTANT: Use EXACTLY the parameter names 'file_path' and 'diff_text'. "
+            "Applies a unified diff patch to modify a file. CRITICAL REQUIREMENTS:\n"
+            "- Use EXACTLY 'file_path' and 'diff_text' parameter names\n"
+            "- Include 3-5 lines of context that match the file exactly\n"
+            "- Line numbers in @@ header must be accurate\n"
+            "- Context lines must match file content precisely (indentation, spacing)\n"
+            "- For new files: use '@@ -0,0 +1,N @@' format\n"
+            "- Returns modified section for verification\n"
+            "- Creates backup before changes, validates Python syntax"
         ),
         "parameters": {
             "type": "object",
@@ -123,7 +129,10 @@ TOOL_DEFINITIONS = {
     # === TODO LIST MANAGEMENT ===
     "append_to_todo_list": {
         "name": "append_to_todo_list",
-        "description": "Adds a new task to the architect's todo list. Used during the planning phase.",
+        "description": (
+            "Adds a new task to the architect's todo list. Used during the planning phase.\n"
+            "Think about all the features you want to add and utilize as many of these as possible in a single turn for highest efficiency, without comporomising details."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
