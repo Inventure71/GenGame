@@ -3,6 +3,7 @@ import base64
 import hashlib
 import platform
 import os
+import json
 import sys
 import importlib
 import traceback
@@ -157,7 +158,7 @@ def reload_game_code() -> types.ModuleType:
             importlib.reload(module)
         except Exception as e:
             # CRITICAL FIX: Print the error so you know the patch failed!
-            print(f"❌ Failed to reload {name}: {e}")
+            print(f"[error] Failed to reload {name}: {e}")
             traceback.print_exc() 
             
     # 3. Explicitly reload the entry point (setup.py) last
@@ -173,9 +174,36 @@ def reload_game_code() -> types.ModuleType:
         if hasattr(GameFolder.setup, 'Character'):
              print(f"DEBUG: After reload, GameFolder.setup.Character ID: {id(GameFolder.setup.Character)}")
         
-        print("✅ Game code deep reload complete.")
+        print("[success] Game code deep reload complete.")
         return sys.modules['GameFolder.setup']
     except Exception as e:
-        print(f"❌ CRITICAL: Failed to reload setup.py: {e}")
+        print(f"[error] CRITICAL: Failed to reload setup.py: {e}")
         traceback.print_exc()
         return None
+
+def load_settings() -> dict:
+    """Load settings from config file."""
+    config_path = os.path.join("__config", "settings.json")
+    if os.path.exists(config_path):
+        dictionary = {}
+        try:
+            with open(config_path, 'r') as f:
+                settings = json.load(f)
+
+            dictionary["success"] = True
+            dictionary["username"] = settings.get("username", "")
+            dictionary["gemini_api_key"] = decrypt_api_key(settings.get("gemini_api_key", ""))
+            dictionary["openai_api_key"] = decrypt_api_key(settings.get("openai_api_key", ""))
+            dictionary["selected_provider"] = settings.get("selected_provider", "GEMINI")
+            dictionary["model_name"] = settings.get("model", "models/gemini-3-flash-preview")
+            dictionary["base_working_backup"] = settings.get("base_working_backup", None)
+            
+            return dictionary
+        
+        except Exception as e:
+            print(f"Failed to load settings: {e}")
+            dictionary["success"] = False
+            return dictionary
+    else:
+        dictionary["success"] = False
+        return dictionary

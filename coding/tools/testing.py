@@ -35,7 +35,7 @@ def parse_test_results(results: dict) -> dict:
             if issue_to_fix_str:
                 issues_to_fix.append(issue_to_fix_str)
     else:
-        print(f"\n✅ All {results['total_tests']} tests passed!")
+        print(f"\n[success] All {results['total_tests']} tests passed!")
 
     return issues_to_fix
 

@@ -76,7 +76,7 @@ def check_integrity():
     vc = VersionControl()
     is_valid, issues = vc.validate_folder_integrity("GameFolder")
     if not is_valid:
-        print("\n❌ FOLDER INTEGRITY ISSUES DETECTED:")
+        print("\n[error] FOLDER INTEGRITY ISSUES DETECTED:")
         for issue in issues:
             print(f"  - {issue}")
         print("\n[WARNING] Proceeding with corrupted files may lead to further issues.")
@@ -84,7 +84,7 @@ def check_integrity():
             print("Aborting.")
             exit(1)
     else:
-        print("✅ Folder integrity verified.")
+        print("[success] Folder integrity verified.")
 
 def clear_python_cache():
     """

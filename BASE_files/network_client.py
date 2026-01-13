@@ -400,10 +400,10 @@ class NetworkClient:
                 length_bytes = len(data).to_bytes(4, byteorder='big')
                 self._send_data_safe(length_bytes + data)
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] ✅ DEBUG CLIENT: Successfully sent message type '{msg_type}'")
+                print(f"[{timestamp}] [success] DEBUG CLIENT: Successfully sent message type '{msg_type}'")
             except Exception as e:
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] ❌ DEBUG CLIENT: Send error for message type '{message.get('type', 'unknown')}': {e}")
+                print(f"[{timestamp}] [error] DEBUG CLIENT: Send error for message type '{message.get('type', 'unknown')}': {e}")
                 self.disconnect()
                 break
 
@@ -451,7 +451,7 @@ class NetworkClient:
             reason = message.get('reason', 'Unknown reason')
             failed_clients = message.get('failed_clients', [])
             details = message.get('details', [])
-            print(f"❌ Patch sync failed: {reason}")
+            print(f"[error] Patch sync failed: {reason}")
             print(f"Failed clients: {', '.join(failed_clients)}")
             for detail in details:
                 print(f"  - {detail}")
@@ -459,7 +459,7 @@ class NetworkClient:
                 self.on_patch_sync_failed(reason, failed_clients, details)
         elif msg_type == 'patch_merge_failed':
             reason = message.get('reason', 'Unknown reason')
-            print(f"❌ Patch merge failed on server: {reason}")
+            print(f"[error] Patch merge failed on server: {reason}")
             if self.on_patch_merge_failed:
                 self.on_patch_merge_failed(reason)
         elif msg_type == 'game_restarting':
@@ -494,7 +494,7 @@ class NetworkClient:
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                 print(f"[{timestamp}] 🔍 DEBUG CLIENT: _send_backup_to_server completed")
             else:
-                print(f"❌ BACKUP REQUEST: Invalid backup request - no backup_name provided")
+                print(f"[error] BACKUP REQUEST: Invalid backup request - no backup_name provided")
 
     def _send_backup_to_server(self, backup_name: str):
         """Send a backup folder to the server."""
@@ -508,18 +508,18 @@ class NetworkClient:
             print(f"📍 BACKUP SEND: Looking for backup at: {abs_backup_path}")
 
             if not os.path.exists(backup_path):
-                print(f"❌ BACKUP SEND: Backup {backup_name} not found locally at {backup_path}")
-                print(f"❌ BACKUP SEND: Absolute path: {abs_backup_path}")
+                print(f"[error] BACKUP SEND: Backup {backup_name} not found locally at {backup_path}")
+                print(f"[error] BACKUP SEND: Absolute path: {abs_backup_path}")
                 # List contents of __game_backups if it exists
                 game_backups_dir = "__game_backups"
                 if os.path.exists(game_backups_dir):
                     contents = os.listdir(game_backups_dir)
-                    print(f"❌ BACKUP SEND: Contents of __game_backups: {contents}")
+                    print(f"[error] BACKUP SEND: Contents of __game_backups: {contents}")
                 else:
-                    print(f"❌ BACKUP SEND: __game_backups directory does not exist")
+                    print(f"[error] BACKUP SEND: __game_backups directory does not exist")
                 return
 
-            print(f"✅ BACKUP SEND: Found backup '{backup_name}' at {backup_path}")
+            print(f"[success] BACKUP SEND: Found backup '{backup_name}' at {backup_path}")
             print(f"📤 BACKUP SEND: Starting to send backup '{backup_name}' from {backup_path}")
 
             # Create a temporary compressed archive
@@ -562,13 +562,13 @@ class NetworkClient:
                     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                     print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
 
-            print(f"✅ BACKUP SEND: Successfully queued all {total_chunks} chunks for backup '{backup_name}' to server")
+            print(f"[success] BACKUP SEND: Successfully queued all {total_chunks} chunks for backup '{backup_name}' to server")
 
             # Clean up temp file
             os.unlink(temp_path)
 
         except Exception as e:
-            print(f"❌ BACKUP SEND: Failed to send backup {backup_name}: {e}")
+            print(f"[error] BACKUP SEND: Failed to send backup {backup_name}: {e}")
 
     def _handle_file_chunk(self, message: dict):
         """Handle incoming file chunk."""

@@ -195,7 +195,7 @@ def simulate_parallel_tool_calls(tool_calls):
 
 def simulate_task_completion(todo_list, task_description):
     """Simulate completing a TODO task"""
-    print(f"✅ Completing task: {task_description}")
+    print(f"[success] Completing task: {task_description}")
     simulate_parallel_tool_calls([{
         "name": "complete_task",
         "args": {}
@@ -213,7 +213,7 @@ def main():
 
     # Start the session
     action_logger.start_session(visual=True)
-    print("✅ Session started - Visual Logger active")
+    print("[success] Session started - Visual Logger active")
 
     try:
         # PHASE 1: Initial Analysis and Planning
@@ -281,7 +281,7 @@ def main():
         simulate_task_completion(todo_list, "Analyze weapon architecture")
 
         # PHASE 2.5: Error Handling Demonstration
-        print("\n❌ PHASE 2.5: Error Handling")
+        print("\n[error] PHASE 2.5: Error Handling")
         simulate_model_thinking("Let me demonstrate what happens when tools fail - trying unauthorized access and invalid operations.")
 
         simulate_model_response_with_tools(
@@ -289,7 +289,7 @@ def main():
             error_scenarios
         )
 
-        print("✅ Error handling demonstrated - check the visual logger for red 'failed' indicators")
+        print("[success] Error handling demonstrated - check the visual logger for red 'failed' indicators")
 
         # PHASE 3: Design and Implementation
         print("\n⚙️ PHASE 3: Design & Implementation")

@@ -31,7 +31,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
     try:
         # Check if client is connected
         if not network_client or not network_client.connected:
-            print("❌ Network client not connected! Cannot start game.")
+            print("[error] Network client not connected! Cannot start game.")
             return
 
         # Initialize Pygame (safe to call multiple times)
@@ -42,7 +42,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         screen = pygame.display.set_mode((width, height))
         pygame.display.set_caption(f"GenGame Client - {player_id}")
         clock = pygame.time.Clock()
-        print("⚠️  IMPORTANT: Click on the game window to enable keyboard input for movement!")
+        print("[warning]  IMPORTANT: Click on the game window to enable keyboard input for movement!")
 
         # Initialize network client and entity manager
         entity_manager = EntityManager()
@@ -70,7 +70,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     
                     print("✓ Game classes deep reloaded after patch application")
                 else:
-                    print("⚠️ Failed to deep reload game classes")
+                    print("[warning] Failed to deep reload game classes")
 
             except Exception as e:
                 print(f"Failed to reload game classes: {e}")
@@ -93,7 +93,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                         print("✓ Game files synchronized and classes deep reloaded")
                         network_client.acknowledge_file_sync()
                     else:
-                        print("⚠️ Failed to deep reload after file sync")
+                        print("[warning] Failed to deep reload after file sync")
 
                 except Exception as e:
                     print(f"Failed to load synchronized game: {e}")
@@ -115,7 +115,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     
                     print("✓ Game classes deep reloaded for game start")
                 else:
-                    print("⚠️ Failed to deep reload for game start")
+                    print("[warning] Failed to deep reload for game start")
 
             except Exception as e:
                 print(f"Failed to reload game classes for game start: {e}")

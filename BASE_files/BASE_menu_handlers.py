@@ -251,7 +251,7 @@ class MenuHandlers:
                 
                 print(f"✓ Patch '{patch.name}' loaded. Tests: {passed}/{total} passed.")
                 if passed < total:
-                    print("⚠️ Tests failed - Fix button is now available.")
+                    print("[warning] Tests failed - Fix button is now available.")
                 self.menu.show_error_message(f"Loaded: {patch.name} ({passed}/{total} tests passed)")
             else:
                 print(f"✗ Failed to load patch: {errors}")

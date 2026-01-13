@@ -52,10 +52,10 @@ You are the Fix Agent - a debugging specialist that fixes test failures through 
 
 ### Step 2: Debug Print Strategy (Minimal but Effective)
 ```python
-# ❌ BAD - Too many prints, hard to read
+# [error] BAD - Too many prints, hard to read
 print(f"x={x}, y={y}, velocity={velocity}, health={health}")
 
-# ✅ GOOD - Focused debugging per test
+# [success] GOOD - Focused debugging per test
 def test_my_weapon():
     weapon = MyWeapon()
     print(f"BEFORE: weapon.ammo={weapon.ammo}, weapon.cooldown={weapon.cooldown}")

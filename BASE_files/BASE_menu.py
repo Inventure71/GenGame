@@ -12,10 +12,9 @@ import platform
 import subprocess
 import threading
 
-from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
+from BASE_files.BASE_helpers import load_settings
 from BASE_files.patch_manager import PatchManager
 from BASE_files.BASE_game_client import run_client
-from BASE_files.BASE_helpers import encrypt_code, decrypt_code, decrypt_api_key
 from BASE_files.BASE_menu_renderers import MenuRenderers
 from BASE_files.BASE_menu_handlers import MenuHandlers
 from BASE_files.BASE_menu_network import MenuNetwork
@@ -325,17 +324,19 @@ class BaseMenu:
     def run_agent(self, prompt: str, patch_to_load: str = None, needs_rebase: bool = True):
         """Run the agent with the given prompt."""
         try:
-            from agent import new_main
-            success, modelHandler, todo_list, prompt, backup_name = new_main(
+            from agent import start_complete_agent_session
+            settings = {
+                "selected_provider": self.selected_provider,
+                "model_name": self.settings_model,
+                "api_key": self.settings_gemini_key if self.selected_provider == "GEMINI" else self.settings_openai_key
+            }
+            success, modelHandler, todo_list, prompt, backup_name = start_complete_agent_session(
                 prompt=prompt,
                 start_from_base=self.base_working_backup,
                 patch_to_load=patch_to_load,
                 needs_rebase=needs_rebase,
                 UI_called=True,
-                provider=self.selected_provider,
-                model_name=self.settings_model,
-                gemini_api_key=self.settings_gemini_key if self.settings_gemini_key else None,
-                openai_api_key=self.settings_openai_key if self.settings_openai_key else None
+                settings=settings
             )
             self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
             # Get test results
@@ -462,7 +463,7 @@ class BaseMenu:
 
     def name_rejected_callback(self, reason: str):
         """Callback when player name is rejected by server."""
-        print(f"⚠️  Name rejected: {reason}")
+        print(f"[warning]  Name rejected: {reason}")
         self.show_error_message(f"Name rejected: {reason}")
         # Disconnect and return to main menu
         if self.client:
@@ -515,13 +516,13 @@ class BaseMenu:
 
     def patch_sync_failed_callback(self, reason: str, failed_clients: list, details: list):
         """Callback when patch synchronization fails on one or more clients."""
-        print(f"❌ Game start aborted: {reason}")
+        print(f"[error] Game start aborted: {reason}")
         error_msg = f"Game cannot start - Patch failed on: {', '.join(failed_clients)}"
         self.show_error_message(error_msg)
     
     def patch_merge_failed_callback(self, reason: str):
         """Callback when server-side patch merge fails."""
-        print(f"❌ Patch merge failed: {reason}")
+        print(f"[error] Patch merge failed: {reason}")
         self.show_error_message(f"Patches incompatible: {reason}")
         self.patches_ready = False  # Reset ready status
 
@@ -618,29 +619,25 @@ class BaseMenu:
         self.show_error_message("Disconnected from server. Please reconnect.")
 
     def _load_settings(self):
-        """Load settings from config file."""
-        import json
-        import os
+        settings_dict = load_settings()
+        if settings_dict.get("success"):
+            self.settings_username = settings_dict.get("username", "")
+            self.settings_gemini_key = settings_dict.get("gemini_api_key", "")
+            self.settings_openai_key = settings_dict.get("openai_api_key", "")
+            self.selected_provider = settings_dict.get("selected_provider", "GEMINI")
+            self.settings_model = settings_dict.get("model", "models/gemini-3-flash-preview")
+            self.base_working_backup = settings_dict.get("base_working_backup", None)
 
-        config_path = os.path.join("__config", "settings.json")
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, 'r') as f:
-                    settings = json.load(f)
-                self.settings_username = settings.get("username", "")
-                self.settings_gemini_key = decrypt_api_key(settings.get("gemini_api_key", ""))
-                self.settings_openai_key = decrypt_api_key(settings.get("openai_api_key", ""))
-                self.selected_provider = settings.get("selected_provider", "GEMINI")
-                self.settings_model = settings.get("model", "models/gemini-3-flash-preview")
-                self.base_working_backup = settings.get("base_working_backup", None)
-                
-                # Set player_id to username from settings if available
-                if self.settings_username:
-                    self.player_id = self.settings_username
-
-                print("Settings loaded successfully")
-            except Exception as e:
-                print(f"Failed to load settings: {e}")
+            # Set player_id to settings username if available and player_id is empty
+            if self.settings_username and not self.player_id:
+                self.player_id = self.settings_username
+        else:
+            print("No settings found, using default settings")
+            self.settings_username = ""
+            self.settings_gemini_key = ""
+            self.settings_openai_key = ""
+            self.selected_provider = "GEMINI"
+            self.settings_model = ""
 
     def on_start(self):
         self._load_settings()

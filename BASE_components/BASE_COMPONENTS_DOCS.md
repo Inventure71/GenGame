@@ -2,7 +2,7 @@
 
 This document serves as the official API reference for the core GenGame engine. These components are located in `BASE_components/` and are **READ-ONLY**. All new game features must inherit from these classes in the `GameFolder/` directory.
 
-**⚠️ Important**: This documentation focuses only on the public API that game developers can use and modify through inheritance. Internal systems (networking, serialization) are not documented as they cannot be modified.
+**[warning] Important**: This documentation focuses only on the public API that game developers can use and modify through inheritance. Internal systems (networking, serialization) are not documented as they cannot be modified.
 
 ---
 
@@ -29,7 +29,7 @@ Inputs are captured directly from pygame events.
 - **Conversion Formula**: `screen_y = arena_height - world_y - object_height`
 - **Conversion Methods**: Use `self.screen_to_world(x, y)` and `self.world_to_screen(x, y)` in the Arena class.
 
-**⚠️ CRITICAL WARNING**: NEVER hardcode `arena_height` values in collision detection or coordinate conversion! Always:
+**[warning] CRITICAL WARNING**: NEVER hardcode `arena_height` values in collision detection or coordinate conversion! Always:
   1. Pass `arena_height` as a parameter (preferred), OR
   2. Store it in `self.last_arena_height` during `update()` and use that value
   

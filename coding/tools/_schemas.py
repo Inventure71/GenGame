@@ -15,7 +15,7 @@ TOOL_DEFINITIONS = {
         "description": (
             "Shows directory tree structure. The tree is ALREADY in your Starting Context - "
             "only call this AFTER creating new files to refresh paths. "
-            "⚠️ WARNING: The directory tree is ALREADY provided in your initial context at the start of each session. "
+            "[warning] WARNING: The directory tree is ALREADY provided in your initial context at the start of each session. "
             "Access limited to 'GameFolder' and 'BASE_components'."
         ),
         "parameters": {
@@ -242,8 +242,7 @@ TOOL_DEFINITIONS = {
         "name": "resolve_conflict",
         "description": (
             "Resolves a specific merge conflict in a patch file. "
-            "Choose 'a' for patch A's version, 'b' for patch B's, 'both' for both, or 'manual' with custom content."
-            "When choosing both be aware that the indentation spaces between both need to be the same"
+            "Choose 'a' for patch A's version, 'b' for patch B's, or 'manual' with custom merged content. CRITICAL: For manual merges, ensure PERFECT indentation - Python syntax depends on it!"
             "IMPORTANT: fix as many merge conflicts at once in one turn by calling this function in parallel"
         ),
         "parameters": {
@@ -263,8 +262,8 @@ TOOL_DEFINITIONS = {
                 },
                 "resolution": {
                     "type": "string",
-                    "enum": ["a", "b", "both", "manual"],
-                    "description": "Resolution choice: 'a' (use patch A), 'b' (use patch B), 'both' (keep both), 'manual' (custom)"
+                    "enum": ["a", "b", "manual"],
+                    "description": "Resolution choice: 'a' (use patch A), 'b' (use patch B), 'manual' (custom merge with PERFECT indentation)"
                 },
                 "manual_content": {
                     "type": "array",

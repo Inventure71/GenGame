@@ -33,29 +33,29 @@ You are a QA Engineer creating tests in `GameFolder/tests/` for new features.
 ## File Modification
 {include:tool_instructions/modify_file_inline.md}
 
-## ⚠️ PYGAME THREADING SAFETY - CRITICAL
+## [warning] PYGAME THREADING SAFETY - CRITICAL
 
 **pygame operations MUST run on main thread only. Background threads will crash on macOS.**
 
 ### Threading Violations (Will Crash):
 ```python
-# ❌ WRONG - Background thread
+# [error] WRONG - Background thread
 def test_pygame_in_thread():
     pygame.init()  # CRASHES: 'nextEventMatchingMask should only be called from the Main Thread!'
 
-# ❌ WRONG - Event handling in tests
+# [error] WRONG - Event handling in tests
 def test_with_events():
     pygame.event.get()  # CRASHES if not main thread
 ```
 
 ### Thread-Safe Patterns:
 ```python
-# ✅ CORRECT - Always use headless=True for Arena
+# [success] CORRECT - Always use headless=True for Arena
 def test_game_logic():
     arena = Arena(800, 600, headless=True)  # No pygame event handling
     # Safe for any thread
 
-# ✅ CORRECT - Manual key simulation
+# [success] CORRECT - Manual key simulation
 def test_input_handling():
     arena = Arena(800, 600, headless=True)
     # Simulate key presses directly:
@@ -65,7 +65,7 @@ def test_input_handling():
 
 ### Arena Creation - ALWAYS headless:
 ```python
-# ✅ CORRECT - All tests use headless mode
+# [success] CORRECT - All tests use headless mode
 arena = Arena(width, height, headless=True)
 character = Character("Test", "Desc", "", [100, 100])
 arena.add_character(character)

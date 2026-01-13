@@ -46,14 +46,14 @@
 
 ### Common Mistakes → Fixes
 
-**❌ Guessing line numbers:**
+**[error] Guessing line numbers:**
 ```diff
 @@ -100,1 +100,3 @@  # WRONG - Made up numbers
  def method(self):
      pass
 ```
 
-**✅ Reading file first:**
+**[success] Reading file first:**
 ```diff
 @@ -107,4 +107,8 @@  # RIGHT - Actual line numbers from read_file
      def method(self):
@@ -62,7 +62,7 @@
          pass
 ```
 
-**❌ Wrong indentation:**
+**[error] Wrong indentation:**
 ```diff
 @@ -64,6 +64,8 @@
              self.running = False
@@ -72,7 +72,7 @@
 +                    self.do_dash()
 ```
 
-**✅ Exact match:**
+**[success] Exact match:**
 ```diff
 @@ -64,6 +64,8 @@
              self.running = False

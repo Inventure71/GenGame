@@ -13,7 +13,8 @@ from coding.non_callable_tools.action_logger import action_logger
 from coding.tools.testing import run_all_tests_tool, parse_test_results
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.helpers import check_integrity, load_prompt
-from coding.tools.conflict_resolution import get_all_conflicts, resolve_conflict
+from coding.tools.conflict_resolution import get_all_conflicts, resolve_conflict, set_conflict_todo_tracking, clear_conflict_todo_tracking
+from coding.non_callable_tools.todo_list import TodoList
 
 def main_version_control(file_containing_patches: str = "patches.json"):
     load_dotenv()
@@ -184,167 +185,6 @@ def main_manual_repl():
     action_logger.end_session()
     print("Session ended.")
 
-def auto_fix_conflicts(path_to_problematic_patch: str, patch_paths: List[str] = None, base_backup: str = None):
-    """
-    Auto-fix conflicts in a merged patch, with caching support.
-
-    Args:
-        path_to_problematic_patch: Path to the patch file with conflicts
-        patch_paths: List of original patch files (for caching)
-        base_backup: Base backup name (for caching)
-    """
-    from coding.tools.conflict_resolution import clear_resolution_tracker
-
-    conflicts_by_file = get_all_conflicts(path_to_problematic_patch)
-    print(f"Found conflicts in {len(conflicts_by_file)} file(s)")
-
-    if len(conflicts_by_file) == 0:
-        print("No conflicts found, continuing...")
-        return
-
-    # Clear resolution tracker for new session
-    clear_resolution_tracker()
-
-    # Try to apply cached resolutions if we have patch information
-    cached_resolutions_applied = 0
-    if base_backup:
-        from coding.non_callable_tools.simple_conflict_cache import try_apply_cached_conflicts
-
-        cached_resolutions_applied = try_apply_cached_conflicts(path_to_problematic_patch, base_backup)
-
-        # Check if all conflicts were resolved by cache
-        remaining_conflicts = get_all_conflicts(path_to_problematic_patch)
-        if len(remaining_conflicts) == 0:
-            print(f"✅ All conflicts resolved using cache ({cached_resolutions_applied} applied)")
-            return
-
-    if cached_resolutions_applied > 0:
-        print(f"Cache resolved {cached_resolutions_applied} conflicts, {sum(len(c) for c in get_all_conflicts(path_to_problematic_patch).values())} remaining")
-    else:
-        print("No cached resolutions available, proceeding with LLM resolution...")
-
-    load_dotenv()
-    check_integrity()
-    action_logger.start_session(visual=True)
-    print("Waiting 5 seconds to start...")
-    time.sleep(5)
-
-    modelHandler = GenericHandler(
-        thinking_model=True,
-        provider="GEMINI",
-        model_name="models/gemini-3-flash-preview",
-    )
-    tools = [
-        # add the tool to fix the conflict
-        resolve_conflict,    
-        read_file,
-    ]
-
-    # Load the dedicated conflict resolution system prompt
-    fix_conflicts_sys_prompt = load_prompt("coding/system_prompts/solve_conflicts.md", include_general_context=False)
-
-    modelHandler.set_tools(tools)
-    modelHandler.setup_config("LOW", fix_conflicts_sys_prompt, tools=tools)
-
-    max_conflicts_per_request = 10
-
-    for file_path, conflicts in conflicts_by_file.items():
-        print(f"File: {file_path}")
-        print("Cleaning chat history for this file...")
-        modelHandler.clean_chat_history()
-
-        # IMPORTANT: Process conflicts in REVERSE order (highest conflict_num first)
-        # This prevents renumbering issues when resolving multiple conflicts
-        conflicts_reversed = sorted(conflicts, key=lambda c: c['conflict_num'], reverse=True)
-
-        len_conflicts = len(conflicts_reversed)
-        if len_conflicts > max_conflicts_per_request:
-            print("A lot of conflicts, splitting them into batches of 10")
-            num_blocks = math.ceil(len_conflicts / max_conflicts_per_request)
-            print(f"Number of blocks: {num_blocks} because we have {len_conflicts} conflicts and we can handle {max_conflicts_per_request} at once")
-        else:
-            num_blocks = 1
-            print("Less than max conflicts per request, so we can handle all in one call")
-
-        for i in range(num_blocks):
-            start_idx = i * max_conflicts_per_request
-            end_idx = min(start_idx + max_conflicts_per_request, len_conflicts)
-            conflicts_block = conflicts_reversed[start_idx:end_idx]
-            
-            # Format conflicts for the prompt in a readable way
-            conflicts_formatted = []
-            for conflict in conflicts_block:
-                conflicts_formatted.append({
-                    'conflict_num': conflict['conflict_num'],
-                    'option_a': conflict['option_a'],
-                    'option_b': conflict['option_b']
-                })
-                print(f"Conflict #{conflict['conflict_num']}:")
-                print(f"  Option A: {conflict['option_a']}")
-                print(f"  Option B: {conflict['option_b']}")
-            
-            # Build prompt with ALL required info including patch_path
-            prompt = (
-                f"## Patch file: `{path_to_problematic_patch}`\n"
-                f"## File with conflicts: `{file_path}`\n\n"
-                f"### Conflicts to resolve (resolve from HIGHEST conflict_num to LOWEST):\n"
-                f"{conflicts_formatted}\n\n"
-                f"Resolve ALL conflicts using the `resolve_conflict` tool. "
-                f"Remember: patch_path='{path_to_problematic_patch}', file_path='{file_path}'"
-            )
-            print("Sending prompt to model...")
-            resp = modelHandler.generate_response(
-                prompt=prompt,
-                use_tools=True,
-                use_history=True,
-            )
-            print("\n[RETURNED]:\n", resp, "\n")
-        
-    print("Completed merge handling, checking for conflicts again...")
-    remaining_conflicts = get_all_conflicts(path_to_problematic_patch)
-
-    if len(remaining_conflicts) > 0:
-        print("Conflicts still exist, please fix them manually")
-        print("Conflicts: ", remaining_conflicts)
-        raise Exception("Conflicts still exist, please fix them manually")
-    else:
-        print("No conflicts found, continuing...")
-
-        # Cache the successful resolutions if we have the required information
-        if base_backup and cached_resolutions_applied == 0:
-            # Only cache if we actually did LLM resolution (not just applied cache)
-            _cache_successful_resolutions(path_to_problematic_patch, base_backup, conflicts_by_file)
-
-
-def _cache_successful_resolutions(patch_path: str, base_backup: str, original_conflicts: Dict[str, List[Dict]]):
-    """
-    Cache the resolutions that were successfully applied to resolve conflicts.
-    Uses the tracked resolutions from the LLM interaction.
-    """
-    from coding.non_callable_tools.simple_conflict_cache import get_conflict_cache
-    from coding.tools.conflict_resolution import get_resolution_tracker
-
-    cache = get_conflict_cache()
-    tracker = get_resolution_tracker()
-
-    cached_count = 0
-    for file_path, conflicts in original_conflicts.items():
-        for conflict in conflicts:
-            conflict_hash = cache.get_conflict_hash(conflict["option_a"], conflict["option_b"])
-
-            # Get the actual resolution that was applied
-            key = f"{file_path}:{conflict['conflict_num']}"
-            resolution = tracker.get(key)
-
-            if resolution:
-                cache.store_resolution(conflict_hash, base_backup, resolution)
-                cached_count += 1
-
-    if cached_count > 0:
-        print(f"✅ Cached {cached_count} LLM resolutions for future reuse")
-    else:
-        print("No resolutions to cache")
-
 def main_version_control_interactive():
     load_dotenv()
     check_integrity()
@@ -370,9 +210,7 @@ def main_version_control_interactive():
         #vc.resolve_conflicts_interactive("merged_patch.json")
     
     action_logger.end_session()
-
-
-
+            
 if __name__ == "__main__":
     print(run_all_tests_tool())
     #print(load_prompt("coding/system_prompts/fix_agent.md"))

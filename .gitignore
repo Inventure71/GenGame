@@ -18,3 +18,4 @@ __config/
 .dockerignore
 docker-compose.yml
 Dockerfile
+AGENTS.md

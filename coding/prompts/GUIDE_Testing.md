@@ -307,25 +307,25 @@ python -m BASE_components.BASE_tests
 ```
 
 ## RULES
-- ✅ Function names: `test_*`
-- ✅ No parameters
-- ✅ Clear assertion messages
-- ✅ One concept per test
-- ✅ Import actual game classes from `GameFolder/`
-- ❌ No bare `assert` without messages
+- [success] Function names: `test_*`
+- [success] No parameters
+- [success] Clear assertion messages
+- [success] One concept per test
+- [success] Import actual game classes from `GameFolder/`
+- [error] No bare `assert` without messages
 
 ---
 
-## ⚠️ CRITICAL: COMMON TEST PITFALLS
+## [warning] CRITICAL: COMMON TEST PITFALLS
 
 ### 0. WRONG CONSTRUCTOR SIGNATURES (MOST COMMON!)
 **Always check `__init__` parameters before creating objects in tests.**
 
 ```python
-# ❌ WRONG - Assumed separate velocity components
+# [error] WRONG - Assumed separate velocity components
 proj = MyProjectile(x, y, vx, vy, damage, owner_id)
 
-# ✅ CORRECT - Checked actual signature uses direction vector + speed
+# [success] CORRECT - Checked actual signature uses direction vector + speed
 proj = MyProjectile(x, y, [1, 0], speed, damage, owner_id)
 ```
 
@@ -339,15 +339,15 @@ proj = MyProjectile(x, y, [1, 0], speed, damage, owner_id)
 **Always check what methods actually return.**
 
 ```python
-# ❌ WRONG - Assumed shoot() returns list
+# [error] WRONG - Assumed shoot() returns list
 projectiles = gun.shoot(x, y, tx, ty, owner_id)
 assert len(projectiles) == 1  # FAILS if shoot() returns single object
 
-# ✅ CORRECT - Checked implementation
+# [success] CORRECT - Checked implementation
 projectile = gun.shoot(x, y, tx, ty, owner_id)
 assert isinstance(projectile, MyProjectile)
 
-# ✅ ALSO CORRECT - Handle both cases
+# [success] ALSO CORRECT - Handle both cases
 result = gun.shoot(x, y, tx, ty, owner_id)
 projectiles = result if isinstance(result, list) else [result] if result else []
 ```
@@ -356,12 +356,12 @@ projectiles = result if isinstance(result, list) else [result] if result else []
 **Never assume standard attribute names. Search for `self.` in the class.**
 
 ```python
-# ❌ WRONG - Assumed standard names
+# [error] WRONG - Assumed standard names
 assert proj.vx > 0
 assert proj.vy < 0
 assert proj.is_on_floor
 
-# ✅ CORRECT - Found actual names in implementation
+# [success] CORRECT - Found actual names in implementation
 assert proj.horizontal_velocity > 0
 assert proj.vertical_velocity < 0
 assert proj.is_stationary
@@ -373,11 +373,11 @@ assert proj.is_stationary
 Some attributes like `is_alive` are state flags that are only updated by specific methods, not automatically computed from other values:
 
 ```python
-# ❌ WRONG - directly modifying underlying data
+# [error] WRONG - directly modifying underlying data
 char.health = 0
 assert char.is_alive is False  # FAILS! Flag not updated
 
-# ✅ CORRECT - use the proper method
+# [success] CORRECT - use the proper method
 char.die()  # Or use take_damage() which calls die()
 assert char.is_alive is False  # PASSES
 ```
@@ -408,17 +408,17 @@ char.take_damage(amount)
 **Objects that maintain state between method calls need fresh instances or explicit resets.**
 
 ```python
-# ❌ WRONG - state from first call affects second
+# [error] WRONG - state from first call affects second
 obj = StatefulObject()
 result1 = obj.action()  # Works
 result2 = obj.action()  # Fails due to cooldown/state
 
-# ✅ CORRECT - fresh instance per test
+# [success] CORRECT - fresh instance per test
 def test_action():
     obj = StatefulObject()
     result = obj.action()
 
-# ✅ OR explicitly reset state
+# [success] OR explicitly reset state
 obj = StatefulObject()
 obj.action()
 obj.reset_state()  # or obj.internal_timer = 0
@@ -431,14 +431,14 @@ obj.action()  # Now works
 **Use integer iteration counts instead of floating point accumulation.**
 
 ```python
-# ❌ WRONG - float errors accumulate over iterations
+# [error] WRONG - float errors accumulate over iterations
 dt = 0.1
 total = 0.0
 while total < target_time:
     obj.update(dt)
     total += dt  # Precision errors accumulate!
 
-# ✅ CORRECT - count iterations as integers
+# [success] CORRECT - count iterations as integers
 dt = 0.1
 iterations = int(target_time / dt)
 for i in range(iterations):
@@ -451,14 +451,14 @@ for i in range(iterations):
 **Capture baseline state AFTER setup, BEFORE the action you're testing.**
 
 ```python
-# ❌ WRONG - setup loop affects baseline measurement
+# [error] WRONG - setup loop affects baseline measurement
 for _ in range(setup_frames):
     simulate()  # Effects accumulate
 initial_state = capture_state()  # Already affected!
 simulate()  # Test action
 # Expected delta is wrong!
 
-# ✅ CORRECT - capture state between setup and test
+# [success] CORRECT - capture state between setup and test
 for _ in range(setup_frames):
     simulate()
 initial_state = capture_state()  # Capture AFTER setup
@@ -470,10 +470,10 @@ assert state_changed_correctly(initial_state)
 **Use object's scale properties when calculating positions and sizes.**
 
 ```python
-# ❌ WRONG - ignores scaling
+# [error] WRONG - ignores scaling
 position = obj.location[0] + obj.width / 2
 
-# ✅ CORRECT - includes scale factor
+# [success] CORRECT - includes scale factor
 position = obj.location[0] + (obj.width * obj.scale) / 2
 ```
 
@@ -481,10 +481,10 @@ position = obj.location[0] + (obj.width * obj.scale) / 2
 **Use designated methods instead of direct collection manipulation.**
 
 ```python
-# ⚠️ RISKY - may skip initialization or validation
+# [warning] RISKY - may skip initialization or validation
 container.items = [item1, item2]
 
-# ✅ PREFERRED - uses proper API
+# [success] PREFERRED - uses proper API
 container.add_item(item1)
 container.add_item(item2)
 ```
@@ -493,12 +493,12 @@ container.add_item(item2)
 **Be aware of precision loss when systems use integer coordinates.**
 
 ```python
-# ❌ WRONG - assumes exact single-frame collision
+# [error] WRONG - assumes exact single-frame collision
 obj = Object(pos=narrow_gap)
 simulate_one_frame()
 assert obj.collided  # FAILS! Precision loss prevents exact collision
 
-# ✅ CORRECT - allow multiple frames for collision to occur
+# [success] CORRECT - allow multiple frames for collision to occur
 obj = Object(pos=starting_position)
 max_frames = 60
 for _ in range(max_frames):
@@ -514,11 +514,11 @@ assert obj.collided
 **Focus on observable behaviors and outcomes rather than exact internal values.**
 
 ```python
-# ❌ WRONG - brittle assertions on exact values
+# [error] WRONG - brittle assertions on exact values
 assert obj.position == 123.456
 assert obj.internal_counter == 42
 
-# ✅ CORRECT - test meaningful outcomes
+# [success] CORRECT - test meaningful outcomes
 assert obj.reached_target
 assert obj.direction_reversed
 assert obj.damage > initial_damage
@@ -530,7 +530,7 @@ assert obj.damage > initial_damage
 **For time-based or collision-based events, use a loop-until-event pattern.**
 
 ```python
-# ✅ PATTERN: Simulate until event occurs or timeout
+# [success] PATTERN: Simulate until event occurs or timeout
 def test_collision_event():
     setup_objects()
     initial_state = capture_state()
@@ -558,24 +558,24 @@ The game uses TWO coordinate systems:
 # Converting world to screen:
 screen_y = arena.height - world_y - object_height
 
-# ❌ WRONG - mixing coordinate systems without conversion
-# ✅ CORRECT - explicit conversion with proper dimensions
+# [error] WRONG - mixing coordinate systems without conversion
+# [success] CORRECT - explicit conversion with proper dimensions
 ```
 
 ### 10.5. Avoid Hardcoded Configuration Values
 **Pass configuration as parameters or store during initialization.**
 
 ```python
-# ❌ WRONG - hardcoded value breaks tests with different configs
+# [error] WRONG - hardcoded value breaks tests with different configs
 def process(self, data):
     max_size = 900  # Hardcoded!
     result = max_size - data.value
     
-# ✅ CORRECT - pass as parameter with sensible default
+# [success] CORRECT - pass as parameter with sensible default
 def process(self, data, max_size=900):
     result = max_size - data.value
 
-# ✅ ALSO CORRECT - store during initialization
+# [success] ALSO CORRECT - store during initialization
 def __init__(self, config):
     self.max_size = config.get('max_size', 900)
     
@@ -589,11 +589,11 @@ def process(self, data):
 **Start objects with sufficient separation to ensure reliable collision detection.**
 
 ```python
-# ❌ WRONG - minimal spacing affected by precision loss
+# [error] WRONG - minimal spacing affected by precision loss
 obj1_pos = 200
 obj2_pos = 201  # Only 1 unit apart
 
-# ✅ CORRECT - provide adequate margin
+# [success] CORRECT - provide adequate margin
 obj1_pos = 200
 obj2_pos = 210  # Clear separation for reliable collision
 ```

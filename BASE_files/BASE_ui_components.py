@@ -183,7 +183,7 @@ class TextField(UIComponent):
     """Full-featured input with cursor, selection, and clipboard support."""
     def __init__(self, x, y, width, height, font, placeholder="", is_multiline=False, name=None):
         super().__init__(x, y, width, height, name=name)
-        self.text = ""
+        self._text = ""
         self.font = font
         self.placeholder = placeholder
         self.is_multiline = is_multiline
@@ -199,6 +199,16 @@ class TextField(UIComponent):
         self.placeholder_color = (150, 150, 150)
         self._focused = False  # Initialize the backing field
         self._text_input_enabled = False
+
+    @property
+    def text(self):
+        return self._text
+
+    @text.setter
+    def text(self, value):
+        self._text = value
+        # When text is set externally, position cursor at the end
+        self.cursor_pos = len(value)
 
     @property
     def focused(self):
@@ -220,7 +230,7 @@ class TextField(UIComponent):
 
     def _get_lines(self):
         """Get text as list of lines."""
-        return self.text.split('\n')
+        return self._text.split('\n')
 
     def _get_cursor_line_col(self):
         """Get current cursor position as (line_index, col_index)."""
@@ -277,12 +287,12 @@ class TextField(UIComponent):
 
             if event.key == pygame.K_BACKSPACE:
                 if self.cursor_pos > 0:
-                    self.text = self.text[:self.cursor_pos-1] + self.text[self.cursor_pos:]
+                    self._text = self._text[:self.cursor_pos-1] + self._text[self.cursor_pos:]
                     self.cursor_pos -= 1
                 return True
             elif event.key == pygame.K_DELETE:
-                if self.cursor_pos < len(self.text):
-                    self.text = self.text[:self.cursor_pos] + self.text[self.cursor_pos+1:]
+                if self.cursor_pos < len(self._text):
+                    self._text = self._text[:self.cursor_pos] + self._text[self.cursor_pos+1:]
                 return True
             elif event.key == pygame.K_LEFT:
                 if self.cursor_pos > 0:
@@ -298,9 +308,11 @@ class TextField(UIComponent):
                 return True
             elif event.key == pygame.K_HOME:
                 self.cursor_pos = 0
+                if self.is_multiline:
+                    self._ensure_cursor_visible()
                 return True
             elif event.key == pygame.K_END:
-                self.cursor_pos = len(self.text)
+                self.cursor_pos = len(self._text)
                 if self.is_multiline:
                     self._ensure_cursor_visible()
                 return True
@@ -329,7 +341,7 @@ class TextField(UIComponent):
                         clip = pygame.scrap.get(pygame.SCRAP_TEXT)
                         if clip:
                             paste_text = clip.decode('utf-8').replace('\x00', '').replace('\r\n', '\n').replace('\r', '\n')
-                            self.text = self.text[:self.cursor_pos] + paste_text + self.text[self.cursor_pos:]
+                            self._text = self._text[:self.cursor_pos] + paste_text + self._text[self.cursor_pos:]
                             self.cursor_pos += len(paste_text)
                 except:
                     pass
@@ -339,7 +351,7 @@ class TextField(UIComponent):
                 try:
                     if hasattr(pygame, 'scrap'):
                         if not pygame.scrap.get_init(): pygame.scrap.init()
-                        pygame.scrap.put(pygame.SCRAP_TEXT, self.text.encode('utf-8'))
+                        pygame.scrap.put(pygame.SCRAP_TEXT, self._text.encode('utf-8'))
                 except:
                     pass
                 return True
@@ -351,7 +363,7 @@ class TextField(UIComponent):
 
                     # Insert newline with automatic indentation
                     indent_str = " " * indent
-                    self.text = self.text[:self.cursor_pos] + "\n" + indent_str + self.text[self.cursor_pos:]
+                    self._text = self._text[:self.cursor_pos] + "\n" + indent_str + self._text[self.cursor_pos:]
                     self.cursor_pos += 1 + indent
                     self._ensure_cursor_visible()
                 else:
@@ -360,12 +372,12 @@ class TextField(UIComponent):
             elif event.key == pygame.K_TAB:
                 # Insert tab character
                 tab_char = "    "  # 4 spaces for tab
-                self.text = self.text[:self.cursor_pos] + tab_char + self.text[self.cursor_pos:]
+                self._text = self._text[:self.cursor_pos] + tab_char + self._text[self.cursor_pos:]
                 self.cursor_pos += len(tab_char)
                 return True
             else:
                 if event.unicode and event.unicode.isprintable():
-                    self.text = self.text[:self.cursor_pos] + event.unicode + self.text[self.cursor_pos:]
+                    self._text = self._text[:self.cursor_pos] + event.unicode + self._text[self.cursor_pos:]
                     self.cursor_pos += 1
                     if self.is_multiline:
                         self._ensure_cursor_visible()
@@ -390,21 +402,27 @@ class TextField(UIComponent):
 
         if not self.is_multiline:
             # Single-line rendering
-            display_text = self.text if self.text or not self.placeholder else self.placeholder
-            color = self.text_color if self.text else self.placeholder_color
+            display_text = self._text if self._text or not self.placeholder else self.placeholder
+            color = self.text_color if self._text else self.placeholder_color
 
             text_surf = self.font.render(display_text, True, color)
 
-            # Truncate if too long for the box
+            # Calculate cursor position in text
+            text_up_to_cursor = self._text[:self.cursor_pos]
+            cursor_text_surf = self.font.render(text_up_to_cursor, True, self.text_color)
+            cursor_offset = cursor_text_surf.get_width()
+
+            # Handle text truncation for display
             max_w = self.rect.width - self.padding * 2
             if text_surf.get_width() > max_w:
-                # Show the end of the text
+                # Text is too long, show end portion
                 crop_rect = pygame.Rect(text_surf.get_width() - max_w, 0, max_w, text_surf.get_height())
                 screen.blit(text_surf, (self.rect.x + self.padding, self.rect.y + (self.rect.height - text_surf.get_height())//2), crop_rect)
-                cursor_offset = max_w
+                # Adjust cursor offset relative to the cropped display
+                cursor_offset = max(0, cursor_offset - (text_surf.get_width() - max_w))
             else:
+                # Text fits, display normally
                 screen.blit(text_surf, (self.rect.x + self.padding, self.rect.y + (self.rect.height - text_surf.get_height())//2))
-                cursor_offset = text_surf.get_width()
 
             # Cursor for single-line
             if self.focused and (pygame.time.get_ticks() // 500) % 2 == 0:

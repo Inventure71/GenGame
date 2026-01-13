@@ -53,7 +53,7 @@ def create_file(path: str = None, **kwargs):
             f"WARNING: Received unexpected parameter(s): {wrong_params}\n"
             f"This tool ONLY accepts ONE parameter:\n"
             f"  • path (str): The file path to create\n"
-            f"\n⚠️  This tool creates EMPTY files only! To write content:\n"
+            f"\n[warning]  This tool creates EMPTY files only! To write content:\n"
             f"  1. Call create_file(path='...') to create empty file\n"
             f"  2. Call modify_file_inline(file_path='...', diff_text='...') to add content\n"
             f"\nParameter issues:\n" + "\n".join(suggestions)

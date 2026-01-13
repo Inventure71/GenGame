@@ -1754,7 +1754,7 @@ class VisualLogger {
         md += '## Action Details\n\n';
         this.state.actions.forEach((action, idx) => {
             md += `### ${idx + 1}. ${action.name}\n\n`;
-            md += `- **Status**: ${action.success === false ? '❌ Failed' : '✅ Success'}\n`;
+            md += `- **Status**: ${action.success === false ? '[error] Failed' : '[success] Success'}\n`;
             md += `- **Time**: ${this.formatTime(action.timestamp)}\n`;
             md += `- **Arguments**:\n\n`;
             md += '```json\n';
@@ -1856,7 +1856,7 @@ class VisualLogger {
         
         this.state.actions.forEach((action, idx) => {
             const time = this.formatTime(action.timestamp);
-            const status = action.success === false ? '❌' : '✅';
+            const status = action.success === false ? '[error]' : '[success]';
             
             md += `### ${time} - ${status} ${action.name}\n\n`;
             
@@ -1901,7 +1901,7 @@ class VisualLogger {
         md += '---\n\n';
         
         this.state.tests.forEach((test) => {
-            const status = test.status === 'failed' ? '❌' : '✅';
+            const status = test.status === 'failed' ? '[error]' : '[success]';
             md += `### ${status} ${test.test_name}\n`;
             md += `**File**: \`${test.source_file}\`\n\n`;
             if (test.status === 'failed') {
@@ -2035,7 +2035,7 @@ class VisualLogger {
                             <div class="file-meta">${tests.length} test${tests.length !== 1 ? 's' : ''} • ${failedCount} fail • ${passedCount} pass</div>
                         </div>
                         <div class="file-badges">
-                            <span class="badge ${failedCount ? 'badge-fail' : 'badge-pass'}">${failedCount ? '❌' + failedCount : '✅ All pass'}</span>
+                            <span class="badge ${failedCount ? 'badge-fail' : 'badge-pass'}">${failedCount ? '[error]' + failedCount : '[success] All pass'}</span>
                             <span class="chevron">▾</span>
                         </div>
                     </div>
@@ -2048,7 +2048,7 @@ class VisualLogger {
                             return `
                                 <div class="test-item ${isFailed ? 'failed' : 'passed'}">
                                     <div class="test-item-top">
-                                        <span class="test-icon">${isFailed ? '❌' : '✅'}</span>
+                                        <span class="test-icon">${isFailed ? '[error]' : '[success]'}</span>
                                         <span class="test-name">${this.escapeHtml(test.test_name)}</span>
                                         <span class="test-duration">${duration}</span>
                                     </div>

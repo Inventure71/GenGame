@@ -106,6 +106,26 @@ class ConflictCache:
             "total_uses": total_uses
         }
 
+    def get_merged_patch(self, combined_hash: str) -> Optional[Dict]:
+        """Get a cached merged patch for a combination of input patches."""
+        merged_key = f"merged_patch:{combined_hash}"
+        if merged_key in self.cache:
+            entry = self.cache[merged_key]
+            entry["uses"] = entry.get("uses", 0) + 1
+            self._save_cache()
+            return entry["patch"]
+        return None
+
+    def store_merged_patch(self, combined_hash: str, patch: Dict):
+        """Store a successfully merged patch."""
+        merged_key = f"merged_patch:{combined_hash}"
+        self.cache[merged_key] = {
+            "patch": patch,
+            "timestamp": time.time(),
+            "uses": 0
+        }
+        self._save_cache()
+
     def clear(self):
         """Clear all cache entries."""
         self.cache = {}
@@ -162,11 +182,11 @@ def try_apply_cached_conflicts(patch_path: str, base_backup: str) -> int:
                         )
 
                     resolved_count += 1
-                    print(f"✅ Applied cached resolution for conflict {conflict['conflict_num']} in {file_path}")
+                    print(f"[success] Applied cached resolution for conflict {conflict['conflict_num']} in {file_path}")
 
                 except Exception as e:
                     # If cached resolution fails, don't use it again for this conflict
-                    print(f"⚠️  Cached resolution failed for conflict {conflict['conflict_num']}: {e}")
+                    print(f"[warning]  Cached resolution failed for conflict {conflict['conflict_num']}: {e}")
                     # Remove the failing cached entry
                     cache_key = f"{conflict_hash}:{base_backup}"
                     if cache_key in cache.cache:

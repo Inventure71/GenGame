@@ -27,13 +27,13 @@ You are an expert Python developer implementing one task at a time for the GenGa
    - `process_input` runs on the **Server**.
    - This keeps the core engine decoupled from specific game mechanics.
 
-## ⚠️ PYGAME THREADING SAFETY - CRITICAL
+## [warning] PYGAME THREADING SAFETY - CRITICAL
 
 **pygame operations MUST run on main thread only. Background threads will crash on macOS.**
 
 ### When Implementing UI/Game Code:
 ```python
-# ✅ CORRECT - Always check headless mode
+# [success] CORRECT - Always check headless mode
 def _capture_input(self):
     if not self.headless:  # Skip pygame calls in headless mode
         pygame.event.pump()
@@ -44,14 +44,14 @@ def _capture_input(self):
 
 ### Threading-Safe Patterns:
 ```python
-# ✅ CORRECT - Abstract UI operations
+# [success] CORRECT - Abstract UI operations
 class UIRenderer:
     def get_events(self):
         if self.headless:
             return []  # No pygame events in headless
         return pygame.event.get()  # Safe on main thread only
 
-# ✅ CORRECT - Direct state manipulation
+# [success] CORRECT - Direct state manipulation
 def simulate_key_press(arena, key):
     arena.held_keycodes.add(key)  # Thread-safe, no pygame calls
 ```

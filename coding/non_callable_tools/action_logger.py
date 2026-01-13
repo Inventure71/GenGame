@@ -233,7 +233,7 @@ class ActionLogger:
                     self.last_request_tool_names[0] == "read_file" and 
                     current_tool_names[0] == "read_file"):
                     self.parallel_call_stats["sequential_read_warnings"] += 1
-                    print(f"\n⚠️  WARNING: Detected sequential read_file calls. Previous request read {len(self.last_request_tool_names)} file(s), current reads 1 file.")
+                    print(f"\n[warning]  WARNING: Detected sequential read_file calls. Previous request read {len(self.last_request_tool_names)} file(s), current reads 1 file.")
                     print(f"    Consider batching file reads into a single request for better efficiency.\n")
                 self.last_request_tool_names = current_tool_names
             elif len(tool_calls) > 1:
@@ -421,7 +421,7 @@ class ActionLogger:
             print(f"  Single-tool requests: {stats['single_tool_requests']}")
             print(f"  Parallel-tool requests: {stats['parallel_tool_requests']}")
             if stats['sequential_read_warnings'] > 0:
-                print(f"  ⚠️  Sequential read warnings: {stats['sequential_read_warnings']}")
+                print(f"  [warning]  Sequential read warnings: {stats['sequential_read_warnings']}")
             parallel_pct = (stats['parallel_tool_requests'] / stats['total_requests'] * 100) if stats['total_requests'] > 0 else 0
             print(f"  Parallel efficiency: {parallel_pct:.1f}%")
         

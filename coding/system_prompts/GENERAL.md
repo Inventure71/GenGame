@@ -34,7 +34,7 @@
 To prevent "tunneling" (skipping over targets), follow these speed tiers:
 - **Standard**: 15.0 - 25.0 (Reliable and visible)
 - **Fast**: 26.0 - 40.0 (Still reliable against standard 50px characters)
-- **⚠️ Danger Zone**: 45.0+ (Will likely skip collisions and appear to vanish)
+- **[warning] Danger Zone**: 45.0+ (Will likely skip collisions and appear to vanish)
 
 ### Character Scale & Collision
 - **Default Size**: 30x30 pixels.

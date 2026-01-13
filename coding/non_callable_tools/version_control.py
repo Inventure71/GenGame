@@ -104,7 +104,7 @@ class VersionControl:
         else:
             return False, result
 
-    def apply_patches(self, file_containing_patches: str):
+    def apply_patches(self, file_containing_patches: str, keep_changes_on_failure: bool = False):
         success_count = 0
         any_fixed = False
         name_of_backup, changes, metadata = self.load_from_extension_file(file_containing_patches)
@@ -152,23 +152,28 @@ class VersionControl:
                     print(f"    ✓ Applied successfully")
                     success_count += 1
                 else:
-                    print(f"    ✗ Failed Default Patching: {result}, repairing...")
-                    repaired_diff = self.repair_smashed_patch(file_path, result, change["diff"])
-                    if repaired_diff != change["diff"]:
-                        print(f"    ✅ Repair successful. Updating patches.json and retrying...")
-                        change["diff"] = repaired_diff
-                        any_fixed = True
-                        # Retry immediately with the fixed diff
-                        success, result = self.valid_apply(file_path, repaired_diff)    
-                        if success:
-                            print(f"    ✓ Applied successfully")
-                            success_count += 1
+                    if keep_changes_on_failure:
+                        # Keep failures as-is without attempting repair
+                        errors[file_path] = result
+                        print(f"    ✗ Failed (keeping original file): {result}")
+                    else:
+                        print(f"    ✗ Failed Default Patching: {result}, repairing...")
+                        repaired_diff = self.repair_smashed_patch(file_path, result, change["diff"])
+                        if repaired_diff != change["diff"]:
+                            print(f"    [success] Repair successful. Updating patches.json and retrying...")
+                            change["diff"] = repaired_diff
+                            any_fixed = True
+                            # Retry immediately with the fixed diff
+                            success, result = self.valid_apply(file_path, repaired_diff)
+                            if success:
+                                print(f"    ✓ Applied successfully")
+                                success_count += 1
+                            else:
+                                errors[file_path] = result
+                                print(f"    ✗ Failed Repaired Patching: {result}")
                         else:
                             errors[file_path] = result
-                            print(f"    ✗ Failed Repaired Patching: {result}")
-                    else:
-                        errors[file_path] = result
-                        print(f"    ✗ Failed Acquiring Repaired Patch: {result}")
+                            print(f"    ✗ Failed Acquiring Repaired Patch: {result}")
 
         if any_fixed:
             print(f"Saving fixed patches to {file_containing_patches}...")

@@ -24,6 +24,20 @@ class TodoList:
             self.index_of_current_task = len(self.todo_list) - 1
         self._notify_logger()
 
+    def update_task_by_index(self, task_index: int, new_title: str = None, new_description: str = None, completed: bool = None):
+        """Update a task's title and/or description by index."""
+        if 0 <= task_index < len(self.todo_list):
+            task = self.todo_list[task_index]
+            if new_title is not None:
+                task.task = new_title
+            if new_description is not None:
+                task.task_description = new_description
+            if completed is not None:
+                task.completed = completed
+            self._notify_logger()
+            return "Task updated successfully."
+        return "Task index out of range."
+
     def complete_task(self):
         if 0 <= self.index_of_current_task < len(self.todo_list):
             self.todo_list[self.index_of_current_task].complete()
@@ -55,5 +69,5 @@ class TodoList:
     def get_all_tasks(self):
         string_tasks = ""
         for index, task in enumerate(self.todo_list):
-            string_tasks += f"{index + 1}. Task: {task.task} Description: {task.task_description} {'[COMPLETED]' if task.completed else '[NOT COMPLETED]'}\n"
+            string_tasks += f"{index + 1}.{'[COMPLETED]' if task.completed else '[NOT COMPLETED]'} Task: {task.task} Description:\n{task.task_description}\n"
         return string_tasks

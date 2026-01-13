@@ -427,7 +427,7 @@ async def export_tab(tab_name: str):
         if session_state['actions']:
             md += "## Action Flow\n\n"
             for idx, action in enumerate(session_state['actions']):
-                status = "❌" if action.get('success') == False else "✅"
+                status = "[error]" if action.get('success') == False else "[success]"
                 md += f"{idx + 1}. {status} **{action['name']}** at {format_time(action.get('timestamp'))}\n"
             md += "\n"
     
@@ -455,7 +455,7 @@ async def export_tab(tab_name: str):
         if session_state['actions']:
             md += "## Chronological Events\n\n"
             for action in session_state['actions']:
-                status = "❌" if action.get('success') == False else "✅"
+                status = "[error]" if action.get('success') == False else "[success]"
                 time = format_time(action.get('timestamp'))
                 md += f"### {time} - {status} {action['name']}\n\n"
                 

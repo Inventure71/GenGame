@@ -24,8 +24,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import GameFolder.setup
 from coding.non_callable_tools.version_control import VersionControl
 from coding.tools.conflict_resolution import get_all_conflicts
-from testing import auto_fix_conflicts
-
+from agent import auto_fix_conflicts
+from BASE_files.BASE_helpers import load_settings
 
 class GameServer:
     """
@@ -279,11 +279,11 @@ class GameServer:
             return patch_files[0]
         else:
             # Multiple patches exist - for now just use the first one
-            print(f"⚠️  Found {len(patch_files)} patches:")
+            print(f"[warning]  Found {len(patch_files)} patches:")
             for pf in patch_files:
                 print(f"    - {os.path.basename(pf)}")
-            print(f"⚠️  Using only first patch: {os.path.basename(patch_files[0])}")
-            print(f"⚠️  TODO: Implement proper 3-way merge using VersionControl.merge_patches()")
+            print(f"[warning]  Using only first patch: {os.path.basename(patch_files[0])}")
+            print(f"[warning]  TODO: Implement proper 3-way merge using VersionControl.merge_patches()")
             return patch_files[0]
     
     def _send_patch_file(self, player_id: str, patch_file_path: str):
@@ -526,7 +526,7 @@ class GameServer:
                 # Check if all clients have received the patch
                 all_clients = set(self.clients.keys())
                 if self.clients_patch_received == all_clients:
-                    print("✅ All clients have received the patch - now waiting for application")
+                    print("[success] All clients have received the patch - now waiting for application")
                     self.waiting_for_patch_received = False
                     self.waiting_for_patch_sync = True
         elif msg_type == 'patch_applied':
@@ -535,10 +535,10 @@ class GameServer:
             error_message = message.get('error', None)
             
             if patch_success:
-                print(f"✅ {player_id} successfully applied the merge patch")
+                print(f"[success] {player_id} successfully applied the merge patch")
                 self.clients_patch_ready.add(player_id)
             else:
-                print(f"❌ {player_id} FAILED to apply the merge patch: {error_message}")
+                print(f"[error] {player_id} FAILED to apply the merge patch: {error_message}")
                 self.clients_patch_failed[player_id] = error_message
             
             # Check if all clients have applied the patch (success or failure)
@@ -550,7 +550,7 @@ class GameServer:
                 
                 # Only start game if ALL clients succeeded
                 if len(self.clients_patch_failed) == 0:
-                    print("✅ All clients ready - starting game!")
+                    print("[success] All clients ready - starting game!")
                     self.waiting_for_patch_received = False
                     self.waiting_for_patch_sync = False
                     self.clients_patch_received.clear()
@@ -558,7 +558,7 @@ class GameServer:
                     self._recreate_arena_with_players()  # CRITICAL: Recreate arena with NEW classes
                     self._notify_all_clients_game_start()
                 else:
-                    print("❌ Cannot start game - patch application failed on some clients:")
+                    print("[error] Cannot start game - patch application failed on some clients:")
                     for failed_player, error in self.clients_patch_failed.items():
                         print(f"  - {failed_player}: {error}")
                     
@@ -832,17 +832,17 @@ class GameServer:
         print(f"[{timestamp}] 🔍 DEBUG: Current transfer state - in_progress: {getattr(self, 'backup_transfer_in_progress', False)}, expected_backup: {getattr(self, 'backup_transfer_name', 'None')}")
 
         if not all([backup_name, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
-            print(f"❌ BACKUP CHUNK: Invalid backup chunk from {player_id}: missing or invalid fields")
+            print(f"[error] BACKUP CHUNK: Invalid backup chunk from {player_id}: missing or invalid fields")
             return
 
         # Reject invalid total_chunks
         if total_chunks <= 0:
-            print(f"❌ BACKUP CHUNK: Invalid total_chunks {total_chunks} from {player_id}")
+            print(f"[error] BACKUP CHUNK: Invalid total_chunks {total_chunks} from {player_id}")
             return
 
         # Validate chunk_num bounds
         if chunk_num < 0 or chunk_num >= total_chunks:
-            print(f"❌ BACKUP CHUNK: Invalid chunk_num {chunk_num} (should be 0-{total_chunks-1}) from {player_id}")
+            print(f"[error] BACKUP CHUNK: Invalid chunk_num {chunk_num} (should be 0-{total_chunks-1}) from {player_id}")
             return
 
         # Initialize backup transfer tracking if needed
@@ -866,11 +866,11 @@ class GameServer:
             transfer['received_chunks'] += 1
             progress = transfer['received_chunks'] / total_chunks * 100
             timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-            print(f"[{timestamp}] ✅ BACKUP CHUNK: Stored chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' from {player_id}")
+            print(f"[{timestamp}] [success] BACKUP CHUNK: Stored chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' from {player_id}")
             timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
             print(f"[{timestamp}] 📊 DEBUG: Chunk received - backup: {backup_name}, received: {transfer['received_chunks']}/{total_chunks}")
         else:
-            print(f"⚠️ BACKUP CHUNK: Duplicate chunk {chunk_num} for '{backup_name}' from {player_id}")
+            print(f"[warning] BACKUP CHUNK: Duplicate chunk {chunk_num} for '{backup_name}' from {player_id}")
 
         # Check if backup is complete
         if transfer['received_chunks'] == total_chunks:
@@ -881,7 +881,7 @@ class GameServer:
             success = self._assemble_client_backup(player_id, backup_name)
             if success:
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] ✅ DEBUG: Backup assembly successful for {backup_name}")
+                print(f"[{timestamp}] [success] DEBUG: Backup assembly successful for {backup_name}")
                 if hasattr(self, 'backup_transfer_in_progress') and self.backup_transfer_in_progress:
                     if backup_name == getattr(self, 'backup_transfer_name', None):
                         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
@@ -896,12 +896,12 @@ class GameServer:
                             print(f"[{timestamp}] 🎯 DEBUG: backup_transfer_complete_event.set() called")
                         else:
                             timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                            print(f"[{timestamp}] ⚠️ DEBUG: backup_transfer_complete_event not found!")
+                            print(f"[{timestamp}] [warning] DEBUG: backup_transfer_complete_event not found!")
             else:
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                 print(f"[{timestamp}] 💥 BACKUP TRANSFER: Assembly failed for '{backup_name}' from {player_id}")
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] ❌ DEBUG: Backup assembly failed - setting event anyway")
+                print(f"[{timestamp}] [error] DEBUG: Backup assembly failed - setting event anyway")
                 # Signal failure to waiting thread
                 if hasattr(self, 'backup_transfer_complete_event'):
                     self.backup_transfer_complete_event.set()
@@ -909,13 +909,13 @@ class GameServer:
                     print(f"[{timestamp}] 🎯 DEBUG: backup_transfer_complete_event.set() called (failure)")
                 else:
                     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] ⚠️ DEBUG: backup_transfer_complete_event not found on failure!")
+                    print(f"[{timestamp}] [warning] DEBUG: backup_transfer_complete_event not found on failure!")
 
     def _assemble_client_backup(self, player_id: str, backup_name: str) -> bool:
         """Assemble a complete backup from client chunks and extract it."""
         client_key = f"{player_id}:{backup_name}"
         if client_key not in self.client_backup_transfers:
-            print(f"❌ BACKUP ASSEMBLY: No transfer data found for '{backup_name}' from {player_id}")
+            print(f"[error] BACKUP ASSEMBLY: No transfer data found for '{backup_name}' from {player_id}")
             return False
 
         transfer = self.client_backup_transfers[client_key]
@@ -926,7 +926,7 @@ class GameServer:
             backup_data = b''
             for i in range(transfer['total_chunks']):
                 if i not in transfer['chunks']:
-                    print(f"❌ BACKUP ASSEMBLY: Missing chunk {i} for backup {backup_name}")
+                    print(f"[error] BACKUP ASSEMBLY: Missing chunk {i} for backup {backup_name}")
                     return False
                 backup_data += transfer['chunks'][i]
 
@@ -946,7 +946,7 @@ class GameServer:
                     # Extract to backup directory
                     tar.extractall(path=backup_dir)
 
-            print(f"✅ BACKUP ASSEMBLY: Successfully extracted backup '{backup_name}' from {player_id}")
+            print(f"[success] BACKUP ASSEMBLY: Successfully extracted backup '{backup_name}' from {player_id}")
 
             # Verify backup integrity by checking hash matches name
             extracted_backup_path = os.path.join(backup_dir, backup_name)
@@ -955,7 +955,7 @@ class GameServer:
                 backup_handler = BackupHandler()
                 computed_hash = backup_handler.compute_directory_hash(extracted_backup_path)
                 if computed_hash != backup_name:
-                    print(f"❌ BACKUP ASSEMBLY: Hash verification FAILED for '{backup_name}' from {player_id}")
+                    print(f"[error] BACKUP ASSEMBLY: Hash verification FAILED for '{backup_name}' from {player_id}")
                     print(f"   Expected hash: {backup_name}")
                     print(f"   Computed hash: {computed_hash}")
                     
@@ -976,7 +976,7 @@ class GameServer:
                     print(f"📤 BACKUP ASSEMBLY: Sent hash verification failure acknowledgment to {player_id}")
                     return False
                 else:
-                    print(f"✅ BACKUP ASSEMBLY: Hash verification PASSED for '{backup_name}' from {player_id}")
+                    print(f"[success] BACKUP ASSEMBLY: Hash verification PASSED for '{backup_name}' from {player_id}")
 
 
             # Clean up transfer data
@@ -993,7 +993,7 @@ class GameServer:
             return True
 
         except Exception as e:
-            print(f"❌ BACKUP ASSEMBLY: Failed to assemble backup {backup_name} from {player_id}: {e}")
+            print(f"[error] BACKUP ASSEMBLY: Failed to assemble backup {backup_name} from {player_id}: {e}")
 
             # Send failure acknowledgment
             error_message = {
@@ -1061,7 +1061,7 @@ class GameServer:
     def _send_message_to_client(self, player_id: str, message: dict):
         """Send a message to a specific client."""
         if player_id not in self.clients:
-            print(f"⚠️ MSG SEND: Cannot send message to {player_id} - client not found in self.clients")
+            print(f"[warning] MSG SEND: Cannot send message to {player_id} - client not found in self.clients")
             return
 
         try:
@@ -1070,7 +1070,7 @@ class GameServer:
             self._send_data_safe(self.clients[player_id], length_bytes + data)
             print(f"📤 MSG SEND: Successfully sent '{message.get('type', 'unknown')}' message to {player_id}")
         except Exception as e:
-            print(f"❌ MSG SEND: Failed to send '{message.get('type', 'unknown')}' message to {player_id}: {e}")
+            print(f"[error] MSG SEND: Failed to send '{message.get('type', 'unknown')}' message to {player_id}: {e}")
             # Client might have disconnected
             self._remove_client(player_id)
     
@@ -1125,7 +1125,7 @@ class GameServer:
                     else:
                         raise ValueError(f"Missing chunk {chunk_num}")
             
-            print(f"✅ Received complete patch from {player_id}: {patch_name}")
+            print(f"[success] Received complete patch from {player_id}: {patch_name}")
             
             # Clean up transfer state
             del self.client_patch_files[key]
@@ -1147,11 +1147,11 @@ class GameServer:
         compatible, error = self._validate_base_backup_compatibility(all_patches_info)
         
         if not compatible:
-            print(f"❌ Base backup validation failed: {error}")
+            print(f"[error] Base backup validation failed: {error}")
             self._notify_patch_merge_failed(f"Incompatible patches: {error}")
             return
         
-        print("✅ Base backup validation passed")
+        print("[success] Base backup validation passed")
 
         # Step 1.5: Ensure server has required backup
         required_backup = None
@@ -1161,7 +1161,7 @@ class GameServer:
         if required_backup:
             available_backups = self._get_available_backups()
             if required_backup not in available_backups:
-                print(f"⚠️  Server missing backup '{required_backup}', requesting from client")
+                print(f"[warning]  Server missing backup '{required_backup}', requesting from client")
                 # Find a client that has this backup
                 requesting_client = None
                 for client_id, backup_name in self.client_backups.items():
@@ -1195,16 +1195,16 @@ class GameServer:
                     print(f"[{timestamp}] ⏳ DEBUG: Starting to wait for backup transfer event (30s timeout)")
                     if not self.backup_transfer_complete_event.wait(timeout=30.0):
                         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                        print(f"[{timestamp}] ❌ BACKUP TRANSFER: TIMEOUT - Backup '{required_backup}' not received within 30 seconds")
+                        print(f"[{timestamp}] [error] BACKUP TRANSFER: TIMEOUT - Backup '{required_backup}' not received within 30 seconds")
                         self._notify_patch_merge_failed(f"Backup transfer timeout for '{required_backup}'")
                         return
 
                     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] ✅ DEBUG: Backup transfer event received - proceeding with merge")
+                    print(f"[{timestamp}] [success] DEBUG: Backup transfer event received - proceeding with merge")
                     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] ✅ BACKUP TRANSFER: Successfully received backup '{required_backup}'")
+                    print(f"[{timestamp}] [success] BACKUP TRANSFER: Successfully received backup '{required_backup}'")
                 else:
-                    print(f"❌ No client has backup '{required_backup}'")
+                    print(f"[error] No client has backup '{required_backup}'")
                     self._notify_patch_merge_failed(f"Required backup '{required_backup}' not available")
                     return
 
@@ -1235,35 +1235,53 @@ class GameServer:
             success, result = self._merge_patches_iteratively(all_patch_paths, output_path)
             
             if success:
-                print(f"✅ Merge successful on attempt {attempt + 1}")
+                print(f"[success] Merge successful on attempt {attempt + 1}")
                 break
             else:
-                print(f"⚠️  Merge had conflicts: {result}")
+                print(f"[warning]  Merge had conflicts: {result}")
                 
                 # Try to auto-fix conflicts
                 print("Running auto_fix_conflicts...")
                 try:
+                    settings = {}
+                    settings_dict = load_settings()
+                    if settings_dict.get("success"):
+                        settings["selected_provider"] = settings_dict.get("selected_provider", "GEMINI")
+                        if settings["selected_provider"] == "GEMINI":
+                            settings["api_key"] = settings_dict.get("gemini_api_key", "")
+                        elif settings["selected_provider"] == "OPENAI":
+                            settings["api_key"] = settings_dict.get("openai_api_key", "")
+                        else:
+                            print("WARNING: Invalid provider, using default settings")
+                            success = False
+                            break
+                        settings["model_name"] = settings_dict.get("model", "models/gemini-3-flash-preview")
+                    else:
+                        print("WARNING: No settings found, using default settings")
+                        success = False
+                        break
+
                     base_backup_name = all_patches_info[0][0].get('base_backup', 'Unknown')
-                    auto_fix_conflicts(output_path, patch_paths=all_patch_paths, base_backup=base_backup_name)
+                    auto_fix_conflicts(settings, output_path, patch_paths=all_patch_paths, base_backup=base_backup_name)
                     
                     # Check if conflicts remain
                     remaining_conflicts = get_all_conflicts(output_path)
                     if len(remaining_conflicts) == 0:
-                        print("✅ Auto-fix resolved all conflicts!")
+                        print("[success] Auto-fix resolved all conflicts!")
                         success = True
                         break
                     else:
-                        print(f"⚠️  {len(remaining_conflicts)} conflicts remain after auto-fix")
+                        print(f"[warning]  {len(remaining_conflicts)} conflicts remain after auto-fix")
                 except Exception as e:
-                    print(f"❌ Auto-fix failed: {e}")
+                    print(f"[error] Auto-fix failed: {e}")
         
         # Step 4: Check final result
         if not success:
-            print("\n❌ MERGE FAILED AFTER 3 ATTEMPTS")
+            print("\n[error] MERGE FAILED AFTER 3 ATTEMPTS")
             self._notify_patch_merge_failed("Patches are incompatible - could not resolve conflicts after 3 attempts")
             return
         
-        print("\n✅ MERGE SUCCESSFUL - Applying to server")
+        print("\n[success] MERGE SUCCESSFUL - Applying to server")
 
         # Apply merged patch to server's GameFolder
         try:
@@ -1279,16 +1297,16 @@ class GameServer:
             if reloaded_setup:
                 # Re-import the setup function since it was imported at startup
                 from GameFolder.setup import setup_battle_arena
-                print("✅ Server GameFolder modules deep reloaded with merged patches")
+                print("[success] Server GameFolder modules deep reloaded with merged patches")
             else:
-                print("⚠️ Server GameFolder reload failed, may use old code")
+                print("[warning] Server GameFolder reload failed, may use old code")
 
             self._load_game_files()  # Reload with patched code
 
             self.arena = None
-            print("✅ Server GameFolder updated with merged patches")
+            print("[success] Server GameFolder updated with merged patches")
         except Exception as e:
-            print(f"❌ Failed to apply patches to server: {e}")
+            print(f"[error] Failed to apply patches to server: {e}")
             self._notify_patch_merge_failed(f"Server patch application failed: {e}")
             return
 
@@ -1659,7 +1677,7 @@ class GameServer:
             data = pickle.dumps(game_state)
             length_bytes = len(data).to_bytes(4, byteorder='big')
         except Exception as e:
-            print(f"⚠️ Failed to serialize game state: {e}")
+            print(f"[warning] Failed to serialize game state: {e}")
             # DEBUG: Diagnose class mismatch
             try:
                 if self.arena and self.arena.characters:
@@ -1671,7 +1689,7 @@ class GameServer:
                          mod = sys.modules['GameFolder.characters.GAME_character']
                          print(f"DEBUG: Sys Module Character class ID: {id(getattr(mod, 'Character', None))}")
                          if id(char.__class__) != id(getattr(mod, 'Character', None)):
-                              print("❌ CRITICAL: Class ID Mismatch detected!")
+                              print("[error] CRITICAL: Class ID Mismatch detected!")
                     else:
                         print("DEBUG: GameFolder.characters.GAME_character not in sys.modules")
             except Exception as debug_e:
