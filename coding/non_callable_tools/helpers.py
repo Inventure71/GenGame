@@ -1,52 +1,77 @@
 import glob
 import os
-
+import shutil
 
 def open_file(file_path: str) -> str | None:
     """
     Safely opens a text file and returns its content.
     Returns None for binary files, missing files, or other errors.
     Returns empty string for empty text files.
+    Includes fallback to original project directory for coding/ files.
     """
-    if not os.path.exists(file_path):
-        return None
+    return _open_file_with_fallback(file_path)
 
-    try:
-        # Check file size first
-        file_size = os.path.getsize(file_path)
-        if file_size == 0:
-            return ""  # Empty file
-
-        # Check if file is binary by reading first few bytes
-        with open(file_path, 'rb') as f:
-            sample = f.read(min(1024, file_size))  # Read first 1KB or file size
-
-        # Check for null bytes or high ratio of non-ASCII characters
-        if b'\x00' in sample:
-            return None  # Binary file
-
-        # Count non-ASCII characters
-        non_ascii_count = sum(1 for byte in sample if byte > 127)
-        if len(sample) > 0 and (non_ascii_count / len(sample)) > 0.3:
-            # More than 30% non-ASCII characters - likely binary
-            return None
-
-        # Try to decode as UTF-8 (allow partial sequences)
+def _open_file_with_fallback(file_path: str) -> str | None:
+    """
+    Open file with fallback to original project directory for prompts/system files.
+    """
+    # First try the current working directory (.gengame)
+    if os.path.exists(file_path):
         try:
-            sample.decode('utf-8')
-        except UnicodeDecodeError:
-            # If decoding fails, it might be due to cutting off a multi-byte sequence
-            # Try with errors='replace' to see if it's still mostly valid text
-            sample.decode('utf-8', errors='replace')
+            # Check file size first
+            file_size = os.path.getsize(file_path)
+            if file_size == 0:
+                return ""  # Empty file
 
-        # If we get here, it's likely text - read the full file
-        with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
-        return content
+            # Check if file is binary by reading first few bytes
+            with open(file_path, 'rb') as f:
+                sample = f.read(min(1024, file_size))  # Read first 1KB or file size
 
-    except (UnicodeDecodeError, OSError, IOError, PermissionError):
-        # File is binary, corrupted, or inaccessible
-        return None
+            # Check for null bytes or high ratio of non-ASCII characters
+            if b'\x00' in sample:
+                return None  # Binary file
+
+            # Count non-ASCII characters
+            non_ascii_count = sum(1 for byte in sample if byte > 127)
+            if len(sample) > 0 and (non_ascii_count / len(sample)) > 0.3:
+                # More than 30% non-ASCII characters - likely binary
+                return None
+
+            # Try to decode as UTF-8 (allow partial sequences)
+            try:
+                sample.decode('utf-8')
+            except UnicodeDecodeError:
+                # If decoding fails, it might be due to cutting off a multi-byte sequence
+                # Try with errors='replace' to see if it's still mostly valid text
+                sample.decode('utf-8', errors='replace')
+
+            # If we get here, it's likely text - read the full file
+            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            return content
+
+        except (UnicodeDecodeError, OSError, IOError, PermissionError):
+            pass
+
+    # File not found in current directory, try original project directory
+    # This is for prompts and system files that aren't copied to .gengame
+    if file_path.startswith('coding/'):
+        try:
+            # Get the original project directory
+            # We can find it by going up from the current script location
+            current_file = __file__  # This helpers.py file
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+
+            if 'GenGame' in project_root and not project_root.endswith('.gengame'):
+                original_path = os.path.join(project_root, file_path)
+                if os.path.exists(original_path):
+                    # Recursively call with the original path
+                    return _open_file_with_fallback(original_path)
+        except:
+            pass
+
+    # File is binary, corrupted, or inaccessible
+    return None
 
 def load_prompt(prompt_file: str, include_general_context: bool = True) -> str:
     prompt = open_file(prompt_file)
@@ -194,3 +219,48 @@ def cleanup_old_logs():
 
     except Exception as e:
         print(f"Log cleanup failed: {e}")
+
+def should_skip_item(item_name: str) -> bool:
+    """Check if an item should be skipped during backup."""
+    # Skip cache directories
+    if item_name in {
+        '__pycache__', '.pytest_cache', '.git', 'node_modules', 
+        '.cursor', '__docs', '__game_backups', '__patches', 
+        '__server_patches', '__TEMP_SECURITY_BACKUP', '__config',
+        'dist', 'build'
+    }:
+        return True
+    
+    # Skip hidden files and cache files
+    if (item_name.startswith('.') or 
+        item_name in {'.DS_Store', 'tt.py'} or
+        item_name.endswith('.bak')):
+        return True
+    
+    return False
+
+def copytree_filtered(src: str, dst: str, should_skip_func):
+    """Copy directory tree while filtering out cache files."""
+    os.makedirs(dst, exist_ok=True)
+    
+    for root, dirs, files in os.walk(src):
+        # Filter directories in-place
+        dirs[:] = [d for d in dirs if not should_skip_func(d)]
+        
+        # Calculate relative path for destination
+        rel_path = os.path.relpath(root, src)
+        if rel_path == '.':
+            dest_root = dst
+        else:
+            dest_root = os.path.join(dst, rel_path)
+        
+        # Create destination directory
+        os.makedirs(dest_root, exist_ok=True)
+        
+        # Copy files (filtering already done in dirs[:] above)
+        for file in files:
+            if should_skip_func(file):
+                continue
+            src_file = os.path.join(root, file)
+            dst_file = os.path.join(dest_root, file)
+            shutil.copy2(src_file, dst_file)

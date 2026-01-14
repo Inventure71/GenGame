@@ -2,6 +2,8 @@ import os
 import shutil
 import hashlib
 from datetime import datetime
+
+from coding.non_callable_tools.helpers import should_skip_item, copytree_filtered
 """
 Backup and restore system for directories, subdirectories, and files.
 - Create backups of entire directories, subdirectories, and files
@@ -24,11 +26,16 @@ class BackupHandler:
         # Get all files in sorted order for consistent hashing
         file_paths = []
         for root, dirs, files in os.walk(path):
-            # Sort directories and files for consistent ordering
-            dirs.sort()
+            # Filter out cache directories using helper function
+            dirs[:] = [d for d in dirs if not should_skip_item(d)]
+            
             for file in sorted(files):
+                # Skip cache and temporary files using helper function
+                if should_skip_item(file):
+                    continue
+                    
                 full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, path)
+                rel_path = os.path.relpath(full_path, path)  # Use relative path
                 file_paths.append((rel_path, full_path))
         
         # Hash each file: relative_path + content
@@ -83,21 +90,27 @@ class BackupHandler:
 
         # Create new backup
         if os.path.isfile(path):
+            # Check if file should be skipped
+            filename = os.path.basename(path)
+            if should_skip_item(filename):
+                raise ValueError(f"Cannot backup file that should be skipped: {filename}")
             # Backup single file
             shutil.copy2(path, backup_path)
             return backup_path, backup_name
             
         elif os.path.isdir(path):
-            # Backup directory
+            # Backup directory with filtering
             if recursive:
-                shutil.copytree(path, backup_path)
+                copytree_filtered(path, backup_path, should_skip_item)
             else:
                 # Non-recursive: create directory and copy only immediate files
                 os.makedirs(backup_path, exist_ok=True)
                 for item in os.listdir(path):
+                    if should_skip_item(item):
+                        continue
                     item_path = os.path.join(path, item)
                     if os.path.isfile(item_path):
-                        shutil.copy2(item_path, backup_path)
+                        shutil.copy2(item_path, os.path.join(backup_path, item))
             return backup_path, backup_name
         else:
             raise ValueError(f"Path {path} is not a file or directory")
