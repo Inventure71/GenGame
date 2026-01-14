@@ -184,8 +184,8 @@ def reload_game_code() -> types.ModuleType:
 def load_settings() -> dict:
     """Load settings from config file."""
     config_path = os.path.join("__config", "settings.json")
+    dictionary = {}
     if os.path.exists(config_path):
-        dictionary = {}
         try:
             with open(config_path, 'r') as f:
                 settings = json.load(f)
