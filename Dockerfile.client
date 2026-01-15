@@ -1,0 +1,60 @@
+# Base image
+FROM python:3.11-slim
+
+# Set environment variables for GUI and VNC operation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYGAME_HIDE_SUPPORT_PROMPT=1
+ENV SDL_VIDEODRIVER=x11
+ENV SDL_OPENGL=0
+ENV DISPLAY=:0
+ENV LIBGL_ALWAYS_SOFTWARE=1
+
+# Install full system dependencies for Pygame, Mesa rendering, and VNC stack
+RUN apt-get update && apt-get install -y \
+    # Game Dependencies
+    libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev \
+    libfreetype6-dev libportmidi-dev libjpeg-dev libpng-dev \
+    libx11-dev libxcursor-dev libxext-dev libxfixes-dev \
+    libxi-dev libxrandr-dev libxss-dev libxxf86vm-dev \
+    x11-apps \
+    # Mesa software rendering libraries (Required for ARM/M4 Mac compatibility)
+    libgl1-mesa-dri libgl1 libglx-mesa0 \
+    # VNC & Web Proxy Tools
+    xvfb x11vnc fluxbox novnc websockify net-tools procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Standardize the noVNC proxy command path
+RUN ln -sf /usr/share/novnc/utils/novnc_proxy /usr/bin/novnc_proxy
+
+WORKDIR /app
+
+# Install Python requirements
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy source code
+COPY . .
+
+# Copy and set permissions for the VNC startup script
+# (Ensure you have created the run-vnc.sh file in your project root)
+COPY run-vnc.sh /run-vnc.sh
+RUN chmod +x /run-vnc.sh
+
+# Security: Run as non-root user
+RUN useradd --create-home --shell /bin/bash gameuser && \
+    chown -R gameuser:gameuser /app
+#USER gameuser
+
+# Expose the noVNC web port and Visual Logger port
+EXPOSE 6080 8765
+
+# Set environment variables for Visual Logger (accessible from outside container)
+ENV VISUAL_LOGGER_HOST=0.0.0.0
+ENV VISUAL_LOGGER_PORT=8765
+
+# The startup script handles Xvfb, Fluxbox, VNC, and then the Game
+ENTRYPOINT ["/run-vnc.sh"]
+
+# Launch the game client connecting to the server service defined in docker-compose
+CMD ["python", "main.py", "--host", "gengame-server", "--port", "5555"]

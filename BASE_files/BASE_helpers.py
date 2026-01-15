@@ -29,11 +29,32 @@ def base_decode(code: str) -> int:
     return n
 
 def get_local_ip():
-    """Gets the full local IP address (e.g., '192.168.0.1')"""
+    """Gets the full local IP address (e.g., '192.168.0.1')
+    
+    Checks GENGAME_PUBLIC_IP environment variable first (useful for Docker),
+    then auto-detects host IP if running in Docker, otherwise detects local IP.
+    """
+    # Check for environment variable override
+    public_ip = os.getenv("GENGAME_PUBLIC_IP")
+    if public_ip:
+        return public_ip
+    
+    # Detect IP via network connection
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
+        
+        # Auto-detect host IP if in Docker (Docker network IPs: 172.17-31.x.x)
+        if os.path.exists("/.dockerenv") and ip.startswith("172."):
+            # Try host.docker.internal (works on Docker Desktop)
+            try:
+                host_ip = socket.gethostbyname("host.docker.internal")
+                if host_ip and host_ip != "127.0.0.1":
+                    return host_ip
+            except:
+                pass
+        
         return ip
     except:
         return "127.0.0.1"

@@ -40,7 +40,14 @@ class ActionLogger:
         
         # Visual Logger configuration
         self.visual_enabled = visual
-        self.visual_uri = "ws://127.0.0.1:8765/ws"
+        # Use environment variables for host/port, default to localhost
+        visual_host = os.getenv("VISUAL_LOGGER_HOST", "127.0.0.1")
+        visual_port = int(os.getenv("VISUAL_LOGGER_PORT", "8765"))
+        self.visual_host = visual_host
+        self.visual_port = visual_port
+        # For WebSocket URI, use localhost if host is 0.0.0.0 (since we're connecting from same container)
+        ws_host = "127.0.0.1" if visual_host == "0.0.0.0" else visual_host
+        self.visual_uri = f"ws://{ws_host}:{visual_port}/ws"
         self.visual_connected = False
         self.visual_queue = queue.Queue()
         self.visual_thread = None
@@ -125,18 +132,20 @@ class ActionLogger:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(0.5)
-                if s.connect_ex(("127.0.0.1", 8765)) == 0:
+                # Use localhost for connection check (server might be bound to 0.0.0.0)
+                check_host = "127.0.0.1"
+                if s.connect_ex((check_host, self.visual_port)) == 0:
                     # Server already running
                     return
         except:
             pass
             
-        print("[ActionLogger] Starting Visual Logger server...")
+        print(f"[ActionLogger] Starting Visual Logger server on {self.visual_host}:{self.visual_port}...")
         server_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "visual_logger", "run_server.py")
         
-        # Start server in background
+        # Start server in background with host/port arguments
         self.visual_server_process = subprocess.Popen(
-            [os.sys.executable, server_script],
+            [os.sys.executable, server_script, "--host", self.visual_host, "--port", str(self.visual_port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             preexec_fn=os.setsid if os.name != 'nt' else None

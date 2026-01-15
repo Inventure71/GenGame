@@ -16,10 +16,47 @@ import glob
 from typing import Dict, List, Set, Tuple, Optional
 from collections import defaultdict
 import select
-from BASE_files.BASE_helpers import reload_game_code
+from BASE_files.BASE_helpers import reload_game_code, get_local_ip, encrypt_code
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Check if GameFolder exists and has content, restore from default backup if needed
+def ensure_gamefolder_exists():
+    """Ensure GameFolder exists with content, restoring from backup if empty."""
+    game_folder = "GameFolder"
+    if not os.path.exists(game_folder) or not os.listdir(game_folder):
+        print("GameFolder is missing or empty. Attempting to restore from default backup...")
+
+        try:
+            from coding.non_callable_tools.backup_handling import BackupHandler
+            handler = BackupHandler("__game_backups")
+
+            # Get available backups and pick the most recent one
+            backups = handler.list_backups()
+            if not backups:
+                print("ERROR: No backups available to restore from!")
+                return False
+
+            # Sort by modification time (most recent first)
+            backups_with_mtime = [(b, os.path.getmtime(os.path.join("__game_backups", b))) for b in backups]
+            backups_with_mtime.sort(key=lambda x: x[1], reverse=True)
+            default_backup = backups_with_mtime[0][0]
+
+            print(f"Restoring from backup: {default_backup}")
+            handler.restore_backup(default_backup, target_path=game_folder)
+            print("GameFolder restored successfully.")
+            return True
+
+        except Exception as e:
+            print(f"ERROR: Failed to restore GameFolder from backup: {e}")
+            return False
+    return True
+
+# Ensure GameFolder exists before proceeding
+if not ensure_gamefolder_exists():
+    print("Failed to restore GameFolder. Server cannot start.")
+    sys.exit(1)
 
 import GameFolder.setup
 from coding.non_callable_tools.version_control import VersionControl
@@ -85,7 +122,7 @@ class GameServer:
 
         # Server-side patch management
         self.server_patches_dir = "__server_patches"
-        os.makedirs(self.server_patches_dir, exist_ok=True)
+        os.makedirs(self.server_patches_dir, mode=0o755, exist_ok=True)
         self.client_patches: Dict[str, List[Dict]] = {}  # player_id -> list of patch info
         self.client_patch_files: Dict[str, Dict] = {}  # (player_id, patch_name) -> {'chunks': {}, 'total': N}
         self.clients_ready_status: Set[str] = set()  # Track which clients marked as ready
@@ -99,6 +136,24 @@ class GameServer:
         self.backup_transfer_start_time = 0.0
 
         print(f"Server initialized on {host}:{port}")
+        if host == "0.0.0.0":
+            # Local room - use actual local IP (auto-detects host IP in Docker)
+            local_ip = get_local_ip()
+            public_ip_override = os.getenv("GENGAME_PUBLIC_IP")
+            if public_ip_override:
+                print(f"Using public IP override: {public_ip_override} (for room code generation)")
+            elif os.path.exists("/.dockerenv"):
+                if local_ip.startswith("172."):
+                    print(f"⚠️  Docker detected but host IP auto-detection failed. Room code may not work from external devices.")
+                    print(f"   Detected IP: {local_ip} (set GENGAME_PUBLIC_IP=<your-host-ip> to fix)")
+                else:
+                    print(f"✓ Auto-detected host IP: {local_ip} (for room code generation)")
+            else:
+                print(f"Detected local IP: {local_ip} (for room code generation)")
+            self.room_code = encrypt_code(local_ip, port, "LOCAL")
+        else:
+            # Remote room - use the host as domain
+            self.room_code = encrypt_code(host, port, "REMOTE")
 
     def _load_game_files(self):
         """Load all Python files from GameFolder for synchronization."""
@@ -140,6 +195,10 @@ class GameServer:
         # Arena will be created dynamically when first client requests file sync
         # This allows us to create the arena with the correct number of connected players
         self.game_start_time = time.time()
+
+        print(f"\n{'='*60}")
+        print(f"🎮 ROOM CODE: {self.room_code}")
+        print(f"{'='*60}\n")
 
         # Start network thread
         network_thread = threading.Thread(target=self._network_loop, daemon=True)
@@ -953,7 +1012,7 @@ class GameServer:
             if os.path.exists(extracted_backup_path):
                 from coding.non_callable_tools.backup_handling import BackupHandler
                 backup_handler = BackupHandler()
-                computed_hash = backup_handler.compute_directory_hash(extracted_backup_path)
+                computed_hash = backup_handler.compute_directory_hash(extracted_backup_path, debug=True)
                 if computed_hash != backup_name:
                     print(f"[error] BACKUP ASSEMBLY: Hash verification FAILED for '{backup_name}' from {player_id}")
                     print(f"   Expected hash: {backup_name}")
@@ -1112,9 +1171,9 @@ class GameServer:
         transfer = self.client_patch_files[key]
         
         try:
-            # Create player's patch directory
+            # Create player's patch directory with proper permissions
             player_patch_dir = os.path.join(self.server_patches_dir, player_id)
-            os.makedirs(player_patch_dir, exist_ok=True)
+            os.makedirs(player_patch_dir, mode=0o755, exist_ok=True)
             
             # Write file
             patch_path = os.path.join(player_patch_dir, f"{patch_name}.json")
@@ -1225,6 +1284,8 @@ class GameServer:
             return
         
         # Step 3: Merge patches with retry logic
+        # Ensure output directory exists with proper permissions
+        os.makedirs(self.server_patches_dir, mode=0o755, exist_ok=True)
         output_path = os.path.join(self.server_patches_dir, "merged_patch.json")
         success = False
         
@@ -1339,10 +1400,26 @@ class GameServer:
         if len(patch_paths) == 0:
             return False, "No patches to merge"
         
+        # Ensure output directory exists with proper permissions
+        output_dir = os.path.dirname(output_path)
+        if output_dir:
+            os.makedirs(output_dir, mode=0o755, exist_ok=True)
+        
         if len(patch_paths) == 1:
             # Only one patch - just copy it
             import shutil
-            shutil.copy(patch_paths[0], output_path)
+            try:
+                shutil.copy(patch_paths[0], output_path)
+            except PermissionError as e:
+                # Try to fix permissions and retry
+                os.makedirs(output_dir, mode=0o755, exist_ok=True)
+                # Remove existing file if it exists and is not writable
+                if os.path.exists(output_path):
+                    try:
+                        os.chmod(output_path, 0o644)
+                    except:
+                        os.remove(output_path)
+                shutil.copy(patch_paths[0], output_path)
             return True, "Single patch copied"
         
         # Get base backup name from first patch

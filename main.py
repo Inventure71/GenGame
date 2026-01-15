@@ -1,5 +1,53 @@
 import os
-os.environ['SDL_VIDEODRIVER'] = 'cocoa'
+#os.environ['SDL_VIDEODRIVER'] = 'cocoa'
+import sys
+
+# ONLY set to dummy if not already set by the environment (e.g. Docker sets it to 'x11')
+if "SDL_VIDEODRIVER" not in os.environ:
+    # Default behavior for local headless or tests, but allow Docker to override
+    if "--headless" in sys.argv:
+        os.environ["SDL_VIDEODRIVER"] = "dummy"
+
+# Check if GameFolder exists and has content, restore from default backup if needed
+def ensure_gamefolder_exists():
+    """Ensure GameFolder exists with content, restoring from backup if empty."""
+    game_folder = "GameFolder"
+    if not os.path.exists(game_folder) or not os.listdir(game_folder):
+        print("GameFolder is missing or empty. Attempting to restore from default backup...")
+
+        try:
+            from coding.non_callable_tools.backup_handling import BackupHandler
+            handler = BackupHandler("__game_backups")
+
+            # Get available backups and pick the most recent one
+            backups = handler.list_backups()
+            if not backups:
+                print("ERROR: No backups available to restore from!")
+                return False
+
+            # Sort by modification time (most recent first)
+            backups_with_mtime = [(b, os.path.getmtime(os.path.join("__game_backups", b))) for b in backups]
+            backups_with_mtime.sort(key=lambda x: x[1], reverse=True)
+            default_backup = backups_with_mtime[0][0]
+
+            print(f"Restoring from backup: {default_backup}")
+            print(f"Target path: {game_folder}")
+            handler.restore_backup(default_backup, target_path=game_folder)
+            print("GameFolder restored successfully.")
+            return True
+
+        except Exception as e:
+            print(f"ERROR: Failed to restore GameFolder from backup: {e}")
+            return False
+    else:
+        print("GameFolder exists and has content. No need to restore from backup.")
+    return True
+
+# Ensure GameFolder exists before proceeding
+if not ensure_gamefolder_exists():
+    print("Failed to restore GameFolder. Game cannot start.")
+    sys.exit(1)
+
 import random
 import argparse
 from BASE_files.BASE_menu import BaseMenu

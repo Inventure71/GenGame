@@ -1,6 +1,43 @@
 import glob
 import os
+import fnmatch
 import shutil
+
+SKIP_DIRS = {
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    ".nox",
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    "dist",
+    "build",
+    ".venv",
+    "venv",
+    "__docs",
+    "__game_backups",
+    "__patches",
+    "__server_patches",
+    "__TEMP_SECURITY_BACKUP",
+    "__config",
+}
+
+SKIP_FILES_EXACT = {
+    ".DS_Store",
+    "Thumbs.db",
+    "desktop.ini",
+}
+
+SKIP_GLOBS = [
+    "*.pyc", "*.pyo", "*.pyd",
+    "*.bak", "*.tmp", "*.swp", "*.swo",
+    ".coverage", "coverage.xml",
+    "*.log",
+]
 
 def open_file(file_path: str) -> str | None:
     """
@@ -221,22 +258,14 @@ def cleanup_old_logs():
         print(f"Log cleanup failed: {e}")
 
 def should_skip_item(item_name: str) -> bool:
-    """Check if an item should be skipped during backup."""
-    # Skip cache directories
-    if item_name in {
-        '__pycache__', '.pytest_cache', '.git', 'node_modules', 
-        '.cursor', '__docs', '__game_backups', '__patches', 
-        '__server_patches', '__TEMP_SECURITY_BACKUP', '__config',
-        'dist', 'build'
-    }:
+    """Return True if an item should be skipped during hashing/backup."""
+    if item_name in SKIP_DIRS:
         return True
-    
-    # Skip hidden files and cache files
-    if (item_name.startswith('.') or 
-        item_name in {'.DS_Store', 'tt.py'} or
-        item_name.endswith('.bak')):
+    if item_name in SKIP_FILES_EXACT:
         return True
-    
+    for pat in SKIP_GLOBS:
+        if fnmatch.fnmatch(item_name, pat):
+            return True
     return False
 
 def copytree_filtered(src: str, dst: str, should_skip_func):
