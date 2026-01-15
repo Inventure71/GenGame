@@ -1,7 +1,7 @@
 import os
 
 # Set video driver BEFORE importing pygame
-os.environ['SDL_VIDEODRIVER'] = 'cocoa'
+#os.environ['SDL_VIDEODRIVER'] = 'cocoa'
 
 import pygame
 import importlib
@@ -35,6 +35,9 @@ class BaseMenu:
     def __init__(self, action_logger=None):
         print("Initializing BaseMenu...")
         # Initialize pygame if not already initialized
+        if "SDL_VIDEODRIVER" not in os.environ:
+            # Fallback only if absolutely necessary
+            pass # TODO: implement this
         if not pygame.get_init():
             pygame.init()
             # Enable key repeat for continuous input (delay=300ms, interval=35ms)
@@ -627,6 +630,9 @@ class BaseMenu:
             self.selected_provider = settings_dict.get("selected_provider", "GEMINI")
             self.settings_model = settings_dict.get("model", "models/gemini-3-flash-preview")
             self.base_working_backup = settings_dict.get("base_working_backup", None)
+
+            if self.base_working_backup == "None" or self.base_working_backup == "":
+                self.base_working_backup = None
 
             # Set player_id to settings username if available and player_id is empty
             if self.settings_username and not self.player_id:
