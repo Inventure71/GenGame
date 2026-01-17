@@ -198,9 +198,11 @@ def simulate_task_completion(todo_list, task_description):
     print(f"[success] Completing task: {task_description}")
     simulate_parallel_tool_calls([{
         "name": "complete_task",
-        "args": {}
+        "args": {
+            "summary": f"- Completed task: {task_description}\n- This is a test simulation summary that meets the minimum 150 character requirement for the complete_task function call."
+        }
     }])
-    todo_list.complete_task()
+    todo_list.complete_task(f"- Completed task: {task_description}\n- This is a test simulation summary that meets the minimum 150 character requirement for the complete_task function call.")
 
 def main():
     print("🎯 Starting REALISTIC Visual Logger Test...")

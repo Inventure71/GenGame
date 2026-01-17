@@ -130,7 +130,34 @@ class GenericHandler:
         #final_text = self.client.ask_model(turn_history, active_config, history_to_update=chat_history_to_update)
         
         return final_text
-    
+
+    def ask_until_task_completed_V2(self, todo_list: TodoList, current_index: int, full_prompt: str) -> str:
+        iteration_count = 0
+        while iteration_count < self.max_iterations_safety_cutoff:
+            if iteration_count > 0:
+                full_prompt = "Continue the task until it is completed. Ensure you have addressed all requirements of the current task step."
+            iteration_count += 1
+            print("Iteration: ", iteration_count)
+
+            # We use use_history=True to maintain context across the session
+            response = self.generate_response(
+                prompt=full_prompt, 
+                use_tools=True, 
+                use_history=True
+            )
+
+            temp_index = todo_list.index_of_current_task
+            if temp_index == -1:
+                print("Agent has completed all tasks")
+                return -1
+            elif temp_index != current_index:
+                print("Agent has completed a task")
+                print("The model should have called complete_task with the summary of the task so we clean up the chat history")
+                self.clean_chat_history()
+                return temp_index
+            else:
+                print("Agent has not completed the task yet")
+
     def ask_until_task_completed(self, todo_list: TodoList, current_index: int, full_prompt: str, summarize_at_completion: bool) -> str:
         iteration_count = 0
         while iteration_count < self.max_iterations_safety_cutoff:
@@ -177,10 +204,11 @@ class GenericHandler:
         
         while turns < max_turns and not stop_loop:
             turns += 1
+            has_run_tests_tool = None
             print(f"DEBUG: Turn {turns}", flush=True)
 
-            # We use history + current_turn_log for the API call
-            # This ensures the model sees the tool outputs for the current interaction loop
+            # We use history + current_turn_log for the API call (DEPRECATED)
+            # This ensures the model sees the tool outputs for the current interaction loop (DEPRECATED)
             api_history = history + current_turn_log
 
             # 1. Make API call (provider-specific)
@@ -238,12 +266,17 @@ class GenericHandler:
                                 print(f"DEBUG: complete_task was called but not all tools were successful, so we will not call it really", flush=True)
                                 result = {"error": "Error: Not all tools were successful this turn so completing task is not possible"}
                                 result_str = result["error"]
-
+                            elif ((name == "complete_task" and all_tools_success) and (args.get("summary") is None or len(args.get("summary")) < 100)):
+                                print(f"DEBUG: complete_task was called but the summary is too short, so we will not call it really", flush=True)
+                                result = {"error": "Error: The summary is too short, it must be at least 150 characters long"}
+                                result_str = result["error"]
                             else:
                                 result = self.client.tool_map[name](**args)
                                 if not isinstance(result, dict):
                                     result = {"result": result}
                                 result_str = str(result.get("result", result))
+                                if name == "run_all_tests_tool":
+                                    has_run_tests_tool = result_str
 
                             if result_str.startswith("Error:"): # We consider any error as a failure
                                 success = False
@@ -306,7 +339,15 @@ class GenericHandler:
             # Format all tool responses in provider-specific format
             tool_responses_formatted = self.client.format_tool_responses(tool_call_results)
             # Add them to current turn log
-            self.client.add_tool_outputs_to_turn_log(tool_responses_formatted, current_turn_log)
+            if has_run_tests_tool is not None:
+                print("---- RESTORING HISTORY TO DEFAULT STATE (START) + RUN_TESTS_TOOL RESPONSE ----")
+                print("We have run the tests tool, so we restore the history to the default state (start) + run_tests_tool response")
+                current_turn_log = [] # we restore the history to the default state (start) + run_tests_tool response
+                response = self.client.convert_to_client_schema(role="model", content=has_run_tests_tool)
+                self.client.add_response_to_history(response, current_turn_log, None)
+
+            else:  
+                self.client.add_tool_outputs_to_turn_log(tool_responses_formatted, current_turn_log)
             
             # CRITICAL: We DO NOT append tool_output_content to history_to_update
             # The user specifically requested to avoid saving tool responses/outputs to history.

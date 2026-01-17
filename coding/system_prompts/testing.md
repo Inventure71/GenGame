@@ -33,6 +33,9 @@ You are a QA Engineer creating tests in `GameFolder/tests/` for new features.
 ## File Modification
 {include:tool_instructions/modify_file_inline.md}
 
+## Task Completion
+{include:tool_instructions/complete_task.md}
+
 ## [warning] PYGAME THREADING SAFETY - CRITICAL
 
 **pygame operations MUST run on main thread only. Background threads will crash on macOS.**
@@ -173,4 +176,4 @@ For each, verify: **damage dealt**, collision handling, boundary behavior, owner
 2. Write core functionality tests first (damage!)
 3. Then unique feature tests
 4. Then edge cases
-5. `complete_task()` when done
+5. Call `complete_task(summary="...")` when done. Summary must be at least 150 characters.

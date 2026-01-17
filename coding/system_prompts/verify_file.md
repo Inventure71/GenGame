@@ -22,15 +22,19 @@ You are performing a comprehensive verification of a file that has just had merg
 
 ## When to Complete
 
-You should **ONLY** call the `complete_task` tool when you are **100% CERTAIN** that:
+You should **ONLY** call the `complete_task(summary="...")` tool when you are **100% CERTAIN** that:
 - All syntax is valid Python code
 - All imports would work (if you can verify them)
 - The code logic is sound and complete
 - No merge conflict artifacts remain (like `<<<<<<<`, `=======`, `>>>>>>>`)
 - The file is ready for production use
 - **There are absolutely no issues remaining**
+- Summary is at least 150 characters of technical details
 
 **If you have ANY doubt or find ANY issue, continue working instead of completing.**
 
 ## File Modification
 {include:tool_instructions/modify_file_inline.md}
+
+## Task Completion
+{include:tool_instructions/complete_task.md}

@@ -38,9 +38,12 @@ class TodoList:
             return "Task updated successfully."
         return "Task index out of range."
 
-    def complete_task(self):
+    def complete_task(self, summary):
+        print(f"DEBUG: complete_task was called with summary: {summary}", flush=True)
+        self.update_task_by_index(self.index_of_current_task, new_description=summary, completed=True)
+
         if 0 <= self.index_of_current_task < len(self.todo_list):
-            self.todo_list[self.index_of_current_task].complete()
+            #self.todo_list[self.index_of_current_task].complete()
             self.index_of_current_task += 1
         
         if self.index_of_current_task >= len(self.todo_list):
@@ -66,8 +69,10 @@ class TodoList:
     def get_number_of_tasks(self):
         return len(self.todo_list)
 
-    def get_all_tasks(self):
+    def get_all_tasks(self, until_index: int = None):
         string_tasks = ""
         for index, task in enumerate(self.todo_list):
+            if until_index is not None and index >= until_index:
+                break
             string_tasks += f"{index + 1}.{'[COMPLETED]' if task.completed else '[NOT COMPLETED]'} Task: {task.task} Description:\n{task.task_description}\n"
         return string_tasks

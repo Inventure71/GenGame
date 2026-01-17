@@ -337,7 +337,7 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
                 f"**Important:** The file content above is the CURRENT, UP-TO-DATE version after patch application. "
                 f"Analyze this content for issues rather than reading the file again."
             )
-            modelHandler.ask_until_task_completed(todo_list_verification, current_index, full_prompt, summarize_at_completion=False)
+            modelHandler.ask_until_task_completed_V2(todo_list_verification, current_index, full_prompt)
             modelHandler.clean_chat_history()
 
             print(f"[success] Completed verification of {file_path}")
@@ -503,8 +503,10 @@ def implement_feature(modelHandler: GenericHandler, todo_list: TodoList):
 
     print("------ Checking if should summarize chat history... ------")
     if len(modelHandler.chat_history) > 0:
-        modelHandler.summarize_chat_history(autocleanup=True)
-        print("------ Summarized chat history ------")
+        print("------ Cleaning up chat history after planning and before implementing ------")
+        modelHandler.clean_chat_history()
+        #modelHandler.summarize_chat_history(autocleanup=True)
+        #print("------ Summarized chat history ------")
 
     else:
         print("------ STRANGE No chat history to summarize STRANGE ------")
@@ -523,24 +525,29 @@ def implement_feature(modelHandler: GenericHandler, todo_list: TodoList):
 
     while current_index < number_of_tasks and current_index != -1:
         print("--------------------------------")
+        
         todo_item_str = todo_list.get_current_task()
         if todo_item_str == "No tasks remaining, all tasks have been completed":
             print("Agent has completed all tasks")
             current_index = -1
             break
         print("Agent is working on: ", todo_item_str)
+
+        all_tasks = todo_list.get_all_tasks(until_index=current_index-1)
         
         full_prompt = (
+            f"## All Tasks so far\n"
+            f"{all_tasks}\n"
             f"## Current Task\n"
             f"{todo_item_str}\n"
             f"## Instructions\n"
             f"1. Implement exactly what this task specifies\n"
-            f"2. Call `complete_task()` when done\n"
+            f"2. Call `complete_task(summary=summary_of_the_task)` when done. Summary must be at least 150 characters of technical details.\n"
             f"3. Do NOT implement features beyond this task\n"
             f"{gather_context_coding()}\n"
         )
             
-        current_index = modelHandler.ask_until_task_completed(todo_list, current_index, full_prompt, summarize_at_completion=True)
+        current_index = modelHandler.ask_until_task_completed_V2(todo_list, current_index, full_prompt)
         print("--------------------------------")
 
 def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoList):
@@ -561,32 +568,45 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
     # we add to the todo list the task of creating the tests
     todo_list.append_to_todo_list("Create tests for the newly implemented features", "Create tests for all the newly implemented features in the GameFolder/tests/ directory.")
     current_index = todo_list.index_of_current_task # this will be already set by the append_to_todo_list call
-        
-    modelHandler.summarize_chat_history(autocleanup=True)
+
+    if len(modelHandler.chat_history) > 0:
+        print("------ Cleaning up chat history after planning and before generating tests ------")
+        modelHandler.clean_chat_history()
+        #modelHandler.summarize_chat_history(autocleanup=True)
+        #print("------ Summarized chat history ------")
+    else:
+        print("------ STRANGE No chat history to clean up STRANGE ------")
+
     # First we generate the tests for the custom functions that were implemented
     # We still use the same tools
     modelHandler.set_tools(all_tools)
     modelHandler.setup_config("MEDIUM", load_prompt("coding/system_prompts/testing.md"), tools=all_tools)
         
     # here we make sure that it runs until the todo isn't marked as completed
-    all_tasks = todo_list.get_all_tasks()
+    all_tasks = todo_list.get_all_tasks(until_index=current_index-1)
+    current_task = todo_list.get_current_task()
     full_prompt = (
         f"General Objective: {prompt}\n"
         f"All steps done so far: {all_tasks}\n"
+        f"Current task: {current_task}\n"
         f"{gather_context_testing()}\n"
         f"Instructions: Create the tests for all the features and interactions that were implemented. "
-        f"Once finished, you MUST call 'complete_task' to proceed."
+        f"Once finished, you MUST call 'complete_task(summary=summary_of_the_task)' to proceed. Summary must be at least 150 characters of technical details."
     )
     print("Creating tests...")
-    current_index = modelHandler.ask_until_task_completed(todo_list, current_index, full_prompt, summarize_at_completion=False)
-    print("Tests created (REMEMBER THAT WE DIDN'T SUMMARIZE THE CHAT FOR NOW)")
+    current_index = modelHandler.ask_until_task_completed_V2(todo_list, current_index, full_prompt)
+    print("Tests created")
     print("--------------------------------")
 
 def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
-    if len(modelHandler.chat_history) > 1:
-        print("------ Summarizing chat history ------")
-        modelHandler.summarize_chat_history(autocleanup=True)
-    
+    if len(modelHandler.chat_history) > 0:
+        print("------ Cleaning up chat history after planning and before fixing ------")
+        modelHandler.clean_chat_history()
+        #modelHandler.summarize_chat_history(autocleanup=True)
+        #print("------ Summarized chat history ------")
+    else:
+        print("------ STRANGE No chat history to clean up STRANGE ------")
+
     todo_list = TodoList() # brand new todo list for this fix, so that we don't clutter with useless info
     todo_list.append_to_todo_list("Fix the tests", f"Fix all the tests that failed, in particular these are the logs: {str(results['failures'])}")
     current_index = todo_list.index_of_current_task
@@ -611,6 +631,7 @@ def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
     
     lines = [
         "## Fix Task:",
+        f"Current task: {todo_list.get_current_task()}\n"
         f"{gather_context_fix(results=results)}",
         "Fix all failing tests using the debugging workflow."
         #f"{prompt}\n" # will this just be the same as above?
@@ -624,7 +645,7 @@ def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
     print("PROMPT: ", full_prompt)
     print("--------------------------------")
     
-    modelHandler.ask_until_task_completed(todo_list, current_index, full_prompt, summarize_at_completion=False)
+    modelHandler.ask_until_task_completed_V2(todo_list, current_index, full_prompt)
     return todo_list
 
 def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None, UI_called=False):
