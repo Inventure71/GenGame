@@ -35,7 +35,13 @@ echo "🪟 Starting Window Manager..."
 fluxbox &
 sleep 1
 
-# 4. Start x11vnc
+# 3.5. Start clipboard synchronizer
+echo "📋 Starting Clipboard Synchronizer..."
+autocutsel -fork -selection PRIMARY &
+autocutsel -fork -selection CLIPBOARD &
+sleep 1
+
+# 4. Start x11vnc (clipboard support is enabled by default)
 echo "🔌 Starting VNC Server..."
 x11vnc -display :0 -forever -shared -rfbport 5900 -nopw -bg
 

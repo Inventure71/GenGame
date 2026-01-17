@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-dri libgl1 libglx-mesa0 \
     # VNC & Web Proxy Tools
     xvfb x11vnc fluxbox novnc websockify net-tools procps \
+    # Clipboard support for noVNC
+    xclip autocutsel \
     && rm -rf /var/lib/apt/lists/*
 
 # Standardize the noVNC proxy command path

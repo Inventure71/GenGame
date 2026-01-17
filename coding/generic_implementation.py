@@ -126,7 +126,7 @@ class GenericHandler:
             active_config = self.client.temporary_no_tools_config()
             
         # 2. Get the answer        
-        final_text = self.ask_model_WORK_IN_PROGRESS(turn_history, active_config, history_to_update=chat_history_to_update)
+        final_text = self.ask_model(turn_history, active_config, history_to_update=chat_history_to_update)
         #final_text = self.client.ask_model(turn_history, active_config, history_to_update=chat_history_to_update)
         
         return final_text
@@ -161,7 +161,7 @@ class GenericHandler:
             else:
                 print("Agent has not completed the task yet")
 
-    def ask_model_WORK_IN_PROGRESS(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None) -> str:
+    def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None) -> str:
         """
         Generalized ask_model that works with any provider through BaseHandler interface.
         The common logic is here, provider-specific details are handled by the client.
