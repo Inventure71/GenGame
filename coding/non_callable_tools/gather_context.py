@@ -106,9 +106,11 @@ def gather_context_testing():
 def gather_context_fix(results: dict) -> str:
     """Gather focused context for fix mode - only error files + directory tree."""
     lines = [
-        "=== FIX MODE CONTEXT ===",
+        "=== FIX CONTEXT ===",
         "",
         get_full_directory_tree(),  # Directory structure
+        "",
+        "⚡ CRITICAL REMINDER: Batch ALL tool calls in ONE turn (read_file, get_file_outline, get_function_source, etc.). 5-20+ parallel calls is expected. Sequential calls are FORBIDDEN. ⚡",
         "",
         "## Files Involved in Errors:",
         gather_context_fixing_errors(results),  # Only error-related files

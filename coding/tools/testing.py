@@ -39,9 +39,13 @@ def parse_test_results(results: dict) -> dict:
 
     return issues_to_fix
 
-def run_all_tests_tool() -> dict:
+def run_all_tests_tool(explanation: str = None) -> dict: # the argument is unused but we extract it in the agent handler, just to be sure we actually add it
     """
     Run all tests (base + custom) and return structured results.
+    
+    Args:
+        explanation: Required string explaining what was changed and why tests should pass now.
+                     This helps track debugging rationale and fixes.
 
     This tool executes:
     1. All base game tests from BASE_tests.py using actual game classes
@@ -68,13 +72,6 @@ def run_all_tests_tool() -> dict:
                     }
                 ]
             }
-
-    Example:
-        >>> results = run_all_tests()
-        >>> print(results["summary"])
-        >>> if not results["success"]:
-        ...     for failure in results["failures"]:
-        ...         print(f"Failed: {failure['test_name']}")
     """
     suite = _run_all_tests(verbose=False)
 

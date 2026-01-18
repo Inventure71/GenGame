@@ -344,7 +344,7 @@ class BaseMenu:
             self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
             # Get test results
             from coding.tools.testing import run_all_tests_tool
-            test_results = run_all_tests_tool()
+            test_results = run_all_tests_tool(explanation="Post-agent test run from UI")
 
             # Use dictionary properties directly
             passed = test_results.get('passed_tests', 0)
@@ -434,7 +434,7 @@ class BaseMenu:
 
             # Update UI with new test results
             from coding.tools.testing import run_all_tests_tool
-            test_results = run_all_tests_tool()
+            test_results = run_all_tests_tool(explanation="UI refresh test run")
             passed = test_results.get('passed_tests', 0)
             total = test_results.get('total_tests', 0)
             self.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}

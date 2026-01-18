@@ -135,6 +135,7 @@ class VersionControl:
                                 else:
                                     content_lines.append(line)
                     content = '\n'.join(content_lines)
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
                     with open(file_path, 'w') as f:
                         f.write(content)
                     print(f"    ✓ Created new file")

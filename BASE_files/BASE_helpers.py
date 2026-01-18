@@ -178,9 +178,25 @@ def reload_game_code() -> types.ModuleType:
         try:
             importlib.reload(module)
         except Exception as e:
-            # CRITICAL FIX: Print the error so you know the patch failed!
             print(f"[error] Failed to reload {name}: {e}")
             traceback.print_exc() 
+   
+    import os
+    game_folder_path = os.path.join(os.path.dirname(__file__), '..', 'GameFolder')
+    if os.path.exists(game_folder_path):
+        for root, dirs, files in os.walk(game_folder_path):
+            for file in files:
+                if file.endswith('.py') and not file.startswith('__'):
+                    rel_path = os.path.relpath(os.path.join(root, file), game_folder_path)
+                    module_name = 'GameFolder.' + rel_path.replace(os.sep, '.').replace('.py', '')
+                    
+                    # If this module isn't loaded yet, import it
+                    if module_name not in sys.modules:
+                        try:
+                            __import__(module_name)
+                            print(f"[info] Imported new module: {module_name}")
+                        except Exception as e:
+                            print(f"[warning] Failed to import new module {module_name}: {e}")
             
     # 3. Explicitly reload the entry point (setup.py) last
     # STRATEGY CHANGE: Use del + import to force fresh namespace population from reloaded dependencies

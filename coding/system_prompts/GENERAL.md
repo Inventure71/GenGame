@@ -12,6 +12,14 @@
 - **Overrides**: Call `super().method_name()` unless fully replacing behavior.
 - **Imports**: Use absolute imports: `from GameFolder...` or `from BASE_components...`
 
+## Player-Specific Logic in Multiplayer
+- **Username Placeholder**: When modifying `GameFolder/setup.py` to apply logic to a specific player, use the exact placeholder `$USERNAME$` to reference the username of the player who requested the patch.
+- **Patch Creator Context**: `$USERNAME$` represents the patch creator's username. Design implementations with this player as the primary target by default.
+- **Unknown Players**: Other players' usernames are not available during patch creation. Use `$USERNAME$` only for the requesting player's logic.
+- **Placeholder Replacement**: The system automatically replaces `$USERNAME$` with the actual player's username when patches are applied in multiplayer sessions.
+- **Player Identification**: Use `player_name == "$USERNAME$"` or `"$USERNAME$" in player_name` for conditional logic targeting the patch creator's player.
+- **No Hardcoding**: Never use player indices (e.g., `i == 0`) or hardcoded names for player-specific logic, as connection order varies in multiplayer.
+
 ## 🚨 PARALLEL TOOL USAGE IS MANDATORY 🚨
 
 **Rule**: Think → list ALL files needed → batch ALL calls in ONE turn.

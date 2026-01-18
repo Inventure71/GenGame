@@ -98,7 +98,8 @@ class MenuHandlers:
             self.menu.patches_ready = True
 
             # Get selected patches info
-            selected_patches = self.menu.patch_manager.get_selected_patches_info()
+            print(f"Sending patches to server for player: {self.menu.player_id}")
+            selected_patches = self.menu.patch_manager.get_selected_patches_info(current_username=self.menu.player_id)
 
             # Send patches to server
             self.menu.client.send_patches_selection(selected_patches)
@@ -242,7 +243,7 @@ class MenuHandlers:
                 # Run tests after loading to check for issues
                 print("Running tests on loaded patch...")
                 from coding.tools.testing import run_all_tests_tool
-                test_results = run_all_tests_tool()
+                test_results = run_all_tests_tool(explanation="Post-patch-load validation test run")
                 
                 # Set agent results so fix button can appear if tests failed
                 passed = test_results.get('passed_tests', 0)

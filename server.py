@@ -263,22 +263,40 @@ class GameServer:
         connected_player_names = list(self.clients.keys())
         print(f"Recreating arena with players: {connected_player_names}")
         
-        # CRITICAL FIX: Always re-import setup to get the fresh module object after a reload!
-        # The global 'GameFolder.setup' might point to the old module object.
-        if 'GameFolder.setup' in sys.modules:
-             setup_module = sys.modules['GameFolder.setup']
-        else:
-             import GameFolder.setup
-             setup_module = GameFolder.setup
+        try:
+            # CRITICAL FIX: Always re-import setup to get the fresh module object after a reload!
+            # The global 'GameFolder.setup' might point to the old module object.
+            if 'GameFolder.setup' in sys.modules:
+                # Force re-import to pick up new modules
+                del sys.modules['GameFolder.setup']
+            
+            # Import fresh - this will also import any new modules
+            import GameFolder.setup
+            setup_module = GameFolder.setup
 
-        # Recreate arena with actual player names
-        self.arena = setup_module.setup_battle_arena(width=1400, height=900, headless=True, player_names=connected_player_names)
+            # Recreate arena with actual player names
+            self.arena = setup_module.setup_battle_arena(width=1400, height=900, headless=True, player_names=connected_player_names)
 
-        # Set character IDs to match player names
-        for i, character in enumerate(self.arena.characters):
-            if i < len(connected_player_names):
-                player_name = connected_player_names[i]
-                character.id = player_name
+            # Set character IDs to match player names
+            for i, character in enumerate(self.arena.characters):
+                if i < len(connected_player_names):
+                    player_name = connected_player_names[i]
+                    character.id = player_name
+                    
+            print(f"[success] Arena recreated successfully with {len(self.arena.characters)} characters")
+            
+        except ImportError as e:
+            print(f"[error] Failed to import game modules: {e}")
+            import traceback
+            traceback.print_exc()
+            # Don't crash - just log the error
+            raise
+        except Exception as e:
+            print(f"[error] Failed to recreate arena: {e}")
+            import traceback
+            traceback.print_exc()
+            # Re-raise to let caller handle it
+            raise
 
     def _initiate_game_start_with_patch_sync(self):
         """Generate merge patch and send to all clients, then wait for them to apply."""

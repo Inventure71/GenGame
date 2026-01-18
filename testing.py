@@ -160,7 +160,7 @@ def main_manual_repl():
             continue
 
         if cmd == "/run_tests":
-            results = run_all_tests_tool()
+            results = run_all_tests_tool(explanation="Manual test run from REPL")
             #print("Tests results: ", results)
             issues_to_fix = parse_test_results(results)
             if len(issues_to_fix) > 0:
@@ -210,7 +210,7 @@ def main_version_control_interactive():
         #vc.resolve_conflicts_interactive("merged_patch.json")
     
     action_logger.end_session()
-            
+
 if __name__ == "__main__":
     print(run_all_tests_tool())
     #print(load_prompt("coding/system_prompts/fix_agent.md"))

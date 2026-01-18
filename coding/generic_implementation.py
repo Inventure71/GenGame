@@ -158,36 +158,6 @@ class GenericHandler:
             else:
                 print("Agent has not completed the task yet")
 
-    def ask_until_task_completed(self, todo_list: TodoList, current_index: int, full_prompt: str, summarize_at_completion: bool) -> str:
-        iteration_count = 0
-        while iteration_count < self.max_iterations_safety_cutoff:
-            if iteration_count > 0:
-                full_prompt = "Continue the task until it is completed. Ensure you have addressed all requirements of the current task step."
-            iteration_count += 1
-            print("Iteration: ", iteration_count)
-
-            # We use use_history=True to maintain context across the session
-            response = self.generate_response(
-                prompt=full_prompt, 
-                use_tools=True, 
-                use_history=True
-            )
-
-            temp_index = todo_list.index_of_current_task
-            if temp_index == -1:
-                print("Agent has completed all tasks")
-                return -1
-            elif temp_index != current_index:
-                print("Agent has completed a task")
-                if summarize_at_completion:
-                    print("Summarizing chat history...")
-                    self.summarize_chat_history(autocleanup=True)
-                else:
-                    print("Not summarizing chat history, flag set to False")
-                return temp_index
-            else:
-                print("Agent has not completed the task yet")
-
     def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None) -> str:
         """
         Generalized ask_model that works with any provider through BaseHandler interface.
@@ -204,7 +174,8 @@ class GenericHandler:
         
         while turns < max_turns and not stop_loop:
             turns += 1
-            has_run_tests_tool = None
+            result_run_tests_tool = None
+            explanation_run_tests_tool = None
             print(f"DEBUG: Turn {turns}", flush=True)
 
             # We use history + current_turn_log for the API call (DEPRECATED)
@@ -276,7 +247,20 @@ class GenericHandler:
                                     result = {"result": result}
                                 result_str = str(result.get("result", result))
                                 if name == "run_all_tests_tool":
-                                    has_run_tests_tool = result_str
+                                    if result.get("success"):
+                                        result_run_tests_tool = f"Success: All {result.get('total_tests')} tests passed! You should now call complete_task."
+                                        print("Run all tests tool was successful, so we will stop the loop FORCEFULLY", flush=True)
+                                        print("We need to run the complete_task tool now manually", flush=True)
+                                        self.client.tool_map["complete_task"](summary="All tests passed")
+                                        stop_loop = True
+                                    else:
+                                        # Minimal inline filter for failures and stdout
+                                        result_run_tests_tool = "--- TEST FAILURES ---\n" + "\n".join([
+                                            f"Test: {f['test_name']}\nError: {f['error_msg']}\nPrints: {f['stdout']}\nTraceback: {f['traceback']}\n"
+                                            for f in result.get("failures", [])
+                                        ])
+                                    explanation_run_tests_tool = args.get("explanation", None)
+                                    print(f"DEBUG: has_run_tests_tool result: {result_run_tests_tool}, explanation: {explanation_run_tests_tool}", flush=True)
 
                             if result_str.startswith("Error:"): # We consider any error as a failure
                                 success = False
@@ -339,13 +323,21 @@ class GenericHandler:
             # Format all tool responses in provider-specific format
             tool_responses_formatted = self.client.format_tool_responses(tool_call_results)
             # Add them to current turn log
-            if has_run_tests_tool is not None:
+            # In generic_implementation.py, around line 342-350
+            if result_run_tests_tool is not None:
                 print("---- RESTORING HISTORY TO DEFAULT STATE (START) + RUN_TESTS_TOOL RESPONSE ----")
                 print("We have run the tests tool, so we restore the history to the default state (start) + run_tests_tool response")
-                current_turn_log = [] # we restore the history to the default state (start) + run_tests_tool response
-                response = self.client.convert_to_client_schema(role="model", content=has_run_tests_tool)
-                self.client.add_response_to_history(response, current_turn_log, None)
+                current_turn_log = []  # Reset to empty
+                
+                # Add the test result as a model response
+                self.clean_chat_history()
+                response_content = self.client.convert_to_client_schema(role="assistant", content=f"What I did: {explanation_run_tests_tool}")
+                current_turn_log.append(response_content)
+                # Already filtered in the tool call to be only failures.
+                response_content = self.client.convert_to_client_schema(role="user", content=f"The result of the tests is: {result_run_tests_tool}")
+                current_turn_log.append(response_content)
 
+                print(f"DEBUG: current_turn_log: {current_turn_log}", flush=True)
             else:  
                 self.client.add_tool_outputs_to_turn_log(tool_responses_formatted, current_turn_log)
             

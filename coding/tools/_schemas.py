@@ -174,16 +174,22 @@ TOOL_DEFINITIONS = {
         "name": "run_all_tests_tool",
         "description": (
             "Run all tests and return structured results with stdout logging from debug prints.\n"
-            "CRITICAL: Use ONCE per debugging cycle.\n"
+            "CRITICAL: Always write debug prints in the tests you are modifying to help future debugging.\n"
             "Add print() statements to all failing tests first, then run this tool to see debug output, then make fixes.\n"
-            "Never run multiple times in one response - that's inefficient debugging."
+            "Never run multiple times in one response - that's inefficient debugging.\n"
+            "MANDATORY: Always provide an 'explanation' parameter describing what you changed and why tests should pass now."
         ),
         
         "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "type": "object",
+        "properties": {
+            "explanation": {
+                "type": "string",
+                "description": "A string explaining what you changed and why the tests should pass now. Required for tracking debugging rationale."
+            }
+        },
+        "required": ["explanation"]
+    }
     },
 
     # === CODE ANALYSIS ===

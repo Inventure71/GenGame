@@ -683,10 +683,10 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
     else:
         print("------ Fixing system ------")
         if results is None:
-            results = run_all_tests_tool()
+            results = run_all_tests_tool(explanation="Initial test run before fix cycle")
         todo_list = fix_system(prompt, modelHandler, results)
 
-    results = run_all_tests_tool()
+    results = run_all_tests_tool(explanation="Final test run after implementation/fix cycle")
     print("Tests results: ", results)
 
     issues_to_fix = parse_test_results(results)
