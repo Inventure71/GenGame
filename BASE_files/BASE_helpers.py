@@ -6,6 +6,7 @@ import os
 import json
 import sys
 import importlib
+import importlib.util
 import traceback
 import types
 
@@ -217,6 +218,115 @@ def reload_game_code() -> types.ModuleType:
         print(f"[error] CRITICAL: Failed to reload setup.py: {e}")
         traceback.print_exc()
         return None
+
+def validate_gamefolder_importable():
+    """
+    Validate that GameFolder.setup can be imported without errors.
+    Returns (is_valid, error_message)
+    """
+    try:
+        # Use importlib to test import without polluting namespace
+        spec = importlib.util.find_spec("GameFolder.setup")
+        if spec is None:
+            return False, "GameFolder.setup module not found"
+        
+        # Try to load the module
+        module = importlib.util.module_from_spec(spec)
+        # Add to sys.modules temporarily to handle relative imports
+        sys.modules['GameFolder.setup'] = module
+        spec.loader.exec_module(module)
+        
+        # If we get here, import succeeded
+        # Clean up the test import
+        if 'GameFolder.setup' in sys.modules:
+            del sys.modules['GameFolder.setup']
+        # Also clean up any GameFolder submodules that might have been loaded
+        modules_to_remove = [k for k in sys.modules.keys() if k.startswith('GameFolder.')]
+        for mod_name in modules_to_remove:
+            del sys.modules[mod_name]
+        
+        return True, None
+    except ImportError as e:
+        error_msg = str(e)
+        # Clean up any partially loaded modules
+        modules_to_remove = [k for k in sys.modules.keys() if k.startswith('GameFolder.')]
+        for mod_name in modules_to_remove:
+            del sys.modules[mod_name]
+        return False, f"ImportError: {error_msg}"
+    except SyntaxError as e:
+        error_msg = str(e)
+        # Clean up any partially loaded modules
+        modules_to_remove = [k for k in sys.modules.keys() if k.startswith('GameFolder.')]
+        for mod_name in modules_to_remove:
+            del sys.modules[mod_name]
+        return False, f"SyntaxError: {error_msg}"
+    except Exception as e:
+        error_msg = str(e)
+        # Clean up any partially loaded modules
+        modules_to_remove = [k for k in sys.modules.keys() if k.startswith('GameFolder.')]
+        for mod_name in modules_to_remove:
+            del sys.modules[mod_name]
+        return False, f"Error: {error_msg}"
+
+def ensure_gamefolder_exists():
+    """Ensure GameFolder exists with content and is importable, restoring from backup if needed."""
+    game_folder = "GameFolder"
+    
+    # Check if GameFolder exists and has content
+    if not os.path.exists(game_folder) or not os.listdir(game_folder):
+        print("GameFolder is missing or empty. Attempting to restore from default backup...")
+        should_restore = True
+    else:
+        # GameFolder exists and has content, but check if it's importable
+        print("GameFolder exists and has content. Validating importability...")
+        is_valid, error_msg = validate_gamefolder_importable()
+        
+        if not is_valid:
+            print(f"GameFolder is in a broken state: {error_msg}")
+            print("Attempting to restore from default backup...")
+            should_restore = True
+        else:
+            print("GameFolder is valid and importable. No need to restore from backup.")
+            return True
+    
+    # Restore from backup if needed
+    if should_restore:
+        try:
+            from coding.non_callable_tools.backup_handling import BackupHandler
+            handler = BackupHandler("__game_backups")
+
+            # Get available backups and pick the most recent one
+            backups = handler.list_backups()
+            if not backups:
+                print("ERROR: No backups available to restore from!")
+                return False
+
+            # Sort by modification time (most recent first)
+            backups_with_mtime = [(b, os.path.getmtime(os.path.join("__game_backups", b))) for b in backups]
+            backups_with_mtime.sort(key=lambda x: x[1], reverse=True)
+            default_backup = backups_with_mtime[0][0]
+
+            print(f"Restoring from backup: {default_backup}")
+            print(f"Target path: {game_folder}")
+            handler.restore_backup(default_backup, target_path=game_folder)
+            print("GameFolder restored successfully.")
+            
+            # Validate the restored GameFolder
+            print("Validating restored GameFolder...")
+            is_valid, error_msg = validate_gamefolder_importable()
+            if not is_valid:
+                print(f"WARNING: Restored GameFolder is still broken: {error_msg}")
+                print("You may need to manually fix the issue or restore from a different backup.")
+                return False
+            
+            print("Restored GameFolder is valid and importable.")
+            return True
+
+        except Exception as e:
+            print(f"ERROR: Failed to restore GameFolder from backup: {e}")
+            return False
+    
+    return True
 
 def load_settings() -> dict:
     """Load settings from config file."""

@@ -882,6 +882,16 @@ def run_all_tests(
                         error_traceback=test_data['error_traceback'],
                         source_file=file_name
                     )
+                    # Log to action_logger for consistency
+                    if hasattr(action_logger, 'log_test_result'):
+                        action_logger.log_test_result({
+                            'test_name': import_error_result.test_name,
+                            'status': 'failed',
+                            'source_file': import_error_result.source_file,
+                            'error_msg': import_error_result.error_msg,
+                            'traceback': import_error_result.error_traceback,
+                            'duration': import_error_result.duration
+                        })
                     combined_suite.add_result(import_error_result)
                     if verbose:
                         print(f"\n✗ Failed to import {file_name}: {test_data['error_msg']}")
