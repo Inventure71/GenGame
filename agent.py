@@ -343,8 +343,7 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
             print(f"[success] Completed verification of {file_path}")
 
     # Phase 4: Replace original merged patch with final verified version
-    base_backup = load_settings()["base_working_backup"]
-
+    # Use the base_backup parameter passed to the function (don't overwrite it)
     print("📝 Phase 4: Replacing original merged patch with final verified version...")
     if base_backup:
         # Replace the original problematic patch file with the resolved version

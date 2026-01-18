@@ -91,13 +91,25 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                         Character = reloaded_setup.Character
                         
                         print("✓ Game files synchronized and classes deep reloaded")
+                        # Set flag immediately to prevent race condition
+                        network_client.file_sync_complete = True
                         network_client.acknowledge_file_sync()
                     else:
                         print("[warning] Failed to deep reload after file sync")
+                        # Acknowledge even on failure to prevent getting stuck
+                        network_client.acknowledge_file_sync()
+                        network_client.disconnect()
 
                 except Exception as e:
                     print(f"Failed to load synchronized game: {e}")
+                    # Acknowledge even on exception to prevent getting stuck
+                    network_client.acknowledge_file_sync()
                     network_client.disconnect()
+            else:
+                print("[error] Failed to sync game files")
+                # Acknowledge even on failure to prevent getting stuck
+                network_client.acknowledge_file_sync()
+                network_client.disconnect()
 
         def on_game_start():
             """Callback when game start is received - ensure classes are loaded."""

@@ -13,6 +13,7 @@ import pickle
 import os
 import sys
 import glob
+import importlib
 from typing import Dict, List, Set, Tuple, Optional
 from collections import defaultdict
 import select
@@ -88,6 +89,9 @@ class GameServer:
         self.clients_patch_failed: Dict[str, str] = {}  # Track which clients failed: player_id -> error_message
         self.waiting_for_patch_sync = False  # Flag to indicate we're waiting for patch sync
         self.waiting_for_patch_received = False  # Flag to indicate we're waiting for patch reception
+        
+        # File sync acknowledgment tracking (Fix #2: Game State Race Condition)
+        self.clients_file_sync_ack: Set[str] = set()  # Track clients who finished reloading classes
 
         # Server-side patch management
         self.server_patches_dir = "__server_patches"
@@ -140,6 +144,55 @@ class GameServer:
                         print(f"Loaded game file: {rel_path}")
                     except Exception as e:
                         print(f"Failed to load {rel_path}: {e}")
+
+    def _restore_gamefolder_to_base(self):
+        """Restore GameFolder to the base backup and clear module cache."""
+        try:
+            from coding.non_callable_tools.backup_handling import BackupHandler
+            import traceback
+            
+            backup_handler = BackupHandler("__game_backups")
+            backups = backup_handler.list_backups()
+            
+            if not backups:
+                print("[warning] No backups available to restore from. GameFolder will remain in current state.")
+                return
+            
+            # Sort backups by modification time (most recent first)
+            backups_with_mtime = [(b, os.path.getmtime(os.path.join("__game_backups", b))) for b in backups]
+            backups_with_mtime.sort(key=lambda x: x[1], reverse=True)
+            base_backup = backups_with_mtime[0][0]
+            
+            print(f"Restoring GameFolder to base backup: {base_backup}")
+            success, _ = backup_handler.restore_backup(base_backup, target_path="GameFolder")
+            
+            if success:
+                print(f"[success] GameFolder restored to base backup: {base_backup}")
+                
+                # Clear Python module cache for GameFolder modules
+                modules_to_clear = [key for key in list(sys.modules.keys()) if key.startswith('GameFolder')]
+                for module_name in modules_to_clear:
+                    try:
+                        del sys.modules[module_name]
+                    except KeyError:
+                        pass
+                importlib.invalidate_caches()
+                print(f"[success] Cleared {len(modules_to_clear)} cached GameFolder modules")
+                
+                # Reload game files after restore
+                self._load_game_files()
+                
+                # Clear any cached merged patch file
+                merged_patch_path = os.path.join(self.server_patches_dir, "merged_patch.json")
+                if os.path.exists(merged_patch_path):
+                    os.remove(merged_patch_path)
+                    print("[success] Cleared old merged_patch.json file")
+            else:
+                print(f"[warning] Failed to restore GameFolder to base backup: {base_backup}")
+        except Exception as e:
+            print(f"[error] Error restoring GameFolder to base backup: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _get_available_backups(self) -> set:
         """Get set of backup names server has available."""
@@ -360,6 +413,9 @@ class GameServer:
     def _notify_all_clients_game_start(self):
         """Notify all connected clients to start the game."""
         print("Notifying all clients to start game...")
+        
+        # Fix #2: Reset file sync ACK tracker when starting new game
+        self.clients_file_sync_ack.clear()
 
         message = {
             'type': 'game_start'
@@ -535,6 +591,21 @@ class GameServer:
             # Remove from active character mapping
             if player_id in self.player_id_to_character:
                 del self.player_id_to_character[player_id]
+            # Clean up player_name_to_id mapping (reverse lookup)
+            names_to_remove = [name for name, pid in self.player_name_to_id.items() if pid == player_id]
+            for name in names_to_remove:
+                del self.player_name_to_id[name]
+            
+            # Fix #1: Cleanup synchronization states to prevent deadlocks
+            self.clients_patch_received.discard(player_id)
+            self.clients_patch_ready.discard(player_id)
+            if player_id in self.clients_patch_failed:
+                del self.clients_patch_failed[player_id]
+            if hasattr(self, 'clients_file_sync_ack'):
+                self.clients_file_sync_ack.discard(player_id)
+            if player_id in self.clients_ready_status:
+                self.clients_ready_status.discard(player_id)
+            
             print(f"Client {player_id} disconnected")
 
             # Check if server is now empty
@@ -576,6 +647,17 @@ class GameServer:
                     print("[success] All clients have received the patch - now waiting for application")
                     self.waiting_for_patch_received = False
                     self.waiting_for_patch_sync = True
+                    
+                    # Fix #3: Check if everyone has ALREADY applied the patch (Race Condition Fix)
+                    responded_clients = self.clients_patch_ready | set(self.clients_patch_failed.keys())
+                    if responded_clients == all_clients:
+                        print("Fast-track: All clients already ready, starting game...")
+                        # Re-run the completion logic
+                        if len(self.clients_patch_failed) == 0:
+                            self._recreate_arena_with_players()
+                            self._notify_all_clients_game_start()
+                        else:
+                            self._notify_patch_sync_failed()
         elif msg_type == 'patch_applied':
             # Client acknowledged that they've applied the patch
             patch_success = message.get('success', True)
@@ -623,6 +705,9 @@ class GameServer:
             # because the client has reloaded its classes and updated sys.modules
             print(f"{player_id} acknowledged file sync")
             
+            # Fix #2: Mark this client as ready for game state broadcasts
+            self.clients_file_sync_ack.add(player_id)
+            
             # Recreate arena with fresh classes from sys.modules
             # This ensures Character instances match the class in sys.modules
             if not hasattr(self, '_arena_initialized'):
@@ -644,7 +729,7 @@ class GameServer:
                     actual_player_id = requested_name
 
                     # Check if this player name is already taken
-                    if actual_player_id in self.clients:
+                    if actual_player_id in self.clients or actual_player_id in self.player_name_to_id:
                         print(f"Player name '{requested_name}' already taken, rejecting")
                         # Send rejection message
                         response = {
@@ -1509,7 +1594,7 @@ class GameServer:
                 self.game_finished_time = time.time()
                 self.waiting_for_restart = True
 
-                winner_name = self.arena.winner if self.arena.winner else "Unknown"
+                winner_name = self.arena.winner.id if self.arena.winner and hasattr(self.arena.winner, 'id') else "Unknown"
                 print(f"\n🎉 GAME OVER! Winner: {winner_name}")
                 print(f"🏆 Server will restart in {self.restart_delay} seconds...")
 
@@ -1520,7 +1605,7 @@ class GameServer:
                     'restart_delay': self.restart_delay,
                     'message': f'Game finished! Winner: {winner_name}. Server restarting in {self.restart_delay} seconds...'
                 }
-                data = pickle.dumps(restart_message)
+                data = pickle.dumps(restart_message, protocol=4)
                 length_bytes = len(data).to_bytes(4, byteorder='big')
 
                 for player_id, client_socket in self.clients.items():
@@ -1576,6 +1661,11 @@ class GameServer:
         self.client_patches.clear()
         self.client_patch_files.clear()
         self.clients_ready_status.clear()
+        if hasattr(self, 'clients_file_sync_ack'):
+            self.clients_file_sync_ack.clear()
+
+        # CRITICAL: Restore GameFolder to base backup before resetting game state
+        self._restore_gamefolder_to_base()
 
         # Reset game state
         self.arena = None
@@ -1618,6 +1708,11 @@ class GameServer:
         self.client_patches.clear()
         self.client_patch_files.clear()
         self.clients_ready_status.clear()
+        if hasattr(self, 'clients_file_sync_ack'):
+            self.clients_file_sync_ack.clear()
+
+        # CRITICAL: Restore GameFolder to base backup before resetting game state
+        self._restore_gamefolder_to_base()
 
         # Reset game state
         self.arena = None
@@ -1678,6 +1773,11 @@ class GameServer:
         """Broadcast the current game state to all clients."""
         if not self.arena or not self.clients:
             return
+        
+        # Fix #2: Prevent sending state before clients have reloaded their classes
+        # Uses issubset to ensure ALL currently connected clients are ready
+        if not set(self.clients.keys()).issubset(self.clients_file_sync_ack):
+            return
 
         # Collect all network objects
         # Build character states with input ID tracking
@@ -1701,7 +1801,7 @@ class GameServer:
             self.game_finished_time = time.time()
             self.waiting_for_restart = True
 
-            winner_name = self.arena.winner if self.arena.winner else "Unknown"
+            winner_name = self.arena.winner.id if self.arena.winner and hasattr(self.arena.winner, 'id') else "Unknown"
             print(f"\n🎉 GAME OVER! Winner: {winner_name}")
             print(f"🏆 Restarting server in {self.restart_delay} seconds...")
 
@@ -1712,7 +1812,7 @@ class GameServer:
                 'restart_delay': self.restart_delay,
                 'message': f'Game finished! Winner: {winner_name}. Server restarting in {self.restart_delay} seconds...'
             }
-            data = pickle.dumps(restart_message)
+            data = pickle.dumps(restart_message, protocol=4)
             length_bytes = len(data).to_bytes(4, byteorder='big')
 
             for player_id, client_socket in self.clients.items():
@@ -1739,7 +1839,8 @@ class GameServer:
 
         # Serialize once
         try:
-            data = pickle.dumps(game_state)
+            # Use protocol 4 for better compatibility and to avoid encoding issues
+            data = pickle.dumps(game_state, protocol=4)
             length_bytes = len(data).to_bytes(4, byteorder='big')
         except Exception as e:
             print(f"[warning] Failed to serialize game state: {e}")
@@ -1765,7 +1866,8 @@ class GameServer:
 
         # Send to all clients
         disconnected_clients = []
-        for player_id, client_socket in self.clients.items():
+        # Create snapshot to avoid RuntimeError if dictionary is modified during iteration
+        for player_id, client_socket in list(self.clients.items()):
             try:
                 self._send_data_safe(client_socket, length_bytes + data)
             except Exception as e:

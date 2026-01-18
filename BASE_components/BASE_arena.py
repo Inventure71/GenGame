@@ -297,9 +297,7 @@ class Arena:
         self.weapon_spawn_timer += delta_time
         if self.weapon_spawn_timer >= self.spawn_interval:
             self.weapon_spawn_timer = 0.0
-            # TODO: implement that it spawns a weapon every time a character dies
-            #if self.lootpool and len(self.weapon_pickups) < max(2, len(self.characters)):
-            if self.lootpool:
+            if self.lootpool and len(self.weapon_pickups) < max(2, len(self.characters)):
                 random.seed(self.spawn_count + 42)
                 self.spawn_count += 1
                 # Only spawn on platforms wide enough for weapon placement (need at least 40px width)

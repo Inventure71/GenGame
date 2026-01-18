@@ -126,8 +126,9 @@ class BaseUI:
         
         big_font = pygame.font.Font(None, 80)
         if winner:
-            player_idx = next((i for i, c in enumerate(characters) if c == winner), 0)
-            text_str = f"PLAYER {player_idx + 1} WINS!"
+            # Use the character's ID (which is the username) instead of player index
+            winner_name = winner.id if hasattr(winner, 'id') else (winner.name if hasattr(winner, 'name') else "Unknown")
+            text_str = f"{winner_name.upper()} WINS!"
             text_color = (255, 215, 0)
         else:
             text_str = "GAME OVER - DRAW"

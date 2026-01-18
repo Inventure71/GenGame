@@ -62,6 +62,10 @@ class NetworkClient:
 
         # File transfer state
         self.file_transfers = {}  # file_path -> {'chunks': {}, 'total_chunks': 0, 'received_chunks': 0}
+        
+        # File sync tracking
+        self.file_sync_complete = False  # Track if file sync has completed
+        self.file_sync_requested = False  # Track if we've requested sync
 
     def connect(self, player_id: str) -> bool:
         """Connect to the server."""
@@ -72,6 +76,10 @@ class NetworkClient:
             self.player_id = player_id
             self.connected = True
             self.running = True
+            
+            # Reset file sync flags for new connection
+            self.file_sync_complete = False
+            self.file_sync_requested = False
 
             # Start receive thread
             self.receive_thread = threading.Thread(target=self._receive_loop, daemon=True)
@@ -92,6 +100,10 @@ class NetworkClient:
         """Disconnect from the server."""
         self.running = False
         self.connected = False
+        
+        # Reset file sync flags on disconnect
+        self.file_sync_complete = False
+        self.file_sync_requested = False
 
         if self.socket:
             try:
@@ -214,6 +226,10 @@ class NetworkClient:
         """Send acknowledgment that file sync was received."""
         if not self.connected:
             return
+        
+        # Mark file sync as complete
+        self.file_sync_complete = True
+        self.file_sync_requested = False  # Reset flag
 
         message = {
             'type': 'file_sync_ack',
@@ -353,8 +369,33 @@ class NetworkClient:
                     data = self._recv_exact(message_length)
                     
                     if data and len(data) == message_length:
-                        message = pickle.loads(data)
-                        self.incoming_queue.append(message)
+                        try:
+                            message = pickle.loads(data)
+                            
+                            # If this is game_state and file sync hasn't completed, skip it
+                            if message.get('type') == 'game_state' and not self.file_sync_complete:
+                                print("[warning] Received game_state before file sync complete - skipping")
+                                # Request file sync if we haven't already
+                                if not self.file_sync_requested:
+                                    self.file_sync_requested = True
+                                    self.request_file_sync()
+                                continue
+                            
+                            self.incoming_queue.append(message)
+                        except (pickle.UnpicklingError, EOFError, ValueError, UnicodeDecodeError) as pickle_error:
+                            # Pickle or decode errors - likely class mismatch or data corruption
+                            print(f"Failed to unpickle message: {type(pickle_error).__name__} (data length: {len(data)} bytes)")
+                            
+                            # If file sync hasn't completed, try requesting it as recovery
+                            if not self.file_sync_complete and not self.file_sync_requested:
+                                print("Unpickle error - requesting file sync for recovery")
+                                self.file_sync_requested = True
+                                self.request_file_sync()
+                                # Don't disconnect immediately - wait for file sync
+                                continue
+                            
+                            self.disconnect()
+                            break
                     else:
                         print("Failed to receive complete message body")
                         self.disconnect()
@@ -363,9 +404,22 @@ class NetworkClient:
             except BlockingIOError:
                 # Just continue if resource temp unavailable on length read
                 continue
+            except UnicodeDecodeError as decode_error:
+                # Handle UTF-8 decode errors specifically
+                print(f"Receive error: UnicodeDecodeError at position {decode_error.start}")
+                # Try recovery if file sync hasn't completed
+                if not self.file_sync_complete and not self.file_sync_requested:
+                    print("UnicodeDecodeError - requesting file sync for recovery")
+                    self.file_sync_requested = True
+                    self.request_file_sync()
+                    continue
+                self.disconnect()
+                break
             except Exception as e:
                 if self.running:  # Only print error if we're supposed to be running
-                    print(f"Receive error: {e}")
+                    # Use type name and truncate message to avoid formatting binary data
+                    error_msg = str(e)[:200] if len(str(e)) > 200 else str(e)
+                    print(f"Receive error: {type(e).__name__}: {error_msg}")
                     self.disconnect()
                 break
 
@@ -396,7 +450,7 @@ class NetworkClient:
                     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                     print(f"[{timestamp}] 📤 DEBUG CLIENT: Sending backup chunk {chunk_num+1 if isinstance(chunk_num, int) else chunk_num}/{total_chunks} for '{backup_name}'")
 
-                data = pickle.dumps(message)
+                data = pickle.dumps(message, protocol=4)
                 length_bytes = len(data).to_bytes(4, byteorder='big')
                 self._send_data_safe(length_bytes + data)
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
