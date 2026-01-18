@@ -433,8 +433,9 @@ class GameServer:
                         return None # Disconnected
                     data += chunk
                 else:
-                    # Timeout waiting for data chunk
-                    continue
+                    # Timeout waiting for data chunk - connection likely dead
+                    print(f"Timeout waiting for data in _recv_exact (expected {size} bytes, got {len(data)})")
+                    return None  # Return None instead of continuing forever
             except BlockingIOError:
                 # Resource temporarily unavailable, try again
                 continue
@@ -1305,7 +1306,7 @@ class GameServer:
                             break
                         settings["model_name"] = settings_dict.get("model", "models/gemini-3-flash-preview")
                     else:
-                        print("WARNING: No settings found, using default settings")
+                        print("WARNING: No settings found, NO API KEY --> NO AUTO-FIX")
                         success = False
                         break
 

@@ -291,32 +291,24 @@ class MenuHandlers:
     def on_settings_save_click(self):
         """Handle settings save button click."""
         print("Settings Save clicked")
-        # Save settings to a config file
-        import json
-        import os
-
-        config_dir = "__config"
-        if not os.path.exists(config_dir):
-            os.makedirs(config_dir)
-
-        config_path = os.path.join(config_dir, "settings.json")
-        settings = {
-            "username": self.menu.settings_username,
-            "gemini_api_key": encrypt_api_key(self.menu.settings_gemini_key),
-            "openai_api_key": encrypt_api_key(self.menu.settings_openai_key),
-            "selected_provider": self.menu.selected_provider,
-            "model": self.menu.settings_model,
-            "base_working_backup": self.menu.base_working_backup
-        }
-
-        try:
-            with open(config_path, 'w') as f:
-                json.dump(settings, f, indent=2)
-            print(f"Settings saved to {config_path}")
+        from BASE_files.BASE_helpers import create_settings_file
+    
+        result = create_settings_file(
+            username=self.menu.settings_username,
+            gemini_api_key=self.menu.settings_gemini_key,
+            openai_api_key=self.menu.settings_openai_key,
+            selected_provider=self.menu.selected_provider,
+            model_name=self.menu.settings_model,
+            base_working_backup=self.menu.base_working_backup,
+            already_encrypted=False
+        )
+        
+        if result["success"]:
+            print(f"Settings saved: {result['result']}")
             self.menu.show_error_message("Settings saved successfully!")
-        except Exception as e:
-            print(f"Failed to save settings: {e}")
-            self.menu.show_error_message(f"Failed to save settings: {e}")
+        else:
+            print(f"Failed to save settings: {result['result']}")
+            self.menu.show_error_message(f"Failed to save settings: {result['result']}")
 
     def on_settings_back_click(self):
         """Handle settings back button click."""

@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 import traceback
 import types
+from dotenv import load_dotenv
 
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SECRET_OFFSET = 717171 
@@ -328,29 +329,76 @@ def ensure_gamefolder_exists():
     
     return True
 
-def load_settings() -> dict:
+def load_settings(auto_create_settings: bool = True) -> dict:
     """Load settings from config file."""
+    load_dotenv()
     config_path = os.path.join("__config", "settings.json")
     dictionary = {}
+    settings = {}
     if os.path.exists(config_path):
         try:
             with open(config_path, 'r') as f:
                 settings = json.load(f)
-
-            dictionary["success"] = True
-            dictionary["username"] = settings.get("username", "")
-            dictionary["gemini_api_key"] = decrypt_api_key(settings.get("gemini_api_key", ""))
-            dictionary["openai_api_key"] = decrypt_api_key(settings.get("openai_api_key", ""))
-            dictionary["selected_provider"] = settings.get("selected_provider", "GEMINI")
-            dictionary["model_name"] = settings.get("model", "models/gemini-3-flash-preview")
-            dictionary["base_working_backup"] = settings.get("base_working_backup", None)
-            
-            return dictionary
+                dictionary["success"] = True
         
         except Exception as e:
             print(f"Failed to load settings: {e}")
             dictionary["success"] = False
-            return dictionary
+
     else:
         dictionary["success"] = False
-        return dictionary
+    
+    dictionary["username"] = settings.get("username", "")
+    dictionary["gemini_api_key"] = decrypt_api_key(settings.get("gemini_api_key", ""))
+    if dictionary["gemini_api_key"] == "":
+        print("WARNING: No Gemini API key found in settings, trying to use environment variable GEMINI_API_KEY_PAID")
+        dictionary["gemini_api_key"] = os.getenv("GEMINI_API_KEY_PAID") or ""
+    dictionary["openai_api_key"] = decrypt_api_key(settings.get("openai_api_key", ""))
+    if dictionary["openai_api_key"] == "":
+        print("WARNING: No OpenAI API key found in settings, trying to use environment variable OPENAI_API_KEY")
+        dictionary["openai_api_key"] = os.getenv("OPENAI_API_KEY") or ""
+    dictionary["selected_provider"] = settings.get("selected_provider", "GEMINI")
+    dictionary["model_name"] = settings.get("model", "models/gemini-3-flash-preview")
+    dictionary["base_working_backup"] = settings.get("base_working_backup", None)
+    
+    if auto_create_settings:
+        result = create_settings_file(dictionary["username"], dictionary["gemini_api_key"], dictionary["openai_api_key"], dictionary["selected_provider"], dictionary["model_name"], dictionary["base_working_backup"], already_encrypted=False)
+        if result["success"]:
+            print(f"Settings file created successfully: {result['result']}")
+        else:
+            print(f"Failed to create settings: {result['result']}")
+        dictionary["success"] = result["success"]
+    
+    return dictionary
+
+def create_settings_file(username: str, gemini_api_key: str, openai_api_key: str, selected_provider: str, model_name: str, base_working_backup: str = None, already_encrypted: bool = False) -> dict:
+    """Create settings.json from environment variables if it doesn't exist."""
+    config_dir = "__config"
+    config_path = os.path.join(config_dir, "settings.json")
+
+    # create directory if needed
+    if not os.path.exists(config_dir):
+        os.makedirs(config_dir)
+    
+    # create minimal settings file
+    if not already_encrypted:
+        gemini_api_key = encrypt_api_key(gemini_api_key)
+        openai_api_key = encrypt_api_key(openai_api_key)
+    
+    settings = {
+        "username": username,
+        "gemini_api_key": gemini_api_key,
+        "openai_api_key": openai_api_key,
+        "selected_provider": selected_provider,
+        "model": model_name,
+        "base_working_backup": base_working_backup
+    }
+
+    try:
+        with open(config_path, 'w') as f:
+            json.dump(settings, f, indent=2)
+        print(f"Created settings file at {config_path}")
+        return {"success": True, "result": "Settings file created successfully"}
+    except Exception as e:
+        print(f"Failed to create settings: {e}")
+        return {"success": False, "result": f"Failed to create settings: {e}"}
