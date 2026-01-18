@@ -158,14 +158,21 @@ class GenericHandler:
             else:
                 print("Agent has not completed the task yet")
 
-    def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None) -> str:
+    def _compose_message(self, main_message: str, append_warning_str: str = "", item_index: int = -1, last_index_plus_one: int = -1) -> str:
+        if append_warning_str and item_index == (last_index_plus_one - 1):
+            return f"{main_message}\n{append_warning_str}" # we only append the warning if it is the last item
+        return main_message
+
+    def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None, auto_nudge: int = 2) -> str:
         """
         Generalized ask_model that works with any provider through BaseHandler interface.
         The common logic is here, provider-specific details are handled by the client.
+        NOTE: To disable auto nudging, set auto_nudge to -1.
         """
         turns = 0
         max_turns = 30  # Safety cutoff
         stop_loop = False
+        number_of_tools_used_last_turn = 0
         
         # Local list to track the conversation turn including tool outputs 
         # so the model can actually see the results of its actions during THIS turn.
@@ -224,8 +231,25 @@ class GenericHandler:
             regular_tools = [tc for tc in tool_calls if tc.name != "complete_task"]
             complete_task_calls = [tc for tc in tool_calls if tc.name == "complete_task"]
 
+
+            """AUTO NUDGING"""
+            append_warning_str = ""
+            # meaning that auto nudging is on and there is no complete_task call in this turn
+            if auto_nudge > 0 and (len(complete_task_calls) == 0):
+                # less than auto_nudge tools were used | last turn also had less than auto_nudge tools used but more than 0
+                if (len(regular_tools) <= auto_nudge) and (0 < number_of_tools_used_last_turn <= auto_nudge):
+                    print(f"DEBUG: Auto-nudging the model because it used less tools in parallel than it should have", flush=True)
+                    append_warning_str = (
+                        f"\nBATCHING REMINDER ALERT: You're making sequential calls ({number_of_tools_used_last_turn} → {len(regular_tools)}). "
+                        f"STOP and THINK first, then batch ALL needed analyzing tools into ONE parallel request (5-20+ calls)."
+                    )
+                number_of_tools_used_last_turn = len(regular_tools)
+            else:
+                number_of_tools_used_last_turn = 0 # we don't want complete_task_calls to influcence the nudging at all, the agent was thinking that it had finished so it is justified.
+
+
             for tool_calls_list in [regular_tools, complete_task_calls]:
-                for tool_call in tool_calls_list:
+                for item_index, tool_call in enumerate(tool_calls_list):
                     name = tool_call.name
                     args = tool_call.args
 
@@ -236,16 +260,16 @@ class GenericHandler:
                             if name == "complete_task" and not all_tools_success:
                                 print(f"DEBUG: complete_task was called but not all tools were successful, so we will not call it really", flush=True)
                                 result = {"error": "Error: Not all tools were successful this turn so completing task is not possible"}
-                                result_str = result["error"]
+                                result_str = self._compose_message(result["error"], append_warning_str, item_index, len(tool_calls_list))
                             elif ((name == "complete_task" and all_tools_success) and (args.get("summary") is None or len(args.get("summary")) < 100)):
                                 print(f"DEBUG: complete_task was called but the summary is too short, so we will not call it really", flush=True)
                                 result = {"error": "Error: The summary is too short, it must be at least 150 characters long"}
-                                result_str = result["error"]
+                                result_str = self._compose_message(result["error"], append_warning_str, item_index, len(tool_calls_list))
                             else:
                                 result = self.client.tool_map[name](**args)
                                 if not isinstance(result, dict):
                                     result = {"result": result}
-                                result_str = str(result.get("result", result))
+                                result_str = self._compose_message(str(result.get("result", result)), append_warning_str, item_index, len(tool_calls_list))
                                 if name == "run_all_tests_tool":
                                     if result.get("success"):
                                         result_run_tests_tool = f"Success: All {result.get('total_tests')} tests passed! You should now call complete_task."
@@ -280,8 +304,8 @@ class GenericHandler:
                         else:
                             all_tools_success = False
                             result = {"error": f"Tool '{name}' not found."}
-                            result_str = result["error"]
-                            action_logger.log_action(name, dict(args), result["error"], success=False, chat_history=api_history)
+                            result_str = self._compose_message(result["error"], append_warning_str, item_index, len(tool_calls_list))
+                            action_logger.log_action(name, dict(args), result_str, success=False, chat_history=api_history)
                             tool_call_results.append(StandardizedToolResult(
                                 name=name,
                                 args=dict(args),
@@ -292,12 +316,12 @@ class GenericHandler:
                     except Exception as e:
                         result = {"error": str(e)}
                         all_tools_success = False
-                        result_str = result["error"]
-                        action_logger.log_action(name, dict(args), str(e), success=False, chat_history=api_history)
+                        result_str = self._compose_message(result["error"], append_warning_str, item_index, len(tool_calls_list))
+                        action_logger.log_action(name, dict(args), result_str, success=False, chat_history=api_history)
                         tool_call_results.append(StandardizedToolResult(
                             name=name,
                             args=dict(args),
-                            result=str(e),
+                            result=result_str,
                             success=False,
                             call_id=tool_call.call_id
                         ))
@@ -305,8 +329,8 @@ class GenericHandler:
                     if name == "complete_task" and all_tools_success:
                         print(f"DEBUG: model ran complete_task, so we will stop the loop FORCEFULLY", flush=True)
                         stop_loop = True
-                        break
-
+                        break  
+                   
             # Log the model request with token usage and all tool calls (parallel if > 1)
             tool_call_dicts = [
             {

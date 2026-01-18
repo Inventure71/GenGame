@@ -367,8 +367,9 @@ class TestRunner:
                         if len(sig.parameters) == 0:
                             test_functions.append(obj)
         except Exception as e:
-            print(f"Warning: Could not load tests from {file_path}: {e}")
-            traceback.print_exc()
+            # Don't just print and return empty - we need to track this failure
+            # The error will be handled by discover_tests_in_directory
+            raise  # Re-raise so discover_tests_in_directory can handle it
         
         return test_functions
     
@@ -390,9 +391,21 @@ class TestRunner:
         for filename in os.listdir(directory):
             if filename.endswith('.py') and not filename.startswith('__'):
                 file_path = os.path.join(directory, filename)
-                test_functions = self.discover_tests_in_file(file_path)
-                if test_functions:
-                    discovered[file_path] = test_functions
+                try:
+                    test_functions = self.discover_tests_in_file(file_path)
+                    if test_functions:
+                        discovered[file_path] = test_functions
+                except Exception as e:
+                    # Track import failures - create a synthetic test result
+                    # Store the error info so we can create a TestResult later
+                    error_msg = str(e)
+                    error_traceback = traceback.format_exc()
+                    # Store as a special marker that indicates import failure
+                    discovered[file_path] = {
+                        '_import_error': True,
+                        'error_msg': error_msg,
+                        'error_traceback': error_traceback
+                    }
         
         return discovered
 
@@ -855,8 +868,27 @@ def run_all_tests(
         discovered = runner.discover_tests_in_directory(tests_dir)
         
         if discovered:
-            for file_path, test_functions in discovered.items():
+            for file_path, test_data in discovered.items():
                 file_name = os.path.basename(file_path)
+                
+                # Check if this is an import error marker
+                if isinstance(test_data, dict) and test_data.get('_import_error'):
+                    # Create a synthetic test result for the import failure
+                    import_error_result = TestResult(
+                        test_name=f"Import Error: {file_name}",
+                        passed=False,
+                        duration=0.0,
+                        error_msg=test_data['error_msg'],
+                        error_traceback=test_data['error_traceback'],
+                        source_file=file_name
+                    )
+                    combined_suite.add_result(import_error_result)
+                    if verbose:
+                        print(f"\n✗ Failed to import {file_name}: {test_data['error_msg']}")
+                    continue
+                
+                # Normal test discovery path
+                test_functions = test_data
                 if verbose:
                     print(f"\nFound {len(test_functions)} tests in {file_name}")
                 
