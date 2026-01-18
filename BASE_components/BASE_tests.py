@@ -708,6 +708,107 @@ def test_projectile_movement(projectile_class: Type):
     assert abs(projectile.location[0] - expected_x) < 0.01, f"Projectile should be at {expected_x}, got {projectile.location[0]}"
 
 
+def test_character_input_keybinds(character_class: Type):
+    """Test that get_input_data correctly handles held_keys as a set (production format)."""
+    import pygame
+    
+    # Test with empty set (no keys pressed) - production format from BASE_game_client.py:172
+    held_keys = set()
+    mouse_buttons = [False, False, False]  # Left, Middle, Right - production format from BASE_game_client.py:173
+    mouse_pos = [100.0, 200.0]
+    
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    
+    assert input_data['move'] == [0.0, 0.0], "No movement when no keys pressed"
+    assert input_data['jump'] is False, "No jump when space not pressed"
+    assert input_data['shoot'] is False, "No shoot when mouse not clicked"
+    assert input_data['target_pos'] == mouse_pos, "Target pos should match mouse pos"
+    
+    # Test movement keys with set membership (production format)
+    held_keys = {pygame.K_a}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['move'][0] < 0, "Should move left when A is pressed"
+    
+    held_keys = {pygame.K_d}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['move'][0] > 0, "Should move right when D is pressed"
+    
+    held_keys = {pygame.K_w}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['move'][1] > 0, "Should move up when W is pressed"
+    
+    held_keys = {pygame.K_s}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['move'][1] < 0, "Should move down when S is pressed"
+    
+    # Test arrow keys (alternative keybinds)
+    held_keys = {pygame.K_LEFT}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['move'][0] < 0, "Should move left when LEFT arrow is pressed"
+    
+    held_keys = {pygame.K_RIGHT}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['move'][0] > 0, "Should move right when RIGHT arrow is pressed"
+    
+    # Test action keys
+    held_keys = {pygame.K_SPACE}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['jump'] is True, "Should jump when SPACE is pressed"
+    
+    held_keys = {pygame.K_q}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['drop_weapon'] is True, "Should drop weapon when Q is pressed"
+    
+    # Test multiple keys simultaneously
+    held_keys = {pygame.K_d, pygame.K_w, pygame.K_SPACE}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['move'][0] > 0, "Should move right"
+    assert input_data['move'][1] > 0, "Should move up"
+    assert input_data['jump'] is True, "Should jump"
+
+
+def test_character_input_mouse_capture(character_class: Type):
+    """Test that mouse position is correctly captured and converted (production coordinate conversion)."""
+    import pygame
+    
+    # Production format: held_keys as set, mouse_pressed as list
+    held_keys = set()
+    
+    # Test mouse button capture (production format from BASE_game_client.py:173, 205, 208)
+    mouse_buttons = [True, False, False]  # Left click
+    mouse_pos = [500.0, 300.0]  # World coordinates (after conversion from screen)
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    
+    assert input_data['shoot'] is True, "Should shoot when left mouse button is pressed"
+    assert input_data['target_pos'] == mouse_pos, "Target position should match mouse position"
+    
+    # Test right click
+    mouse_buttons = [False, False, True]  # Right click
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data['secondary_fire'] is True, "Should secondary fire when right mouse button is pressed"
+    
+    # Test coordinate conversion (production format from BASE_game_client.py:212)
+    # Screen coordinates: (mx, my) where my increases downward
+    # World coordinates: (mx, height - my) where y increases upward
+    screen_mx, screen_my = 500, 600  # Screen coordinates (y-down)
+    arena_height = 900  # Production arena height from server.py:247
+    world_mx = screen_mx
+    world_my = arena_height - screen_my  # Convert to world coordinates (y-up)
+    
+    expected_world_pos = [world_mx, world_my]
+    input_data = character_class.get_input_data(held_keys, [False, False, False], expected_world_pos)
+    
+    assert input_data['target_pos'] == expected_world_pos, f"Target pos should be {expected_world_pos}, got {input_data['target_pos']}"
+    assert input_data['target_pos'][0] == 500.0, "World x should match screen x"
+    assert input_data['target_pos'][1] == 300.0, "World y should be converted (900 - 600 = 300)"
+    
+    # Test that mouse position is always included even with no actions
+    mouse_pos = [123.45, 678.90]
+    input_data = character_class.get_input_data(held_keys, [False, False, False], mouse_pos)
+    assert 'target_pos' in input_data, "target_pos should always be present"
+    assert input_data['target_pos'] == mouse_pos, "target_pos should match provided mouse position"
+
+
 # =============================================================================
 # MAIN TEST EXECUTION FUNCTIONS
 # =============================================================================
@@ -728,6 +829,8 @@ def get_base_test_functions() -> List[tuple]:
         (test_character_take_damage, "character_class", "Character class to test"),
         (test_character_death_and_respawn, "character_class", "Character class to test"),
         (test_character_elimination, "character_class", "Character class to test"),
+        (test_character_input_keybinds, "character_class", "Character input keybinds (set format)"),
+        (test_character_input_mouse_capture, "character_class", "Character mouse position capture"),
         (test_platform_creation, "platform_class", "Platform class to test"),
         (test_weapon_creation, "weapon_class", "Weapon class to test"),
         (test_weapon_shooting, "weapon_class", "Weapon class to test"),
