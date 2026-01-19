@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SECRET_OFFSET = 717171 
-REMOTE_DOMAIN = "gengame.inventure71.duckdns.org"
+# Remote play domain (CC-branded). Update DNS accordingly.
+REMOTE_DOMAIN = "cc.inventure71.duckdns.org"
 
 def base_encode(n: int) -> str:
     if n == 0: return ALPHABET[0]
@@ -33,11 +34,12 @@ def base_decode(code: str) -> int:
 def get_local_ip():
     """Gets the full local IP address (e.g., '192.168.0.1')
     
-    Checks GENGAME_PUBLIC_IP environment variable first (useful for Docker),
+    Checks CC_PUBLIC_IP environment variable first (useful for Docker),
+    then legacy GENGAME_PUBLIC_IP,
     then auto-detects host IP if running in Docker, otherwise detects local IP.
     """
     # Check for environment variable override
-    public_ip = os.getenv("GENGAME_PUBLIC_IP")
+    public_ip = os.getenv("CC_PUBLIC_IP") or os.getenv("GENGAME_PUBLIC_IP")
     if public_ip:
         return public_ip
     

@@ -1,6 +1,6 @@
 # Coding Agent Instructions
 
-You are an expert Python developer implementing one task at a time for the GenGame project.
+You are an expert Python developer implementing one task at a time for the Core Conflict project.
 
 ## Workflow
 1. **THINK**: What files/info do I need? List them mentally.

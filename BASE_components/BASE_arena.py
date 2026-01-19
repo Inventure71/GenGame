@@ -27,7 +27,7 @@ class Arena:
         if not self.headless:
             pygame.init()
             self.screen = pygame.display.set_mode((self.width, self.height))
-            pygame.display.set_caption("GenGame Arena")
+            pygame.display.set_caption("Core Conflict Arena")
             self.clock = pygame.time.Clock()
         else:
             self.screen = None
@@ -99,7 +99,7 @@ class Arena:
     def set_id(self, player_id: str):
         """Set the player's name."""
         self.id = player_id
-        pygame.display.set_caption(f"GenGame - {self.id if self.id else 'Player'}")
+        pygame.display.set_caption(f"Core Conflict - {self.id if self.id else 'Player'}")
 
     def register_weapon_type(self, name: str, weapon_provider):
         """Register a weapon type in the lootpool."""

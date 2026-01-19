@@ -1,5 +1,5 @@
 """
-GenGame Test Framework
+Core Conflict Test Framework
 
 This module contains:
 1. TestRunner - A robust test runner with graceful error handling
@@ -709,104 +709,82 @@ def test_projectile_movement(projectile_class: Type):
 
 
 def test_character_input_keybinds(character_class: Type):
-    """Test that get_input_data correctly handles held_keys as a set (production format)."""
+    """Test that get_input_data uses the BASE schema: movement + positional shoot/secondary."""
     import pygame
     
-    # Test with empty set (no keys pressed) - production format from BASE_game_client.py:172
-    held_keys = set()
-    mouse_buttons = [False, False, False]  # Left, Middle, Right - production format from BASE_game_client.py:173
     mouse_pos = [100.0, 200.0]
-    
+    mouse_buttons = [False, False, False]  # Left, Middle, Right
+
+    # No keys, no mouse
+    held_keys = set()
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
     
-    assert input_data['move'] == [0.0, 0.0], "No movement when no keys pressed"
-    assert input_data['jump'] is False, "No jump when space not pressed"
-    assert input_data['shoot'] is False, "No shoot when mouse not clicked"
-    assert input_data['target_pos'] == mouse_pos, "Target pos should match mouse pos"
+    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    assert input_data["movement"] == [0, 0], "No movement when no keys pressed"
+    assert "shoot" not in input_data, "shoot should not exist when left mouse not pressed"
+    assert "secondary_fire" not in input_data, "secondary_fire should not exist when right mouse not pressed"
+    assert "drop_weapon" not in input_data, "drop_weapon should not exist when Q not held"
     
-    # Test movement keys with set membership (production format)
+    # Movement keys
     held_keys = {pygame.K_a}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['move'][0] < 0, "Should move left when A is pressed"
+    assert input_data["movement"][0] == -1, "Should move left when A is pressed"
     
     held_keys = {pygame.K_d}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['move'][0] > 0, "Should move right when D is pressed"
+    assert input_data["movement"][0] == 1, "Should move right when D is pressed"
     
     held_keys = {pygame.K_w}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['move'][1] > 0, "Should move up when W is pressed"
+    assert input_data["movement"][1] == 1, "Should move up when W is pressed"
     
     held_keys = {pygame.K_s}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['move'][1] < 0, "Should move down when S is pressed"
+    assert input_data["movement"][1] == -1, "Should move down when S is pressed"
     
-    # Test arrow keys (alternative keybinds)
+    # Arrow keys (alternative keybinds)
     held_keys = {pygame.K_LEFT}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['move'][0] < 0, "Should move left when LEFT arrow is pressed"
+    assert input_data["movement"][0] == -1, "Should move left when LEFT arrow is pressed"
     
     held_keys = {pygame.K_RIGHT}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['move'][0] > 0, "Should move right when RIGHT arrow is pressed"
+    assert input_data["movement"][0] == 1, "Should move right when RIGHT arrow is pressed"
     
-    # Test action keys
-    held_keys = {pygame.K_SPACE}
-    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['jump'] is True, "Should jump when SPACE is pressed"
-    
+    # Drop weapon (Q)
     held_keys = {pygame.K_q}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['drop_weapon'] is True, "Should drop weapon when Q is pressed"
+    assert input_data.get("drop_weapon") is True, "Should set drop_weapon when Q is held"
     
-    # Test multiple keys simultaneously
-    held_keys = {pygame.K_d, pygame.K_w, pygame.K_SPACE}
+    # Multiple keys simultaneously
+    held_keys = {pygame.K_d, pygame.K_w}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['move'][0] > 0, "Should move right"
-    assert input_data['move'][1] > 0, "Should move up"
-    assert input_data['jump'] is True, "Should jump"
+    assert input_data["movement"] == [1, 1], "Should combine movement directions"
 
 
 def test_character_input_mouse_capture(character_class: Type):
-    """Test that mouse position is correctly captured and converted (production coordinate conversion)."""
-    import pygame
-    
-    # Production format: held_keys as set, mouse_pressed as list
+    """Test that mouse buttons map to positional shoot/secondary_fire (BASE schema)."""
     held_keys = set()
-    
-    # Test mouse button capture (production format from BASE_game_client.py:173, 205, 208)
-    mouse_buttons = [True, False, False]  # Left click
-    mouse_pos = [500.0, 300.0]  # World coordinates (after conversion from screen)
+    mouse_pos = [500.0, 300.0]
+
+    # Left click -> shoot carries mouse_pos
+    mouse_buttons = [True, False, False]
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    
-    assert input_data['shoot'] is True, "Should shoot when left mouse button is pressed"
-    assert input_data['target_pos'] == mouse_pos, "Target position should match mouse position"
-    
-    # Test right click
-    mouse_buttons = [False, False, True]  # Right click
+    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    assert input_data.get("shoot") == mouse_pos, "shoot should equal mouse_pos when left mouse is pressed"
+
+    # Right click -> secondary_fire carries mouse_pos
+    mouse_buttons = [False, False, True]
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data['secondary_fire'] is True, "Should secondary fire when right mouse button is pressed"
-    
-    # Test coordinate conversion (production format from BASE_game_client.py:212)
-    # Screen coordinates: (mx, my) where my increases downward
-    # World coordinates: (mx, height - my) where y increases upward
-    screen_mx, screen_my = 500, 600  # Screen coordinates (y-down)
-    arena_height = 900  # Production arena height from server.py:247
-    world_mx = screen_mx
-    world_my = arena_height - screen_my  # Convert to world coordinates (y-up)
-    
-    expected_world_pos = [world_mx, world_my]
-    input_data = character_class.get_input_data(held_keys, [False, False, False], expected_world_pos)
-    
-    assert input_data['target_pos'] == expected_world_pos, f"Target pos should be {expected_world_pos}, got {input_data['target_pos']}"
-    assert input_data['target_pos'][0] == 500.0, "World x should match screen x"
-    assert input_data['target_pos'][1] == 300.0, "World y should be converted (900 - 600 = 300)"
-    
-    # Test that mouse position is always included even with no actions
-    mouse_pos = [123.45, 678.90]
-    input_data = character_class.get_input_data(held_keys, [False, False, False], mouse_pos)
-    assert 'target_pos' in input_data, "target_pos should always be present"
-    assert input_data['target_pos'] == mouse_pos, "target_pos should match provided mouse position"
+    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    assert input_data.get("secondary_fire") == mouse_pos, "secondary_fire should equal mouse_pos when right mouse is pressed"
+
+    # No click -> neither key present, but mouse_pos still present
+    mouse_buttons = [False, False, False]
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    assert "shoot" not in input_data, "shoot should not exist when not clicking"
+    assert "secondary_fire" not in input_data, "secondary_fire should not exist when not clicking"
 
 
 # =============================================================================
@@ -1039,7 +1017,7 @@ def run_all_tests(
 # =============================================================================
 
 if __name__ == "__main__":
-    print("\n🧪 GenGame Test Framework")
+    print("\n🧪 Core Conflict Test Framework")
     print("=" * 70)
     
     results = run_all_tests(verbose=True)

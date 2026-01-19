@@ -4,7 +4,7 @@ Handles server creation, client connections, and room management.
 """
 
 import threading
-
+import socket
 from server import GameServer
 from BASE_files.BASE_helpers import encrypt_code
 from BASE_files.network_client import NetworkClient
@@ -22,10 +22,24 @@ class MenuNetwork:
         self.server_host = "127.0.0.1"
         self.server_port = 5555
 
+    def _find_available_port(self, host: str, preferred_port: int, max_tries: int = 50) -> int:
+        """
+        Return the first available port starting at preferred_port.
+        Uses a bind test to avoid racing as much as possible.
+        """
+        for port in range(preferred_port, preferred_port + max_tries):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind((host, port))
+                    return port
+                except OSError:
+                    continue
+        raise RuntimeError(f"No available port found in range {preferred_port}-{preferred_port + max_tries - 1}")
+
     def run_server(self, host: str = "127.0.0.1", port: int = 5555):
         """Start the game server."""
         self.server_instance = GameServer(host, port)
-
         # Start server in a thread
         self.server_thread = threading.Thread(target=self.server_instance.start)
         self.server_thread.start()
@@ -67,14 +81,22 @@ class MenuNetwork:
     def create_local_room(self):
         """Create a local room (accessible on the local network)."""
         print("Creating local room...")
-        # Get the actual local IP for room code generation
+
+        # Bind to all interfaces (0.0.0.0) so other machines can connect
+        bind_host = "0.0.0.0"
+
+        # Prefer current self.server_port (defaults to 5555), but auto-pick if taken
+        chosen_port = self._find_available_port(bind_host, self.server_port)
+        self.server_port = chosen_port
+
+        # Start server first, then generate room code using the actual chosen port
+        self.run_server(bind_host, self.server_port)
+
         from BASE_files.BASE_helpers import get_local_ip
         local_ip = get_local_ip()
-        # Generate a room code using the actual local IP
         self.menu.room_code = encrypt_code(local_ip, self.server_port, "LOCAL")
         print(f"Local room code: {self.menu.room_code}")
-        # Bind to all interfaces (0.0.0.0) so other machines can connect
-        self.run_server("0.0.0.0", self.server_port)
+
         self.connect_to_server("localhost", self.server_port)
 
     def create_remote_room(self):

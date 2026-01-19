@@ -27,7 +27,7 @@ export SDL_AUDIODRIVER=dummy
 
 # 2. Start Xvfb (Virtual Screen)
 echo "📺 Starting Virtual X Server (Xvfb)..."
-Xvfb :0 -screen 0 1400x900x24 &
+Xvfb :0 -screen 0 1500x1000x24 &
 sleep 2
 
 # 3. Start Window Manager (Fluxbox)
@@ -50,7 +50,7 @@ echo "🌐 Starting noVNC Web Server (Port 6080)..."
 /usr/bin/novnc_proxy --vnc localhost:5900 --listen 6080 &
 
 # 6. Start the Game as the non-root user
-echo "🎮 Starting GenGame Client..."
+echo "🎮 Starting Core Conflict Client..."
 export DISPLAY=:0
 export SDL_VIDEODRIVER=x11
 

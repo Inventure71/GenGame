@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GenGame Network Client - Handles connection to server and entity synchronization
+Core Conflict Network Client - Handles connection to server and entity synchronization
 """
 
 import socket

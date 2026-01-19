@@ -9,7 +9,7 @@ from BASE_files.network_client import NetworkClient, EntityManager, sync_game_fi
 
 def run_client(network_client: NetworkClient, player_id: str = ""):
     print("="*70)
-    print(" "*20 + "GENGAME - MULTIPLAYER CLIENT")
+    print(" "*20 + "CORE CONFLICT - MULTIPLAYER CLIENT")
     print("="*70)
     print("\n🎮 GAME FEATURES:")
     print("  ✓ Multiplayer: Connect to server for real-time battles")
@@ -40,7 +40,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         pygame.key.set_repeat()
         width, height = 1400, 900  # Match server arena dimensions
         screen = pygame.display.set_mode((width, height))
-        pygame.display.set_caption(f"GenGame Client - {player_id}")
+        pygame.display.set_caption(f"Core Conflict Client - {player_id}")
         clock = pygame.time.Clock()
         print("[warning]  IMPORTANT: Click on the game window to enable keyboard input for movement!")
 

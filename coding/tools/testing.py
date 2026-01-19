@@ -1,5 +1,5 @@
 """
-Testing Tools for GenGame Agent
+Testing Tools for Core Conflict Agent
 
 Provides tools for running tests and retrieving results.
 These tools are designed to be used by the LLM agent during the testing phase.
@@ -95,61 +95,6 @@ def run_all_tests_tool(explanation: str = None) -> dict: # the argument is unuse
         ]
     }
 
-# TODO: cleanup maybe remove
-def get_test_file_template(feature_name: str) -> str:
-    """
-    Generate a template for a new test file.
-    
-    Args:
-        feature_name: Name of the feature being tested (e.g., "rocket_launcher")
-        
-    Returns:
-        str: Template code for the test file
-        
-    Example:
-        >>> template = get_test_file_template("double_jump")
-        >>> # Use create_file and modify_file_inline to create the test file
-    """
-    from datetime import datetime
-    
-    template = f'''"""
-Tests for {feature_name.replace('_', ' ').title()}
-
-This module tests the following functionality:
-- [TODO: List what this tests]
-
-Created by: GenGame Testing Agent
-Date: {datetime.now().strftime("%Y-%m-%d")}
-"""
-
-from BASE_components.BASE_character import BaseCharacter
-from BASE_components.BASE_weapon import BaseWeapon
-from BASE_components.BASE_platform import BasePlatform
-from BASE_components.BASE_projectile import BaseProjectile
-# Import any custom game components as needed
-
-
-def test_{feature_name}_basic():
-    """Test basic functionality of {feature_name.replace('_', ' ')}."""
-    # TODO: Implement test
-    # 1. Setup
-    # 2. Execute
-    # 3. Assert
-    pass
-
-
-def test_{feature_name}_edge_case():
-    """Test edge cases for {feature_name.replace('_', ' ')}."""
-    # TODO: Implement test
-    pass
-
-
-# Add more test functions as needed
-'''
-    
-    return template
-
-
 # Export the tools
-__all__ = ['run_all_tests_tool', 'get_test_file_template']
+__all__ = ['run_all_tests_tool']
 

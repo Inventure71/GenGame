@@ -57,7 +57,7 @@ class BaseMenu:
 
         print(f"Video Driver: {pygame.display.get_driver()}")
 
-        pygame.display.set_caption("GenGame - Multiplayer Menu")
+        pygame.display.set_caption("Core Conflict - Multiplayer Menu")
         print("Window created successfully.")
         self.clock = pygame.time.Clock()
         self.running = True

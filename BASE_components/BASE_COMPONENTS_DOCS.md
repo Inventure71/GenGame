@@ -1,6 +1,6 @@
-# GenGame BASE Components Documentation
+# Core Conflict BASE Components Documentation
 
-This document serves as the official API reference for the core GenGame engine. These components are located in `BASE_components/` and are **READ-ONLY**. All new game features must inherit from these classes in the `GameFolder/` directory.
+This document serves as the official API reference for the core Core Conflict engine. These components are located in `BASE_components/` and are **READ-ONLY**. All new game features must inherit from these classes in the `GameFolder/` directory.
 
 **[warning] Important**: This documentation focuses only on the public API that game developers can use and modify through inheritance. Internal systems (networking, serialization) are not documented as they cannot be modified.
 
@@ -9,7 +9,7 @@ This document serves as the official API reference for the core GenGame engine. 
 ## 🌍 Global Systems & Architecture
 
 ### Local Single-Player Gameplay
-GenGame runs as a local single-player game with direct input handling.
+Core Conflict runs as a local single-player game with direct input handling.
 - **Input Handling**: Direct keyboard and mouse input processing.
 - **Control Flow**:
     1. Capture local inputs (keys, mouse) from pygame events.

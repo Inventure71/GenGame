@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-GenGame Server - Authoritative Server Implementation
+Core Conflict Server - Authoritative Server Implementation
 
 This server runs the game simulation without graphics and broadcasts game state to clients.
 """
@@ -112,13 +112,14 @@ class GameServer:
         if host == "0.0.0.0":
             # Local room - use actual local IP (auto-detects host IP in Docker)
             local_ip = get_local_ip()
-            public_ip_override = os.getenv("GENGAME_PUBLIC_IP")
+            # Prefer CC_PUBLIC_IP; fall back to legacy GENGAME_PUBLIC_IP for compatibility
+            public_ip_override = os.getenv("CC_PUBLIC_IP") or os.getenv("GENGAME_PUBLIC_IP")
             if public_ip_override:
                 print(f"Using public IP override: {public_ip_override} (for room code generation)")
             elif os.path.exists("/.dockerenv"):
                 if local_ip.startswith("172."):
                     print(f"⚠️  Docker detected but host IP auto-detection failed. Room code may not work from external devices.")
-                    print(f"   Detected IP: {local_ip} (set GENGAME_PUBLIC_IP=<your-host-ip> to fix)")
+                    print(f"   Detected IP: {local_ip} (set CC_PUBLIC_IP=<your-host-ip> to fix)")
                 else:
                     print(f"✓ Auto-detected host IP: {local_ip} (for room code generation)")
             else:
@@ -1884,7 +1885,7 @@ def main():
 
     import argparse
 
-    parser = argparse.ArgumentParser(description='GenGame Server')
+    parser = argparse.ArgumentParser(description='Core Conflict Server')
     parser.add_argument('--host', default='0.0.0.0', help='Server host (default: 0.0.0.0)')
     parser.add_argument('--port', type=int, default=5555, help='Server port (default: 5555)')
 

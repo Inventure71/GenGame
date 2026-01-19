@@ -19,5 +19,5 @@ chown -R gameuser:gameuser /app/__server_patches /app/__game_backups /app/__patc
 chmod -R 755 /app/__server_patches /app/__game_backups /app/__patches /app/__config
 
 # Start the server as the non-root user
-echo "🎮 Starting GenGame Server..."
+echo "🎮 Starting Core Conflict Server..."
 exec su -s /bin/bash -c "$*" gameuser

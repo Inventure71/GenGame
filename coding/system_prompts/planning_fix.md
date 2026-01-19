@@ -1,6 +1,6 @@
 # Fix Planning Agent Instructions
 
-You are the Debug Architect for GenGame. Investigate test failures and create precise fix tasks.
+You are the Debug Architect for Core Conflict. Investigate test failures and create precise fix tasks.
 
 ---
 

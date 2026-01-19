@@ -52,7 +52,7 @@ def _open_file_with_fallback(file_path: str) -> str | None:
     """
     Open file with fallback to original project directory for prompts/system files.
     """
-    # First try the current working directory (.gengame)
+    # First try the current working directory (.cc preferred, legacy .gengame still supported)
     if os.path.exists(file_path):
         try:
             # Check file size first
@@ -91,7 +91,7 @@ def _open_file_with_fallback(file_path: str) -> str | None:
             pass
 
     # File not found in current directory, try original project directory
-    # This is for prompts and system files that aren't copied to .gengame
+    # This is for prompts and system files that aren't copied to .cc/.gengame
     if file_path.startswith('coding/'):
         try:
             # Get the original project directory
@@ -99,7 +99,7 @@ def _open_file_with_fallback(file_path: str) -> str | None:
             current_file = __file__  # This helpers.py file
             project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
 
-            if 'GenGame' in project_root and not project_root.endswith('.gengame'):
+            if ('GenGame' in project_root or 'CoreConflict' in project_root) and not (project_root.endswith('.gengame') or project_root.endswith('.cc')):
                 original_path = os.path.join(project_root, file_path)
                 if os.path.exists(original_path):
                     # Recursively call with the original path

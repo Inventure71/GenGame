@@ -71,7 +71,7 @@ class MenuRenderers:
         ui.add(TextField(center_x - 150, 20, 300, 40, self.menu.button_font, placeholder="Enter Player ID", name="player_id"))
         
         # Title
-        ui.add(Label(center_x, 120, "GEN GAME", self.menu.menu_font, center=True))
+        ui.add(Label(center_x, 120, "CORE CONFLICT", self.menu.menu_font, center=True))
         ui.add(Label(center_x, 180, "Multiplayer Gaming Platform", self.menu.small_font, center=True))
 
         # Buttons

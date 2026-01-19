@@ -29,7 +29,7 @@ def run_menu():
 if __name__ == "__main__":
     random.seed(69)
 
-    parser = argparse.ArgumentParser(description='GenGame Multiplayer Client')
+    parser = argparse.ArgumentParser(description='Core Conflict Multiplayer Client')
     parser.add_argument('--player', default='Player', help='Player name')
     parser.add_argument('--host', default='127.0.0.1', help='Server host (default: 127.0.0.1)')
     parser.add_argument('--port', type=int, default=5555, help='Server port (default: 5555)')

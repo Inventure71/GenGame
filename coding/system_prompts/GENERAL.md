@@ -1,4 +1,4 @@
-# GenGame Core Axioms
+# Core Conflict Core Axioms
 
 ## Scope & Constraints
 - **Access**: Only `GameFolder/` (read/write) and `BASE_components/` (read-only).

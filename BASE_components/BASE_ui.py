@@ -2,7 +2,7 @@ import pygame
 
 class BaseUI:
     """
-    Modern, minimal UI for GenGame.
+    Modern, minimal UI for Core Conflict.
     Displays player health indicators in the top-right corner.
     """
     

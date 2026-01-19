@@ -59,4 +59,4 @@ ENV VISUAL_LOGGER_PORT=8765
 ENTRYPOINT ["/run-vnc.sh"]
 
 # Launch the game client connecting to the server service defined in docker-compose
-CMD ["python", "main.py", "--host", "gengame-server", "--port", "5555"]
+CMD ["python", "main.py", "--host", "cc-server", "--port", "5555"]
