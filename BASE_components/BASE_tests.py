@@ -719,10 +719,49 @@ def test_character_input_keybinds(character_class: Type):
     held_keys = set()
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
     
+    if "mouse_pos" not in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: 'mouse_pos' missing from input_data.\n"
+            "Possible cause: Character.get_input_data was overridden and no longer includes "
+            "'mouse_pos'.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
     assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
-    assert input_data["movement"] == [0, 0], "No movement when no keys pressed"
-    assert "shoot" not in input_data, "shoot should not exist when left mouse not pressed"
+    
+    if "movement" not in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: 'movement' missing from input_data.\n"
+            "Possible cause: Character.get_input_data is still using the GAME schema "
+            "with 'move' / 'jump' instead of BASE 'movement'.\n"
+            "Expected BASE schema: 'movement', optional 'shoot'/'secondary_fire' as positions.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
+    assert input_data["movement"] == [0, 0], "No movement when no keys pressed (BASE schema uses 'movement', not 'move')"
+    
+    if "shoot" in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: unexpected 'shoot' key when no mouse button pressed.\n"
+            "Possible cause: Client or Character.get_input_data is sending boolean 'shoot' flags "
+            "instead of only including 'shoot' when mouse is pressed.\n"
+            f"input_data['shoot'] value: {input_data['shoot']!r}"
+        )
+    assert "shoot" not in input_data, "shoot should not exist when left mouse not pressed (BASE schema)"
+    
+    if "secondary_fire" in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: unexpected 'secondary_fire' key when no mouse button pressed.\n"
+            "Possible cause: Client or Character.get_input_data is sending boolean 'secondary_fire' flags "
+            "instead of only including it when right mouse is pressed.\n"
+            f"input_data['secondary_fire'] value: {input_data['secondary_fire']!r}"
+        )
     assert "secondary_fire" not in input_data, "secondary_fire should not exist when right mouse not pressed"
+    
+    if "drop_weapon" in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: unexpected 'drop_weapon' when Q not held.\n"
+            "Possible cause: key-mapping logic changed or stale input state.\n"
+            f"input_data['drop_weapon'] value: {input_data['drop_weapon']!r}"
+        )
     assert "drop_weapon" not in input_data, "drop_weapon should not exist when Q not held"
     
     # Movement keys
@@ -770,20 +809,63 @@ def test_character_input_mouse_capture(character_class: Type):
     # Left click -> shoot carries mouse_pos
     mouse_buttons = [True, False, False]
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    if "mouse_pos" not in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when left click pressed.\n"
+            "Possible cause: Character.get_input_data override removed 'mouse_pos' from the schema.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
     assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
-    assert input_data.get("shoot") == mouse_pos, "shoot should equal mouse_pos when left mouse is pressed"
+    if input_data.get("shoot") != mouse_pos:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'shoot' value does not match mouse_pos on left click.\n"
+            "Possible causes:\n"
+            "  - Character.get_input_data is still using boolean 'shoot' flags (GAME schema).\n"
+            "  - Client is transforming input and not passing raw mouse_pos through.\n"
+            f"input_data.get('shoot'): {input_data.get('shoot')!r}, expected: {mouse_pos!r}"
+        )
+    assert input_data.get("shoot") == mouse_pos, "shoot should equal mouse_pos when left mouse is pressed (BASE schema)"
 
     # Right click -> secondary_fire carries mouse_pos
     mouse_buttons = [False, False, True]
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    if "mouse_pos" not in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when right click pressed.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
     assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    if input_data.get("secondary_fire") != mouse_pos:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'secondary_fire' value does not match mouse_pos on right click.\n"
+            "Possible causes:\n"
+            "  - Character.get_input_data is using boolean 'secondary_fire' flags.\n"
+            "  - Mouse button mapping changed.\n"
+            f"input_data.get('secondary_fire'): {input_data.get('secondary_fire')!r}, expected: {mouse_pos!r}"
+        )
     assert input_data.get("secondary_fire") == mouse_pos, "secondary_fire should equal mouse_pos when right mouse is pressed"
 
     # No click -> neither key present, but mouse_pos still present
     mouse_buttons = [False, False, False]
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    if "mouse_pos" not in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when no mouse buttons pressed.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
     assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    if "shoot" in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: unexpected 'shoot' key when no mouse button pressed.\n"
+            "Possible cause: boolean 'shoot' state being sent every frame instead of only when pressed.\n"
+            f"input_data['shoot'] value: {input_data['shoot']!r}"
+        )
     assert "shoot" not in input_data, "shoot should not exist when not clicking"
+    if "secondary_fire" in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: unexpected 'secondary_fire' key when no mouse button pressed.\n"
+            f"input_data['secondary_fire'] value: {input_data['secondary_fire']!r}"
+        )
     assert "secondary_fire" not in input_data, "secondary_fire should not exist when not clicking"
 
 

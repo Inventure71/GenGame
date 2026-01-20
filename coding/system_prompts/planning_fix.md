@@ -82,6 +82,7 @@ Use these patterns when writing task descriptions:
 | Registration missing | Add to `setup.py` |
 | Fragile collision test | Loop until behavior, don't single-frame test |
 | Coordinate bug | Check world-Y vs screen-Y conversion |
+| Hitbox origin bug | Ensure character/projectile `location` is treated as a world-space center when building `pygame.Rect` (origin = center_x - width/2, screen_y_center - height/2) and add tests that verify melee/AoE hits on both sides of the attacker. |
 
 ---
 

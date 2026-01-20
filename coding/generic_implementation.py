@@ -242,6 +242,7 @@ class GenericHandler:
                     append_warning_str = (
                         f"\nBATCHING REMINDER ALERT: You're making sequential calls ({number_of_tools_used_last_turn} → {len(regular_tools)}). "
                         f"STOP and THINK first, then batch ALL needed analyzing tools into ONE parallel request (5-20+ calls)."
+                        f"Continue the task until it is completed. Ensure you have addressed all requirements of the current task step."
                     )
                 number_of_tools_used_last_turn = len(regular_tools)
             else:
@@ -260,16 +261,16 @@ class GenericHandler:
                             if name == "complete_task" and not all_tools_success:
                                 print(f"DEBUG: complete_task was called but not all tools were successful, so we will not call it really", flush=True)
                                 result = {"error": "Error: Not all tools were successful this turn so completing task is not possible"}
-                                result_str = self._compose_message(result["error"], append_warning_str, item_index, len(tool_calls_list))
+                                result_str = result["error"]
                             elif ((name == "complete_task" and all_tools_success) and (args.get("summary") is None or len(args.get("summary")) < 100)):
                                 print(f"DEBUG: complete_task was called but the summary is too short, so we will not call it really", flush=True)
                                 result = {"error": "Error: The summary is too short, it must be at least 150 characters long"}
-                                result_str = self._compose_message(result["error"], append_warning_str, item_index, len(tool_calls_list))
+                                result_str = result["error"]
                             else:
                                 result = self.client.tool_map[name](**args)
                                 if not isinstance(result, dict):
                                     result = {"result": result}
-                                result_str = self._compose_message(str(result.get("result", result)), append_warning_str, item_index, len(tool_calls_list))
+                                result_str = str(result.get("result", result))
                                 if name == "run_all_tests_tool":
                                     if result.get("success"):
                                         result_run_tests_tool = f"Success: All {result.get('total_tests')} tests passed! You should now call complete_task."
@@ -304,7 +305,7 @@ class GenericHandler:
                         else:
                             all_tools_success = False
                             result = {"error": f"Tool '{name}' not found."}
-                            result_str = self._compose_message(result["error"], append_warning_str, item_index, len(tool_calls_list))
+                            result_str = result["error"]
                             action_logger.log_action(name, dict(args), result_str, success=False, chat_history=api_history)
                             tool_call_results.append(StandardizedToolResult(
                                 name=name,
@@ -316,7 +317,7 @@ class GenericHandler:
                     except Exception as e:
                         result = {"error": str(e)}
                         all_tools_success = False
-                        result_str = self._compose_message(result["error"], append_warning_str, item_index, len(tool_calls_list))
+                        result_str = result["error"]
                         action_logger.log_action(name, dict(args), result_str, success=False, chat_history=api_history)
                         tool_call_results.append(StandardizedToolResult(
                             name=name,
@@ -364,6 +365,8 @@ class GenericHandler:
                 print(f"DEBUG: current_turn_log: {current_turn_log}", flush=True)
             else:  
                 self.client.add_tool_outputs_to_turn_log(tool_responses_formatted, current_turn_log)
+                if append_warning_str:
+                    current_turn_log.append(self.client.convert_to_client_schema(role="user", content=append_warning_str))
             
             # CRITICAL: We DO NOT append tool_output_content to history_to_update
             # The user specifically requested to avoid saving tool responses/outputs to history.

@@ -35,6 +35,7 @@
 ## Common Pitfalls
 - **Ghost Bugs**: Put physics/behavior in entities, not Arena manager.
 - **Coordinate Confusion**: Specify Y-up or Y-down for every position calculation.
+- **Hitbox Origin Confusion**: For characters and projectiles, `location` is a **world-space center point**, not a top-left. When creating `pygame.Rect` or collision boxes, you MUST center them: compute the rect origin as `[center_x - width/2, screen_y_from_center - height/2]` after doing the Y-up → Y-down conversion. Never treat `location` as the rect's top-left unless the class explicitly documents that. Always verify melee/area-effect weapons can hit targets on both left and right sides (add tests for both directions).
 - **Path Guessing**: Use only paths from the provided directory tree or discovered via tools.
 
 ## ⚖️ Physics & Speed Standards (60 FPS)

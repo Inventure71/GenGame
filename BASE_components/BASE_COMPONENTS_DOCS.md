@@ -121,7 +121,7 @@ Hardcoding arena_height (e.g., `arena_height = 900`) will break tests that use d
 - **Override shoot() carefully**: If overriding, you must manually call `self.ammo -= self.ammo_per_shot` after checking `can_shoot()`.
 
 ### Projectile Attributes
-- `self.location`: `[x, y]` in **World Coordinates**.
+- `self.location`: `[x, y]` in **World Coordinates**, representing the **center** of the projectile for gameplay and collision logic (not the top-left corner).
 - `self.active`: If False, it is removed in the next frame.
 - `self.owner_id`: ID of the character who fired it (used to prevent friendly fire).
 - `self.direction`: Normalized vector `[x, y]` for movement direction.
@@ -129,6 +129,8 @@ Hardcoding arena_height (e.g., `arena_height = 900`) will break tests that use d
 - `self.damage`: Damage dealt on hit.
 - `self.is_persistent`: If True, projectile is not removed on collision (for beams, clouds, etc.).
 - `self.skip_collision_damage`: If True, Arena won't auto-deal damage (for custom collision logic).
+
+**[note] Hitbox Construction**: When converting projectiles or characters to `pygame.Rect` for collisions, always treat `location` as a center point. First convert the center from world-Y (up) to screen-Y (down) using the documented arena formula, then construct the rect with origin `[center_x - width/2, screen_y_center - height/2]`. This keeps melee and area-effect hitboxes symmetric around the entity instead of only covering one side.
 
 ---
 

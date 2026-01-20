@@ -14,7 +14,7 @@ import threading
 
 from BASE_files.BASE_helpers import load_settings
 from BASE_files.patch_manager import PatchManager
-from BASE_files.BASE_game_client import run_client
+from BASE_files.BASE_game_client import run_client, DEFAULT_WIDTH, DEFAULT_HEIGHT
 from BASE_files.BASE_menu_renderers import MenuRenderers
 from BASE_files.BASE_menu_handlers import MenuHandlers
 from BASE_files.BASE_menu_network import MenuNetwork
@@ -53,7 +53,9 @@ class BaseMenu:
             print("Warning: Clipboard support not available.")
 
         print("Creating window...")
-        self.screen = pygame.display.set_mode((1400, 900))
+        self.screen = pygame.display.set_mode(
+            (DEFAULT_WIDTH, DEFAULT_HEIGHT), pygame.FULLSCREEN
+        )
 
         print(f"Video Driver: {pygame.display.get_driver()}")
 

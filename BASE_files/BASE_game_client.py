@@ -6,6 +6,8 @@ import sys
 import traceback
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
 
+DEFAULT_WIDTH = 1400
+DEFAULT_HEIGHT = 900
 
 def run_client(network_client: NetworkClient, player_id: str = ""):
     print("="*70)
@@ -38,8 +40,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         pygame.init()
         # Disable key repeat for precise game control
         pygame.key.set_repeat()
-        width, height = 1400, 900  # Match server arena dimensions
-        screen = pygame.display.set_mode((width, height))
+        width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT  # Match server arena dimensions
+        screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN)
         pygame.display.set_caption(f"Core Conflict Client - {player_id}")
         clock = pygame.time.Clock()
         print("[warning]  IMPORTANT: Click on the game window to enable keyboard input for movement!")

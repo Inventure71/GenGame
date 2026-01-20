@@ -98,6 +98,18 @@ def test_feature_scenario():
 * Multiple spawn positions (edges, corners)
 * Boundary collisions
 * Owner ID correctness
+* Melee / area-effect hit symmetry: for any melee or AoE weapon/projectile, include tests where the target is on both the left and the right of the attacker (and above/below if relevant) to confirm hitboxes are centered correctly and not biased to one side.
+
+---
+
+## TEST EXECUTION & HANDOFF
+
+When you call `run_all_tests_tool(explanation="...")`:
+
+* The `explanation` parameter is a **knowledge handoff** to the fix agent (if tests fail)
+* Follow the structured format described in `tool_instructions/run_all_tests_tool.md`
+* Include: files read, files modified, test results, any issues discovered, and next steps
+* This is the ONLY memory that survives to the next agent - make it comprehensive
 
 ---
 
@@ -107,3 +119,4 @@ When finished:
 
 * Call `complete_task(summary=...)`
 * Summary ≥ 150 characters
+* Include technical details about tests created and any known issues

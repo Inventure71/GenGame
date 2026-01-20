@@ -27,7 +27,7 @@ export SDL_AUDIODRIVER=dummy
 
 # 2. Start Xvfb (Virtual Screen)
 echo "📺 Starting Virtual X Server (Xvfb)..."
-Xvfb :0 -screen 0 1500x1000x24 &
+Xvfb :0 -screen 0 1400x1000x24 &
 sleep 2
 
 # 3. Start Window Manager (Fluxbox)
