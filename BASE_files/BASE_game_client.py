@@ -1,10 +1,9 @@
-import os
 import pygame
-import importlib
 import time
 import sys
 import traceback
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
+from BASE_components.BASE_camera import BaseCamera
 
 DEFAULT_WIDTH = 1400
 DEFAULT_HEIGHT = 900
@@ -15,17 +14,18 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
     print("="*70)
     print("\n🎮 GAME FEATURES:")
     print("  ✓ Multiplayer: Connect to server for real-time battles")
-    print("  ✓ Life System: Each player has 3 lives")
-    print("  ✓ Respawn: Players respawn after death")
-    print("  ✓ Weapon Pickups: Walk over weapons to pick them up!")
-    print("  ✓ UI: Shows health, lives, and current weapon")
-    print("  ✓ Winner: Last player standing wins!")
+    print("  ✓ Life System: Single-life elimination")
+    print("  ✓ Safe Zone: Shrinking circle damages cows outside")
+    print("  ✓ Abilities: Pick up primary/passive abilities around the map")
+    print("  ✓ Growth: Eat grass to grow and find extra ability charges")
+    print("  ✓ Pooping: Drop poop mines or walls based on passives")
     print("\n🎯 CONTROLS:")
-    print("  Arrow Keys / WASD: Move Player")
-    print("  Mouse Left-Click: Primary Fire (if you have a weapon)")
-    print("  Mouse Right-Click: Secondary Fire")
-    print("  E/F: Special Fire")
-    print("  Q: Drop current weapon")
+    print("  Arrow Keys / WASD: Move Cow")
+    print("  Mouse Left-Click: Use primary ability (if available)")
+    print("  Mouse Right-Click: Secondary action (if mapped)")
+    print("  Space: Eat grass")
+    print("  Shift: Dash")
+    print("  P: Poop")
     print("  ESC: Quit game")
     print("="*70)
     print(f"\nConnecting to server at {network_client.host}:{network_client.port}...\n")
@@ -40,7 +40,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         pygame.init()
         # Disable key repeat for precise game control
         pygame.key.set_repeat()
-        width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT  # Match server arena dimensions
+        width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT  # Viewport dimensions
         screen = pygame.display.set_mode((width, height), pygame.FULLSCREEN)
         pygame.display.set_caption(f"Core Conflict Client - {player_id}")
         clock = pygame.time.Clock()
@@ -65,10 +65,13 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 
                 if reloaded_setup:
                     # Import game-specific classes for modularity
-                    nonlocal ui, Character
+                    nonlocal ui, Character, world_width, world_height, camera
                     entity_manager.clear() # Clear old entities before reloading
                     ui = reloaded_setup.GameUI(screen, width, height)
                     Character = reloaded_setup.Character
+                    world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
+                    world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
+                    camera.set_world_size(world_width, world_height)
                     
                     print("✓ Game classes deep reloaded after patch application")
                 else:
@@ -87,10 +90,13 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     
                     if reloaded_setup:
                         # Import game-specific classes for modularity
-                        nonlocal ui, Character
+                        nonlocal ui, Character, world_width, world_height, camera
                         entity_manager.clear() # Clear old entities before reloading
                         ui = reloaded_setup.GameUI(screen, width, height)
                         Character = reloaded_setup.Character
+                        world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
+                        world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
+                        camera.set_world_size(world_width, world_height)
                         
                         print("✓ Game files synchronized and classes deep reloaded")
                         # Set flag immediately to prevent race condition
@@ -122,10 +128,13 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 reloaded_setup = reload_game_code()
                 
                 if reloaded_setup:
-                    nonlocal ui, Character
+                    nonlocal ui, Character, world_width, world_height, camera
                     entity_manager.clear() # Clear old entities before reloading
                     ui = reloaded_setup.GameUI(screen, width, height)
                     Character = reloaded_setup.Character
+                    world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
+                    world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
+                    camera.set_world_size(world_width, world_height)
                     
                     print("✓ Game classes deep reloaded for game start")
                 else:
@@ -181,11 +190,13 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         winner = None
         ui = None  # Will be created after file sync
         Character = None  # Will be loaded after file sync
+        world_width = DEFAULT_WIDTH
+        world_height = DEFAULT_HEIGHT
+        camera = BaseCamera(world_width, world_height, width, height)
 
         # Input state
         held_keys = set()
         mouse_pressed = [False, False, False]  # Left, Middle, Right
-        special_fire_holding = False
 
         running = True
         last_input_time = 0.0
@@ -209,9 +220,6 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     held_keys.add(event.key)
                     if event.key == pygame.K_ESCAPE:
                         running = False
-                    elif event.key == pygame.K_q:
-                        # Drop weapon
-                        network_client.send_input({'drop_weapon': True}, entity_manager)
                 elif event.type == pygame.KEYUP:
                     held_keys.discard(event.key)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -223,7 +231,10 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
             # Get mouse position
             mx, my = pygame.mouse.get_pos()
-            world_mx, world_my = mx, height - my  # Convert to world coordinates
+            if camera:
+                world_mx, world_my = camera.screen_to_world_point(mx, my)
+            else:
+                world_mx, world_my = mx, height - my  # Convert to world coordinates
 
             # Send input to server (throttled to reduce network traffic)
             if current_time - last_input_time > 0.016:  # ~60 FPS input rate
@@ -235,6 +246,11 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     # Fallback if Character class is not loaded yet
                     input_data = {'mouse_pos': [world_mx, world_my], 'movement': [0, 0]}
 
+                # Always include raw input context for modular key/mouse handling
+                input_data.setdefault('mouse_pos', [world_mx, world_my])
+                input_data.setdefault('held_keys', sorted(list(held_keys)))
+                input_data.setdefault('mouse_buttons', list(mouse_pressed))
+
                 # Always send input (at least mouse position)
                 network_client.send_input(input_data, entity_manager)
 
@@ -243,16 +259,25 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             # Update network client
             network_client.update()
 
+            # Update camera to follow local player (fallback to first entity)
+            follow_entity = None
+            if entity_manager.local_player_id:
+                follow_entity = entity_manager.get_entity(entity_manager.local_player_id)
+            if follow_entity is None and entity_manager.entities:
+                follow_entity = next(iter(entity_manager.entities.values()))
+            if follow_entity and hasattr(follow_entity, 'location'):
+                camera.set_center(follow_entity.location[0], follow_entity.location[1])
+
             # Render
-            screen.fill((135, 206, 235))  # Sky blue background
+            screen.fill((20, 90, 20))  # Grass green background
 
             # Draw all platforms and entities managed by the entity manager
-            entity_manager.draw_all(screen, height)
+            entity_manager.draw_all(screen, world_height, camera=camera)
 
             # Draw UI
             if Character and ui:
                 characters = entity_manager.get_entities_by_type(Character)
-                ui.draw(characters, game_over, winner, {})
+                ui.draw(characters, game_over, winner, {}, local_player_id=entity_manager.local_player_id)
 
             pygame.display.flip()
 

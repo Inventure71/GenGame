@@ -4,7 +4,7 @@
 - **Access**: Only `GameFolder/` (read/write) and `BASE_components/` (read-only).
 - **Documentation**: Use `BASE_components/BASE_COMPONENTS_DOCS.md` as the primary reference for all `BASE_` classes. Do NOT read files inside `BASE_components/` unless the documentation is insufficient.
 - **Inheritance**: Always inherit from the appropriate BASE class in `GameFolder/` implementations.
-- **New Entities**: Each weapon/projectile/etc. lives in its own file in the appropriate `GameFolder/` subdirectory.
+- **New Entities**: Each ability/effect/pickup/arena feature lives in its own file in the appropriate `GameFolder/` subdirectory.
 
 ## Technical Standards
 - **Arena Dimensions**: Use `arena.width` and `arena.height`; never hardcode sizes.
@@ -35,21 +35,14 @@
 ## Common Pitfalls
 - **Ghost Bugs**: Put physics/behavior in entities, not Arena manager.
 - **Coordinate Confusion**: Specify Y-up or Y-down for every position calculation.
-- **Hitbox Origin Confusion**: For characters and projectiles, `location` is a **world-space center point**, not a top-left. When creating `pygame.Rect` or collision boxes, you MUST center them: compute the rect origin as `[center_x - width/2, screen_y_from_center - height/2]` after doing the Y-up → Y-down conversion. Never treat `location` as the rect's top-left unless the class explicitly documents that. Always verify melee/area-effect weapons can hit targets on both left and right sides (add tests for both directions).
+- **Hitbox Origin Confusion**: For characters and effects, `location` is a **world-space center point**, not a top-left. When creating `pygame.Rect` or collision boxes, you MUST center them: compute the rect origin as `[center_x - width/2, screen_y_from_center - height/2]` after doing the Y-up → Y-down conversion. Never treat `location` as the rect's top-left unless the class explicitly documents that. Always verify AoE effects can hit targets on both left and right sides (add tests for both directions).
 - **Path Guessing**: Use only paths from the provided directory tree or discovered via tools.
 
-## ⚖️ Physics & Speed Standards (60 FPS)
-### Projectile Speed Limits
-To prevent "tunneling" (skipping over targets), follow these speed tiers:
-- **Standard**: 15.0 - 25.0 (Reliable and visible)
-- **Fast**: 26.0 - 40.0 (Still reliable against standard 50px characters)
-- **[warning] Danger Zone**: 45.0+ (Will likely skip collisions and appear to vanish)
-
+## ⚖️ Gameplay Standards (60 FPS)
 ### Character Scale & Collision
 - **Default Size**: 30x30 pixels.
-- **Scaling**: If a character is scaled down (e.g., `scale_ratio = 0.5`), the projectile speed safety limit drops proportionally (e.g., max safe speed = 25.0).
+- **Scaling**: Larger cows are slower and smaller cows are faster; keep collision tests centered on world coordinates.
 
-### Jump & Gravity Context
-- **Gravity**: 0.4 pixels/frame².
-- **Jump Height**: ~280 pixels total height.
-- **Flight/Airtime**: Standard jump lasts ~1.25 seconds.
+### Camera & World Size
+- The server simulates the full world (`WORLD_WIDTH/WORLD_HEIGHT`); the client uses a camera to render a viewport.
+- Convert input from screen → world on the client and always simulate in world space on the server.

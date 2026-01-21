@@ -43,7 +43,7 @@ DEBUG_OUTPUT_INSIGHTS:
 - ...
 
 IMPORTANT_CONSTANTS_AND_CONFIG:
-- <entity/weapon/arena>: <key numerical values discovered> (cooldowns, damage, durations, thresholds, positions)
+- <entity/ability/arena>: <key numerical values discovered> (cooldowns, damage, durations, thresholds, positions)
 - ...
 
 LIKELY_BUG_LOCATIONS:
@@ -90,44 +90,41 @@ NEXT_ACTIONS_FOR_FIX_AGENT:
 ```
 run_all_tests_tool(explanation="""
 FILES_READ:
-- GameFolder/tests/test_orbital_cannon.py: Test expects shoot() to return list, but implementation may return None on cooldown
-- GameFolder/weapons/OrbitalCannon.py: shoot() method checks last_shot_time against cooldown (2.0s), returns None if too soon
-- BASE_components/BASE_weapon.py: BASE class shoot() signature returns Optional[List[Projectile]], can return None
-- GameFolder/tests/test_banana_cannon.py: Similar working test resets last_shot_time=0 before calling shoot()
+- GameFolder/tests/mandatory_edge_cases_test.py: Tests effect damage cooldown timing
+- GameFolder/effects/GAME_effects.py: Effect update and lifetime logic
+- GameFolder/arenas/GAME_arena.py: Effect damage cooldown enforcement
 
 FILES_MODIFIED:
-- GameFolder/tests/test_orbital_cannon.py: Added debug prints showing shoot() return value and last_shot_time state
+- GameFolder/tests/mandatory_edge_cases_test.py: Added debug prints showing effect hit timestamps
 
 FAILING_TESTS_AND_ERRORS:
-- test_orbital_cannon_shooting_corners in test_orbital_cannon.py: AssertionError - assert len(projectiles) == 1 failed (got 0)
-- Stack focus: OrbitalCannon.shoot() line 45-52, test line 51
+- test_effect_damage_cooldown in mandatory_edge_cases_test.py: AssertionError - cooldown not enforced
+- Stack focus: GameFolder/arenas/GAME_arena.py:_apply_effects and test line 22
 
 ROOT_CAUSE_HYPOTHESES_CONFIRMED:
-- shoot() returning None due to cooldown → Debug print showed "shoot -> None type=<class 'NoneType'>" and "last_shot_time=0.0 cooldown=2.0"
+- effect_hit_times key mismatch → Debug showed network_id missing causing new key each frame
 
 ROOT_CAUSE_HYPOTHESES_REJECTED:
-- Projectile creation failing → Debug showed shoot() never reached projectile creation code, returned None earlier
-- Wrong method signature → Verified BASE class signature matches implementation
+- Effect lifetime too short → Effect still present after cooldown window
 
 DEBUG_OUTPUT_INSIGHTS:
-- shoot() called with last_shot_time=0.0, but current_time in shoot() was 0.016 (from arena.update_world), so cooldown check passed
-- Actually wait, need to check if test is calling shoot() before any arena updates
+- effect_hit_times keys used effect.network_id but network_id was None
+- current_time advanced correctly but key never matched
 
 IMPORTANT_CONSTANTS_AND_CONFIG:
-- OrbitalCannon: cooldown=2.0s, last_shot_time initialized to 0.0
-- Test: Resets gun.last_shot_time = 0 before each shoot() call
+- RadialEffect: damage_cooldown=1.0s
+- Arena: effect_hit_times dict keyed by (effect.network_id, cow.id)
 
 LIKELY_BUG_LOCATIONS:
-- test_orbital_cannon.py:test_orbital_cannon_shooting_corners: Test may be calling shoot() with wrong timing or not resetting cooldown properly
+- GameFolder/arenas/GAME_arena.py:_apply_effects: missing network identity for effects
 
-OPEN_QUESTIONS_AND_NEXT_ACTIONS:
-- Need to verify: Does shoot() use arena.current_time or time.time()? → Check BASE_weapon.py for time source
-- Next: If using arena.current_time, test needs to ensure arena has been updated at least once, OR shoot() should accept explicit time parameter
+OPEN_QUESTIONS_AND_AMBIGUITIES:
+- Should effects use network_id or fall back to object id when missing?
 
 NEXT_ACTIONS_FOR_FIX_AGENT:
-- Step 1: Read BASE_weapon.py shoot() method to confirm how it gets current time (arena.current_time vs time.time())
-- Step 2: If using arena.current_time, fix test to call arena.update_world(0.016) before shoot(), OR fix implementation to use time.time() instead
-- Step 3: Verify fix by checking debug output shows shoot() returns list instead of None
+- Step 1: Ensure all effects set network identity on creation
+- Step 2: If network_id missing, key by id(effect) instead
+- Step 3: Re-run tests to confirm cooldown enforcement
 """)
 ```
 

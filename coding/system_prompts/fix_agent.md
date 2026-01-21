@@ -156,9 +156,9 @@ For each failing test cycle:
      - At least one **similar working test/implementation** if available
 
 4. **Form explicit hypotheses**, e.g.:
-   - "`shoot()` is returning `None` due to cooldown, not because projectile creation fails."
+   - "Effect damage cooldown is not enforced because the hit key is unstable."
    - "Test assumes top-left origin while code uses center-based hitboxes."
-   - "Test expects 800 damage but BASE shield/defense logic makes actual health change smaller."
+   - "Test expects 20 damage but effect uses a damage multiplier."
 
 5. **Confirm / reject hypotheses with evidence**, not guesses:
    - Add targeted debug prints (before/after state, return values, coordinates, counts)
@@ -176,7 +176,7 @@ For each failing test, quickly check:
 
 **Category B: State & Timing Issues**
 - [ ] **State not updating** - Test sets fields directly instead of calling update methods
-- [ ] **Cooldown/timer blocking** - `last_shot_time`, `cooldown`, or timers prevent action
+- [ ] **Cooldown/timer blocking** - `damage_cooldown` or timers prevent action
 - [ ] **Initialization missing** - Required state not set in constructor or setup
 - [ ] **State persistence** - Reusing objects across tests without resetting
 
@@ -360,7 +360,7 @@ DEBUG_OUTPUT_INSIGHTS:
 - ...
 
 IMPORTANT_CONSTANTS_AND_CONFIG:
-- <entity/weapon/arena>: <key numeric values discovered (cooldowns, damage, durations, thresholds, coordinates)>
+- <entity/ability/arena>: <key numeric values discovered (cooldowns, damage, durations, thresholds, coordinates)>
 - ...
 
 LIKELY_BUG_LOCATIONS:
@@ -399,21 +399,19 @@ print(f"hasattr(x)={hasattr(obj,'x')}")
 print(f"x={getattr(obj,'x','MISSING')}")
 ```
 
-**Return type / None / cooldown**
+**Return type / cooldown**
 
 ```python
-res = weapon.shoot(...)
-print(f"shoot -> {res} type={type(res)}")
-if res is None:
-    print("shoot returned None (cooldown/ammo/state?)")
+result = effect.update(0.016)
+print(f"update -> {result} type={type(result)}")
 ```
 
 **State change before/after**
 
 ```python
-print(f"BEFORE ammo={w.ammo} last={w.last_shot_time}")
-res = w.shoot(...)
-print(f"AFTER res={res} ammo={w.ammo} last={w.last_shot_time}")
+print(f"BEFORE hits={arena.effect_hit_times}")
+arena.handle_collisions()
+print(f"AFTER hits={arena.effect_hit_times}")
 ```
 
 **Collision / simulation trace**
@@ -456,18 +454,18 @@ When diagnosing, you may use:
 **Example of proper thinking and batching:**
 
 **THINKING PHASE (before any calls):**
-- I need to understand why `test_weapon_shoot` is failing
-- I need: test file, weapon implementation, BASE_weapon class, shoot method source, update method source, usages of shoot, similar working test
+- I need to understand why `test_effect_damage_cooldown` is failing
+- I need: test file, effect implementation, arena collision logic, effect update method source, usages of effect in arena, similar working test
 - That's 7 items minimum → I should batch all 7
 
 **BATCHING PHASE (all in one turn):**
-* read_file("GameFolder/tests/weapon_tests.py")
-* list_functions_in_file("GameFolder/weapons/WeaponClass.py")
-* get_function_source("GameFolder/weapons/WeaponClass.py", "shoot")
-* get_function_source("GameFolder/weapons/WeaponClass.py", "update")
-* read_file("BASE_components/BASE_weapon.py")
-* find_function_usages("shoot", "GameFolder")
-* read_file("GameFolder/tests/similar_working_test.py")
+* read_file("GameFolder/tests/mandatory_edge_cases_test.py")
+* list_functions_in_file("GameFolder/effects/GAME_effects.py")
+* get_function_source("GameFolder/effects/GAME_effects.py", "update")
+* get_function_source("GameFolder/arenas/GAME_arena.py", "_apply_effects")
+* find_function_usages("damage_cooldown", "GameFolder")
+* read_file("BASE_components/BASE_effects.py")
+* read_file("GameFolder/tests/basics_tests.py")
 
 **Result**: All information gathered in 1 turn instead of 7.
 
@@ -482,7 +480,7 @@ Starting context includes the directory tree; call `get_tree_directory` only aft
 * `BASE_components/` is read-only.
 * Extend/patch via `GameFolder/`.
 * New entities go in correct `GameFolder/` subdir.
-* Register new weapons/entities in `GameFolder/setup.py` inside `setup_battle_arena()`.
+* Register new abilities/effects/pickups or arena content in `GameFolder/setup.py` inside `setup_battle_arena()`.
 * You may directly modify tests to add debug prints.
 * You can use `create_file` if you need to create new test files (rare).
 

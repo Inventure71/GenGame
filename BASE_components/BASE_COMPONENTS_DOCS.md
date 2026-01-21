@@ -1,213 +1,159 @@
 # Core Conflict BASE Components Documentation
 
-This document serves as the official API reference for the core Core Conflict engine. These components are located in `BASE_components/` and are **READ-ONLY**. All new game features must inherit from these classes in the `GameFolder/` directory.
+This document is the API reference for the **lowest‑level** Core Conflict engine pieces. These live in `BASE_components/` and are **READ‑ONLY**. All gameplay logic, abilities, effects, pickups, and visuals should be implemented in `GameFolder/` by extending these base classes.
 
-**[warning] Important**: This documentation focuses only on the public API that game developers can use and modify through inheritance. Internal systems (networking, serialization) are not documented as they cannot be modified.
+**Guiding rule:** Base = low‑level primitives + immutable systems (game loop, safe zone). GameFolder = specialization.
 
 ---
 
-## 🌍 Global Systems & Architecture
+## 🌍 Architecture Overview
 
-### Local Single-Player Gameplay
-Core Conflict runs as a local single-player game with direct input handling.
-- **Input Handling**: Direct keyboard and mouse input processing.
-- **Control Flow**:
-    1. Capture local inputs (keys, mouse) from pygame events.
-    2. Apply inputs directly to the local character.
-    3. Update game simulation and physics.
-    4. Render the scene.
+### What lives in BASE
+- Immutable systems: game loop, safe zone updates
+- Low‑level primitives: `BaseCharacter`, `BasePlatform`, `BaseEffect`, `TimedEffect`, `BaseUI`
+- Network serialization support via `NetworkObject` (in `BASE_files/BASE_network.py`)
 
-### Input Handling
-Inputs are captured directly from pygame events.
-- Standard keys: Arrow keys/WASD for movement, Space for jump, Q for drop weapon.
-- Mouse: Left click for shooting, position for aim direction.
-- Special keys: E/F for special abilities.
+### What lives in GameFolder
+- Concrete gameplay systems: MS2 abilities/effects, pickups, obstacles, grass
+- Collision rules and item pickup logic
+- UI rendering
+- Character behavior and ability logic
 
-### Coordinate Systems
-- **World Coordinates (Logic)**: Y-axis points **UP**. `[0, 0]` is bottom-left. Used for physics and object locations.
-- **Screen Coordinates (Pygame)**: Y-axis points **DOWN**. `[0, 0]` is top-left. Used for rendering.
+---
+
+## Coordinate System
+- **World Coordinates (Logic)**: Y‑axis points **UP**. `[0, 0]` is bottom‑left.
+- **Screen Coordinates (Pygame)**: Y‑axis points **DOWN**. `[0, 0]` is top‑left.
 - **Conversion Formula**: `screen_y = arena_height - world_y - object_height`
-- **Conversion Methods**: Use `self.screen_to_world(x, y)` and `self.world_to_screen(x, y)` in the Arena class.
 
-**[warning] CRITICAL WARNING**: NEVER hardcode `arena_height` values in collision detection or coordinate conversion! Always:
-  1. Pass `arena_height` as a parameter (preferred), OR
-  2. Store it in `self.last_arena_height` during `update()` and use that value
-  
-Hardcoding arena_height (e.g., `arena_height = 900`) will break tests that use different arena sizes and cause collision detection to fail completely.
+Avoid hardcoding arena height; always use the current arena height when converting.
 
 ---
 
 ## 1. Character (`BaseCharacter`)
 **File**: `BASE_components/BASE_character.py`
 
-### Key Attributes
-- `self.location`: `[x, y]` in **World Coordinates**.
-- `self.width` / `self.height`: Character dimensions (default 30x30 pixels).
-- `self.health` / `self.max_health`: Current/Max HP (default 100.0).
-- `self.is_alive`: Boolean flag set by `die()` method. **CRITICAL**: This is NOT a computed property! Setting `health = 0` directly will NOT update `is_alive`. Always use `take_damage()` or call `die()` explicitly.
-- `self.lives`: Fixed at 3 (Immutable).
-- `self.weapon`: The currently equipped `BaseWeapon` or `None`.
-- `self.on_ground`: Boolean flag updated by physics.
-- `self.vertical_velocity`: Current upward/downward velocity (used for jumping and falling).
-- `self.is_invulnerable`: Boolean flag for temporary invulnerability (default False).
-- `self.invulnerability_timer`: Time remaining for invulnerability in seconds (default 0.0).
-- **Two-Layer Damage System**:
-  - **Shields** (GAME_character.py): Absorb damage before health.
-    - `self.shield` / `self.max_shield`: Current/Max shield points (default 50.0).
-    - `self.shield_regen_rate`: Shield regeneration per second (default 1.0).
-    - `self.last_damage_time`: Timestamp of last damage taken (for regen delay).
-    - **Regeneration**: Shields regenerate after 1 second delay from last damage.
-  - **Defense** (BASE_character.py): Reduces remaining damage after shields.
-    - `self.defense`: Base defense value (default 5.0).
-    - `self.defense_multiplier`: Defense modifier (default 1.0).
-    - **Formula**: `reduced_damage = max(1, damage - (defense × multiplier))`
-    - **Minimum**: Always deals at least 1 damage.
-- **Flight System**:
-  - `self.flight_time_remaining`: Current flight fuel (max 3.0 seconds).
-  - `self.needs_recharge`: If True, flight is disabled until landing.
-  - `self.is_currently_flying`: True when actively flying (pressing UP/DOWN while airborne).
-  - Flight only activates when: airborne + falling/at peak + pressing UP or DOWN + has flight energy.
-- **Status Effects**: `self.physics_inverted`, `self.speed_multiplier`, `self.jump_height_multiplier`.
-
-### Critical Methods
-- `move(direction, platforms)`: Updates position. Handles jumping, flying, and status effects.
-- `update(delta_time, platforms, arena_height)`: Handles gravity, flight recharge, and multiplier recovery.
-- `shoot(target_pos)` / `secondary_fire(target_pos)` / `special_fire(target_pos, is_holding)`: Spawning logic for different fire modes.
-- `pickup_weapon(weapon)`: Equips a weapon if not already holding one. Returns `True` on success, `False` if already armed.
-- `drop_weapon()`: Permanently discards the current weapon (weapon disappears from game).
-- `take_damage(amount, attacker_id)`: Applies damage through shields and defense. Automatically calls `die()` when health reaches 0. Returns actual damage dealt. No damage is applied if `is_invulnerable` is True.
-- `die()`: Sets `is_alive = False`, decrements `lives`, and handles death logic. **Always call this instead of setting health/is_alive directly**.
-- `respawn()`: Resets character to spawn position, restores full health/shield, sets `is_alive = True`, and activates 8.0 seconds of invulnerability. **Invulnerability only activates on respawn, not on initial character creation**.
-
----
-
-## 2. Platform (`BasePlatform`)
-**File**: `BASE_components/BASE_platform.py`
+### Purpose
+A minimal, network‑serializable character that supports movement, damage, and basic drawing. Gameplay actions (abilities, dashes, eating, etc.) must be added in `GameFolder/characters/GAME_character.py`.
 
 ### Key Attributes
-- `self.rect`: Pygame Rect in screen coordinates (y-down).
-- `self.float_x` / `self.float_y`: Float precision position for smooth movement.
-- `self.original_x` / `self.original_y`: Starting position for return behavior.
-- `self.being_pulled`: Flag set by arena during pull effects (Black Hole, Tornado).
-- `self.health` / `self.is_destroyed`: Platform health system.
+- `self.location`: `[x, y]` in world coordinates (y‑up)
+- `self.width` / `self.height`: Size of the character
+- `self.speed`: Base movement speed
+- `self.health` / `self.max_health`: Current/Max health
+- `self.lives`: Lives remaining (`MAX_LIVES`, default 1)
+- `self.is_alive` / `self.is_eliminated`: Life state
 
-### Critical Methods
-- `move(dx, dy)`: Moves the platform by delta values.
-- `return_to_origin(delta_time, return_speed)`: Gradually moves back to original position.
-- `take_damage(amount)`: Reduces health and marks as destroyed at 0.
+### Key Methods
+- `get_input_data(held_keys, mouse_buttons, mouse_pos)`
+  - Returns `movement` + `mouse_pos` and passes through raw `held_keys` and `mouse_buttons`
+- `process_input(input_data, arena)`
+  - Handles base movement, delegates actions to `handle_actions`
+- `handle_actions(input_data, arena)`
+  - **Hook** for GameFolder logic (abilities, dash, eat, etc.)
+- `move(direction, arena)`
+  - Updates position and clamps to arena bounds
+- `take_damage(amount)` / `heal(amount)` / `die()` / `respawn()`
 
----
-
-## 3. Weapon & Projectile
-**Files**: `BASE_components/BASE_weapon.py`, `BASE_components/BASE_projectile.py`
-
-### Weapon Attributes
-- `self.ammo`: Current ammunition count.
-- `self.max_ammo`: Maximum ammunition capacity.
-- `self.ammo_per_shot`: Ammo consumed per shot (default: 1).
-- `self.location`: `[x, y]` position when on ground (not equipped).
-- `self.is_equipped`: True when held by character, False when on ground.
-
-### Weapon Methods
-- `shoot(...)`: Standard fire. **Automatically consumes ammo**. Returns None if insufficient ammo or cooldown active.
-- `secondary_fire(...)`: Optional override for alternate fire.
-- `special_fire(...)`: Optional override for channeled or special abilities.
-- `can_shoot()`: Returns True if cooldown elapsed AND has sufficient ammo.
-- `add_ammo(amount)`: Add ammo (capped at max_ammo). Used by ammo pickups.
-- `reload()`: Restore ammo to max_ammo.
-
-### Important Notes
-- **Weapons disappear permanently**: When dropped or on death, weapons are permanently removed from the game (no respawning as pickups).
-- **Override shoot() carefully**: If overriding, you must manually call `self.ammo -= self.ammo_per_shot` after checking `can_shoot()`.
-
-### Projectile Attributes
-- `self.location`: `[x, y]` in **World Coordinates**, representing the **center** of the projectile for gameplay and collision logic (not the top-left corner).
-- `self.active`: If False, it is removed in the next frame.
-- `self.owner_id`: ID of the character who fired it (used to prevent friendly fire).
-- `self.direction`: Normalized vector `[x, y]` for movement direction.
-- `self.speed`: Movement speed in pixels per frame at 60 FPS.
-- `self.damage`: Damage dealt on hit.
-- `self.is_persistent`: If True, projectile is not removed on collision (for beams, clouds, etc.).
-- `self.skip_collision_damage`: If True, Arena won't auto-deal damage (for custom collision logic).
-
-**[note] Hitbox Construction**: When converting projectiles or characters to `pygame.Rect` for collisions, always treat `location` as a center point. First convert the center from world-Y (up) to screen-Y (down) using the documented arena formula, then construct the rect with origin `[center_x - width/2, screen_y_center - height/2]`. This keeps melee and area-effect hitboxes symmetric around the entity instead of only covering one side.
+**Note**: Do not put game‑specific abilities here. Extend in GameFolder.
 
 ---
 
-## 4. Arena (`BaseArena`)
+## 2. Arena (`Arena`)
 **File**: `BASE_components/BASE_arena.py`
 
-The Arena handles the main game loop. Override methods in `GameFolder/arenas/GAME_arena.py` to insert custom logic.
-
-### Game Loop Execution
-1. `step()`: Main game loop method called every frame.
-2. `_capture_input()`: Captures local keyboard and mouse input.
-3. `_update_simulation(delta_time)`: Updates physics, projectiles, and game state.
-4. `render()`: Draws the scene.
-5. `update(delta_time)`: Headless simulation update (no rendering).
-
-**Note**: Tests may use `update_world(delta_time)` which is an alias for `update(delta_time)`.
+### Purpose
+Immutable game loop and safe‑zone management. Override in GameFolder for gameplay rules (collisions, effects, pickups).
 
 ### Key Attributes
-- `self.characters`: List of all `BaseCharacter` objects in the game.
-- `self.platforms`: List of all `BasePlatform` objects.
-- `self.projectiles`: List of all active `BaseProjectile` objects.
-- `self.weapon_pickups`: List of weapons available for pickup.
-- `self.ammo_pickups`: List of ammo pickups available for collection.
-- `self.lootpool`: Dict mapping weapon names to their factory functions.
-- `self.ammo_spawn_interval`: Time between ammo spawns (default: 12.0 seconds).
+- `self.characters`: Active characters
+- `self.platforms`: Platforms/obstacles
+- `self.effects`: Active effects (base list only)
+- `self.safe_zone`: `SafeZone` instance
+- `self.enable_safe_zone`: If True, applies safe‑zone damage
 
-### Ammo Pickup System
-- Ammo pickups spawn automatically every `ammo_spawn_interval` seconds.
-- Maximum of 2 ammo pickups active at once.
-- Ammo amounts: 5, 10, or 15 (scarcer than before).
-- **Mirrored spawns**: When ammo spawns at position [x, y], a second pickup may spawn at [width-x, y] if a valid platform exists there.
-- Characters automatically collect ammo when walking over it (if they have a weapon).
-- Use `spawn_ammo(ammo_pickup)` to manually add ammo to the arena.
-
-### Floor Platform
-- The main floor platform spans 90% of arena width (centered from 5% to 95% of width).
-- Characters cannot phase through the floor platform (unlike other platforms).
-
-### Custom Collision Logic
-**Required for special projectiles**: If your projectiles have special behaviors (pulling, persistent beams, custom damage), you **MUST**:
-1. Override `handle_collisions(delta_time)` in your Arena class.
-2. Call `super().handle_collisions(delta_time)` first to handle standard collisions.
-3. Process your special projectiles after the base call.
-4. Set `projectile.is_persistent = True` to prevent auto-removal.
-5. Set `projectile.skip_collision_damage = True` to handle damage manually.
+### Key Methods
+- `step()` / `run()`: Main loop
+- `_capture_input()`: Captures pygame input for local play
+- `update(delta_time)`: Updates safe zone, effects, characters
+- `handle_collisions()`: **Override in GameFolder**
+- `render()`: Minimal render loop (override for visuals)
 
 ---
 
-## 5. Ammo Pickup (`BaseAmmoPickup`)
-**File**: `BASE_components/BASE_ammo.py`
+## 3. Effects (`BaseEffect`, `TimedEffect`)
+**File**: `BASE_components/BASE_effects.py`
 
-### Key Attributes
-- `self.location`: `[x, y]` position in world coordinates.
-- `self.ammo_amount`: Amount of ammo to give when picked up.
-- `self.is_active`: True when available, False when collected.
+### Purpose
+Low‑level effect primitives. No gameplay shapes or damage logic exist here.
 
-### Methods
-- `pickup()`: Mark as collected (sets `is_active = False`).
-- `get_pickup_rect(arena_height)`: Returns pygame.Rect for collision detection.
-- `draw(screen, arena_height)`: Renders the ammo pickup with "A" icon.
+### Base Classes
+- `BaseEffect`: network‑serializable object with `location`, `update`, `draw`
+- `TimedEffect`: base effect with lifetime tracking
 
-### Usage
-```python
-from BASE_components.BASE_ammo import BaseAmmoPickup
-
-# Create ammo pickup at location with 15 ammo
-ammo = BaseAmmoPickup([300, 200], ammo_amount=15)
-arena.spawn_ammo(ammo)
-```
+All concrete effects (cones, shockwaves, walls, etc.) should live in `GameFolder/effects/`.
 
 ---
 
-## 6. UI (`BaseUI`)
+## 4. Safe Zone (`SafeZone`)
+**File**: `BASE_components/BASE_safe_zone.py`
+
+### Purpose
+Shrinking zone that damages characters outside its radius. This is immutable.
+
+### Key Attributes
+- `center`: `[x, y]` center
+- `radius`: Current radius
+- `damage`: Damage per interval
+
+### Key Methods
+- `update(delta_time)`
+- `contains(x, y)`
+
+---
+
+## 5. Platform (`BasePlatform`)
+**File**: `BASE_components/BASE_platform.py`
+
+### Purpose
+Low‑level platform/obstacle type for collision and rendering.
+
+### Key Attributes
+- `self.rect`: pygame.Rect (screen space)
+- `self.float_x` / `self.float_y`: float position for smooth movement
+
+---
+
+## 6. Camera (`BaseCamera`)
+**File**: `BASE_components/BASE_camera.py`
+
+### Purpose
+World-to-screen camera for large arenas. Keeps all server logic in absolute world coordinates while the client renders a viewport.
+
+### Key Methods
+- `set_center(x, y)`: Follow a target in world space (clamped to world bounds)
+- `world_to_screen_point(x, y)`: Convert world coords to screen coords
+- `screen_to_world_point(x, y)`: Convert screen coords to world coords
+- `world_center_rect_to_screen(center_x, center_y, width, height)`: Convenience for drawing
+
+---
+
+## 7. UI (`BaseUI`)
 **File**: `BASE_components/BASE_ui.py`
 
-### Critical Methods
-- `draw(characters, game_over, winner, respawn_timers)`: Main entry point for UI rendering.
-- Renders circular health indicators in the top-right corner.
-- Health bar colors: Green (>60%), Yellow (>30%), Red (<30%).
-- Displays game over screen with winner information.
+### Purpose
+Minimal UI hook. GameFolder should implement real UI rendering.
+
+---
+
+## GameFolder Extension Points
+Concrete gameplay lives in these modules:
+- `GameFolder/characters/GAME_character.py`: MS2 cow logic and abilities
+- `GameFolder/abilities/`: one file per primary/passive ability with descriptions
+- `GameFolder/arenas/GAME_arena.py`: collisions, pickup handling, effect damage
+- `GameFolder/effects/GAME_effects.py`: cone, radial, line, wave, poop effects
+- `GameFolder/world/GAME_world_objects.py`: obstacles + grass
+- `GameFolder/pickups/GAME_pickups.py`: ability pickups
+- `GameFolder/ui/GAME_ui.py`: MS2 UI
+
+Keep BASE minimal and extend in GameFolder.

@@ -1,220 +1,345 @@
-from BASE_components.BASE_character import BaseCharacter
+import math
+import random
 import pygame
-import time
+from BASE_components.BASE_character import BaseCharacter
+from GameFolder.abilities import PRIMARY_BY_NAME, PASSIVE_BY_NAME
+from GameFolder.effects.GAME_effects import ObstacleEffect
+
 
 class Character(BaseCharacter):
-    """
-    GAME implementation of Character.
-    Inherits improved movement and flight from BaseCharacter.
-    """
-    def __init__(self, name: str, description: str, image: str, location: [float, float], width: float = 50, height: float = 50):
+    """MS2 cow implementation built on the low-level BaseCharacter."""
+
+    def __init__(self, name, description, image, location, width=30, height=30):
         super().__init__(name, description, image, location, width, height)
-        self.speed = 6.0
-        self.color = (255, 255, 0) # Yellow
+        self.base_size = float(width)
+        self.size = float(width)
+        self.width = self.size
+        self.height = self.size
 
-        # Shield system
-        self.shield = 50.0  # Current shield amount
-        self.max_shield = 50.0  # Maximum shield capacity
-        self.shield_regen_rate = 1.0  # Shield points per second
-        self.last_damage_time = 0  # Track when we last took damage
+        self.speed = 3.0
+        self.base_max_health = 50.0
+        self.max_health = self.base_max_health + self.size // 3
+        self.health = self.max_health
 
-        self.last_arena_height = 900  # to avoid hardcoding in collision logic
+        self.damage_multiplier = 1.0
+        self.primary_damage = 0.0
+        self.primary_delay = 0.6
+        self.primary_knockback = 0.0
+        self.primary_use_cooldown = 0.2
+        self.last_primary_use = 0.0
+
+        self.primary_ability_name = None
+        self.primary_ability = None
+        self.primary_description = ""
+        self.available_primary_abilities = 0
+        self.max_primary_abilities = 1
+
+        self.passive_ability_name = None
+        self.passive_description = ""
+
+        self.probability_of_gun = 0.1
+        self.time_to_eat = 0.6
+        self.eat_cooldown = 0.0
+        self.eat_increase = 1.0
+        self.is_eating = False
+
+        self.poop_cooldown = 0.8
+        self.poop_timer = 0.0
+        self.poop_percentage = 10
+        self.mine_poop = False
+        self.mine_wall = False
+
+        self.dashes_left = 3
+        self.max_dashes = 3
+        self.dash_recharge_timer = 0.0
+        self.time_to_recharge_dash = 1.0
+        self.dash_multiplier = 5.0
+        self.is_slowed = False
+        self._dash_held = False
+
+        self.is_attacking = False
+        self.horn_charge_duration = 2.0
+        self.horn_charge_end_time = 0.0
+        self.attack_speed_multiplier = 1.9
+
+        self.regeneration_rate = 0.0
+        self.regenation = False
+        self.can_get_angry = False
+        self.angry = False
+
+        self.color = (240, 240, 255)
+
+        self.update_damage_multiplier()
 
     def __setstate__(self, state):
-        """Override to ensure shield properties are properly initialized from network data"""
         super().__setstate__(state)
+        if not hasattr(self, "size"):
+            self.size = float(self.width)
+        if not hasattr(self, "base_size"):
+            self.base_size = float(self.width)
+        if not hasattr(self, "dashes_left"):
+            self.dashes_left = 3
+        if not hasattr(self, "max_dashes"):
+            self.max_dashes = 3
+        if not hasattr(self, "dash_recharge_timer"):
+            self.dash_recharge_timer = 0.0
+        if not hasattr(self, "time_to_recharge_dash"):
+            self.time_to_recharge_dash = 1.0
+        if not hasattr(self, "primary_use_cooldown"):
+            self.primary_use_cooldown = 0.2
+        if not hasattr(self, "last_primary_use"):
+            self.last_primary_use = 0.0
+        if not hasattr(self, "is_slowed"):
+            self.is_slowed = False
+        if not hasattr(self, "is_eating"):
+            self.is_eating = False
+        if not hasattr(self, "primary_ability_name"):
+            self.primary_ability_name = None
+        if not hasattr(self, "primary_description"):
+            self.primary_description = ""
+        if not hasattr(self, "passive_ability_name"):
+            self.passive_ability_name = None
+        if not hasattr(self, "passive_description"):
+            self.passive_description = ""
+        if not hasattr(self, "available_primary_abilities"):
+            self.available_primary_abilities = 0
+        if not hasattr(self, "max_primary_abilities"):
+            self.max_primary_abilities = 1
+        if not hasattr(self, "mine_poop"):
+            self.mine_poop = False
+        if not hasattr(self, "mine_wall"):
+            self.mine_wall = False
+        if not hasattr(self, "can_get_angry"):
+            self.can_get_angry = False
+        if not hasattr(self, "angry"):
+            self.angry = False
+        if not hasattr(self, "primary_damage"):
+            self.primary_damage = 0.0
+        if not hasattr(self, "primary_delay"):
+            self.primary_delay = 0.6
 
-        # Ensure shield properties exist (for backward compatibility)
-        if not hasattr(self, 'shield'):
-            self.shield = 50.0
-        if not hasattr(self, 'max_shield'):
-            self.max_shield = 50.0
-        if not hasattr(self, 'shield_regen_rate'):
-            self.shield_regen_rate = 1.0
-        if not hasattr(self, 'last_damage_time'):
-            self.last_damage_time = 0
+    @staticmethod
+    def get_input_data(held_keys, mouse_buttons, mouse_pos):
+        input_data = BaseCharacter.get_input_data(held_keys, mouse_buttons, mouse_pos)
 
-    def take_damage(self, amount: float):
-        """Override to implement shield system - shields take damage first"""
-        if not self.is_alive or amount <= 0 or self.is_invulnerable:
-            return
+        if pygame.K_SPACE in held_keys:
+            input_data["eat"] = True
+        if pygame.K_LSHIFT in held_keys or pygame.K_RSHIFT in held_keys:
+            input_data["dash"] = True
+        if pygame.K_p in held_keys:
+            input_data["poop"] = True
+        if mouse_buttons[0]:
+            input_data["primary"] = mouse_pos
+        return input_data
 
-        self.last_damage_time = time.time()
-
-        # Shields take damage first
-        if self.shield > 0:
-            shield_damage = min(self.shield, amount)
-            self.shield -= shield_damage
-            amount -= shield_damage
-
-        # Remaining damage goes to health
-        if amount > 0:
-            super().take_damage(amount)
-
-    def update(self, delta_time: float, platforms: list = None, arena_height: float = 900, arena_width: float = 1400):
-        """Override to add shield regeneration"""
-        self.last_arena_height = arena_height
-
-        # Call parent update first
-        super().update(delta_time, platforms, arena_height, arena_width)
-
-        # Shield regeneration (only if alive and not recently damaged)
-        current_time = time.time()
-        if self.is_alive and current_time - self.last_damage_time > 1.0:  # 1 second delay after damage
-            if self.shield < self.max_shield:
-                self.shield = min(self.max_shield, self.shield + self.shield_regen_rate * delta_time)
-
-    def draw(self, screen: pygame.Surface, arena_height: float):
+    def process_input(self, input_data: dict, arena):
         if not self.is_alive:
             return
+        if input_data.get("eat"):
+            self.try_eat(arena)
+        if input_data.get("poop"):
+            self.try_poop(arena)
+        if "primary" in input_data:
+            self.use_primary_ability(arena, input_data.get("primary"))
 
-        # Map y-up to pygame y-down
-        py_y = arena_height - self.location[1] - (self.height * self.scale_ratio)
-        py_rect = pygame.Rect(self.location[0], py_y, self.width * self.scale_ratio, self.height * self.scale_ratio)
+        move_dir = input_data.get("movement", [0, 0])
+        dash_pressed = input_data.get("dash", False)
+        dash = dash_pressed and not self._dash_held
+        self._dash_held = dash_pressed
+        self.move(move_dir, arena, input_data.get("mouse_pos"), dash)
 
-        # Visual feedback for flight
-        draw_color = self.color
-        if self.is_currently_flying:
-            # Blue tint for flying
-            draw_color = (min(255, self.color[0] + 50), min(255, self.color[1] + 50), 255)
-        
-        pygame.draw.rect(screen, draw_color, py_rect)
+    def update(self, delta_time: float, arena):
+        self.last_arena_height = arena.height
 
-        # UI bars
-        bar_width = self.width * self.scale_ratio
+        if self.is_attacking and arena.current_time >= self.horn_charge_end_time:
+            self.is_attacking = False
 
-        # Shield bar (top, cyan)
-        if self.shield > 0:
-            shield_ratio = self.shield / self.max_shield
-            pygame.draw.rect(screen, (50, 50, 50), (self.location[0], py_y - 18, bar_width, 4))  # Background
-            pygame.draw.rect(screen, (0, 255, 255), (self.location[0], py_y - 18, bar_width * shield_ratio, 4))  # Shield
-
-        # Health bar (middle, green/red)
-        health_ratio = self.health / self.max_health
-        pygame.draw.rect(screen, (255, 0, 0), (self.location[0], py_y - 12, bar_width, 5))  # Background
-        pygame.draw.rect(screen, (0, 255, 0), (self.location[0], py_y - 12, bar_width * health_ratio, 5))  # Health
-
-        # Flight bar (bottom, blue/gray)
-        flight_ratio = self.flight_time_remaining / self.max_flight_time
-        bar_color = (0, 191, 255) if not self.needs_recharge else (100, 100, 100)
-        pygame.draw.rect(screen, (40, 40, 40), (self.location[0], py_y - 6, bar_width, 3))  # Background
-        pygame.draw.rect(screen, bar_color, (self.location[0], py_y - 6, bar_width * flight_ratio, 3))  # Flight
-
-    def apply_gravity(self, arena_height: float = 600, platforms: list = None, arena_width: float = 800):
-        """
-        Override to remove floor boundary - allow falling out of arena.
-        """
-        if not self.is_alive:
-            return
-
-        # Don't apply gravity if actively flying
-        if self.is_currently_flying:
-            return
-
-        # Update position based on vertical velocity
-        self.location[1] += self.vertical_velocity
-        # Apply gravity to velocity
-        self.vertical_velocity -= self.gravity * self.gravity_multiplier
-
-        # NO FLOOR BOUNDARY - players can fall out!
-        # Only check platforms for landing
-        self.on_ground = False
-
-        # Check platforms
-        if platforms and self.vertical_velocity <= 0:
-            char_rect = self.get_rect()
-            # Feet position in screen coordinates
-            py_feet_y = arena_height - self.location[1]
-
-            for plat in platforms:
-                # Don't allow dropping through floor-like platforms (wide platforms)
-                is_floor = (plat.rect.width > arena_width * 0.6)
-                if self.is_dropping and not is_floor:
-                    continue  # Skip collision with this platform if dropping through non-floor platforms
-
-                # Check if character is falling towards platform
-                # Character feet should be at or slightly below platform top
-                feet_at_platform_level = abs(py_feet_y - plat.rect.top) < 20  # Balanced tolerance
-
-                # Horizontal overlap check
-                char_left = self.location[0]
-                char_right = self.location[0] + char_rect.width
-                horizontal_overlap = char_right > plat.rect.left and char_left < plat.rect.right
-
-                if feet_at_platform_level and horizontal_overlap:
-                    # Land on platform
-                    self.location[1] = arena_height - plat.rect.top
-                    self.vertical_velocity = 0
-                    self.on_ground = True
-                    self.hover_time = 0
-                    break
-
-    def move(self, direction: [float, float], platforms: list = None):
-        """
-        Override to remove floor boundary in flight logic and add platform collision.
-        """
-        if not self.can_move or not self.is_alive:
-            return
-
-        # Apply status effects like inverted physics
-        actual_dir = [direction[0], direction[1]]
-        if self.physics_inverted:
-            actual_dir[0] *= -1
-            actual_dir[1] *= -1
-
-        # Update movement flags
-        self.is_moving_up = (actual_dir[1] > 0)
-
-        # Dropping logic: can only drop through platforms when actively pressing down
-        self.is_dropping = (actual_dir[1] < -0.5)
-
-        # Handle horizontal movement with platform collision
-        if actual_dir[0] != 0 and platforms:
-            new_x = self.location[0] + actual_dir[0] * self.speed * self.speed_multiplier
-
-            # Create character rect in pygame coordinates for collision detection
-            # Assume arena height of 900 (matches setup_battle_arena)
-            arena_height = 900
-            char_width = self.width * self.scale_ratio
-            char_height = self.height * self.scale_ratio
-            py_char_y = arena_height - self.location[1] - char_height  # Convert to pygame y-down
-
-            # Test rectangle at new position
-            test_rect = pygame.Rect(new_x, py_char_y, char_width, char_height)
-
-            # Check horizontal collision with platforms
-            collision = False
-            for plat in platforms:
-                if test_rect.colliderect(plat.rect):
-                    collision = True
-                    break
-
-            # Only move horizontally if no collision
-            if not collision:
-                self.location[0] = new_x
-        elif actual_dir[0] != 0:
-            # No platforms to check, allow free movement
-            self.location[0] += actual_dir[0] * self.speed * self.speed_multiplier
-
-        # Integrated flight logic
-        # Allow flight when airborne, falling (or at peak), and have flight energy
-        if not self.on_ground and self.vertical_velocity <= 0 and self.flight_time_remaining > 0 and not self.needs_recharge and self.is_moving_up:
-            self.can_fly = True
-            self.is_currently_flying = True
+        if self.eat_cooldown > 0:
+            self.eat_cooldown = max(0.0, self.eat_cooldown - delta_time)
+            self.is_eating = True
         else:
-            self.can_fly = False # Reset if not meeting conditions
-            self.is_currently_flying = False
+            self.is_eating = False
 
-        if actual_dir[1] > 0:
-            if self.on_ground:
-                if self.can_jump:
-                    self.jump()
-            elif self.can_fly:
-                self.location[1] += actual_dir[1] * self.speed * self.speed_multiplier
-                self.vertical_velocity = 0
-        elif actual_dir[1] < 0:
-            if self.can_fly:
-                self.location[1] += actual_dir[1] * self.speed * self.speed_multiplier
-                self.vertical_velocity = 0
+        if self.poop_timer > 0:
+            self.poop_timer = max(0.0, self.poop_timer - delta_time)
 
-                # NO FLOOR BOUNDARY CHECK - allow falling through bottom
+        if self.dashes_left < self.max_dashes:
+            self.dash_recharge_timer += delta_time
+            if self.dash_recharge_timer >= self.time_to_recharge_dash:
+                self.dashes_left += 1
+                self.dash_recharge_timer = 0.0
+
+        if self.regenation and self.health < self.max_health:
+            self.health = min(self.max_health, self.health + self.regeneration_rate * delta_time)
+
+        if self.can_get_angry:
+            if self.health <= self.max_health * 0.25:
+                if not self.angry:
+                    self.damage_multiplier += self.damage_multiplier / 2
+                    self.angry = True
+            else:
+                if self.angry:
+                    self.angry = False
+                    self.update_damage_multiplier()
+
+    def move(self, direction, arena, mouse_pos=None, dash=False):
+        if not self.is_alive:
+            return
+        if self.is_eating:
+            return
+
+        dx, dy = direction
+        speed = self.speed
+        if self.is_slowed:
+            speed *= 0.6
+
+        if dash and self.dashes_left > 0 and self.dash_recharge_timer <= 0.0:
+            speed *= self.dash_multiplier
+            self.dashes_left -= 1
+            self.dash_recharge_timer = 0.0
+
+        if self.is_attacking and mouse_pos is not None:
+            target_x, target_y = mouse_pos
+            vec_x = target_x - self.location[0]
+            vec_y = target_y - self.location[1]
+            dist = math.hypot(vec_x, vec_y)
+            if dist > 0:
+                dx = vec_x / dist
+                dy = vec_y / dist
+                speed *= self.attack_speed_multiplier
+
+        if dx != 0 and dy != 0:
+            speed /= math.sqrt(2)
+
+        self.location[0] += dx * speed
+        self.location[1] += dy * speed
+
+        margin = self.size / 2
+        self.location[0] = max(margin, min(arena.width - margin, self.location[0]))
+        self.location[1] = max(margin, min(arena.height - margin, self.location[1]))
+
+    def try_eat(self, arena):
+        if self.eat_cooldown > 0:
+            return
+        for field in arena.grass_fields:
+            if field.can_eat(self.location[0], self.location[1], self.size / 2):
+                if field.eat():
+                    self.size += self.eat_increase
+                    self.heal(0.5)
+
+                    if random.random() < self.probability_of_gun:
+                        if self.available_primary_abilities < self.max_primary_abilities:
+                            self.available_primary_abilities += 1
+
+                    self.changed_size()
+                    self.eat_cooldown = self.time_to_eat
+                    self.is_eating = True
+                    return
+
+    def try_poop(self, arena):
+        if self.poop_timer > 0:
+            return
+        poop_size = max(4.0, self.size * (self.poop_percentage / 100.0))
+        self.size = max(9.0, self.size - poop_size)
+        self.changed_size()
+
+        poop = ObstacleEffect(
+            location=[self.location[0], self.location[1]],
+            size=poop_size * 2,
+            owner_id=self.id,
+            mine=self.mine_poop,
+            wall=self.mine_wall,
+        )
+        arena.add_effect(poop)
+        self.poop_timer = self.poop_cooldown
+
+    def use_primary_ability(self, arena, mouse_pos):
+        if not self.primary_ability or self.available_primary_abilities <= 0:
+            return
+        if arena.current_time - self.last_primary_use < self.primary_use_cooldown:
+            return
+        self.last_primary_use = arena.current_time
+        self.available_primary_abilities -= 1
+        self.primary_ability(arena, mouse_pos)
+
+    def set_primary_ability(self, ability_name: str):
+        if ability_name is None:
+            self.primary_ability_name = None
+            self.primary_ability = None
+            self.primary_description = ""
+            self.available_primary_abilities = 0
+            return
+
+        ability_def = PRIMARY_BY_NAME.get(ability_name)
+        if not ability_def:
+            return
+        self.primary_ability = ability_def.activate
+        self.primary_ability_name = ability_def.name
+        self.primary_description = ability_def.description
+        self.max_primary_abilities = ability_def.max_charges
+        self.available_primary_abilities = self.max_primary_abilities
+
+    def set_passive_ability(self, ability_name: str):
+        self.passive_ability_name = ability_name
+        self.passive_description = ""
+        self.regenation = False
+        self.regeneration_rate = 0.0
+        self.mine_poop = False
+        self.mine_wall = False
+        self.can_get_angry = False
+
+        if not ability_name:
+            return
+
+        ability_def = PASSIVE_BY_NAME.get(ability_name)
+        if not ability_def:
+            return
+        self.passive_ability_name = ability_def.name
+        self.passive_description = ability_def.description
+        ability_def.apply(self)
+
+    def changed_size(self):
+        self.max_health = self.base_max_health + self.size // 3
+        self.health = min(self.health, self.max_health)
+        self.width = self.size
+        self.height = self.size
+        self.update_damage_multiplier()
+
+    def update_damage_multiplier(self):
+        min_size = 9.0
+        max_size = 80.0
+        min_multiplier = 0.7
+        max_multiplier = 1.5
+
+        size_ratio = (self.size - min_size) / max(1.0, (max_size - min_size))
+        self.damage_multiplier = max(min_multiplier, min(max_multiplier, min_multiplier + (max_multiplier - min_multiplier) * size_ratio))
+
+        speed_min = 1.5
+        speed_max = 5.5
+        speed_ratio = (self.size - 10.0) / 190.0
+        self.speed = max(speed_min, min(speed_max, speed_max - (speed_max - speed_min) * speed_ratio))
+
+    def _angle_to_mouse(self, mouse_pos):
+        if mouse_pos is None:
+            return 0.0
+        dx = mouse_pos[0] - self.location[0]
+        dy = mouse_pos[1] - self.location[1]
+        return math.atan2(dy, dx)
+
+    def draw(self, screen: pygame.Surface, arena_height: float = None, camera=None):
+        if not self._graphics_initialized:
+            return
+        rect = self.get_draw_rect(arena_height, camera)
+        draw_color = (200, 200, 255) if self.is_attacking else self.color
+        if not self.is_alive:
+            draw_color = (120, 120, 120)
+        pygame.draw.rect(screen, draw_color, rect)
+        pygame.draw.rect(screen, (30, 30, 30), rect, 2)
+
+        health_ratio = self.health / max(1.0, self.max_health)
+        bar_width = self.size
+        bar_height = 6
+        bar_x = rect.x
+        bar_y = rect.y - 10
+        pygame.draw.rect(screen, (60, 60, 60), (bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(screen, (80, 220, 80), (bar_x, bar_y, bar_width * health_ratio, bar_height))

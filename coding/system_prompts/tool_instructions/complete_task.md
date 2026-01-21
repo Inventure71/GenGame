@@ -16,7 +16,7 @@ The `summary` parameter must follow the same format as task summaries (see `summ
 
 **Requirements:**
 - Be concise and technical
-- List all files modified and the nature of the changes (e.g., "Updated `GAME_weapon.py` to support dual-projectile firing")
+- List all files modified and the nature of the changes (e.g., "Updated `GAME_character.py` to add a new passive ability")
 - List any new functions, classes, or logic patterns introduced
 - Identify any remaining gaps or variables that the next agent should be aware of
 - **Must be at least 150 characters**
@@ -27,10 +27,10 @@ This is an INCREMENTAL summary - focus only on the most recent work since the la
 
 ### Example Usage
 **[success] CORRECT - Complete with proper summary:**
-complete_task(summary="""- Modified `GameFolder/weapons/GAME_weapon.py`: Added `fire_rate` attribute and cooldown logic
-- Created `GameFolder/projectiles/Missile.py`: New homing projectile class with target tracking
-- Updated `GameFolder/setup.py`: Registered new weapon in `setup_battle_arena()`
-- Remaining work: Need to implement collision detection for new projectile types""")
+complete_task(summary="""- Modified `GameFolder/characters/GAME_character.py`: Added a new primary ability handler
+- Created `GameFolder/effects/GAME_effects.py`: Added a timed area effect with draw/update logic
+- Updated `GameFolder/arenas/GAME_arena.py`: Integrated pickup handling for abilities
+- Remaining work: Add tests for the new effect cooldown edge case""")
 
 **[error] WRONG - Summary is too vague:**
 complete_task(summary="I finished the task")  # WRONG - Not technical, no details

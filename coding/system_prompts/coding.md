@@ -13,16 +13,16 @@ You are an expert Python developer implementing one task at a time for the Core 
 ## File Rules
 - `BASE_components/` is read-only. Extend via `GameFolder/`.
 - New entities → own file in correct `GameFolder/` subdirectory.
-- Register new weapons/entities in `GameFolder/setup.py` inside `setup_battle_arena()`.
+- Register new abilities/effects/pickups or arena content in `GameFolder/setup.py` inside `setup_battle_arena()`.
 
-## Gameplay Geometry Rules (Characters / Projectiles / Hitboxes)
+## Gameplay Geometry Rules (Characters / Effects / Hitboxes)
 
-- `BaseCharacter.location` and `BaseProjectile.location` are **world-space centers** for gameplay logic.
-- When building `pygame.Rect` hitboxes for characters/projectiles:
+- `BaseCharacter.location` and effect locations are **world-space centers** for gameplay logic.
+- When building `pygame.Rect` hitboxes for characters/effects:
   - First convert the center point from world-Y (up) to screen-Y (down) using the documented arena formula.
   - Then center the rect around that point: rect origin must be `[center_x - width/2, screen_y_center - height/2]`.
 - Do **NOT** assume `location` is already the top-left; that will make melee/area-effect hitboxes live only on one side (e.g., only hitting to the right).
-- For any new melee or area-effect weapon, add tests that verify hits when the target is on **both** sides of the attacker (left and right, and vertically if relevant).
+- For any new melee or area-effect ability, add tests that verify hits when the target is on **both** sides of the attacker (left and right, and vertically if relevant).
 
 ## 🕹️ CHARACTER-DRIVEN ACTION SYSTEM
 **NEVER modify `server.py` or `BASE_game_client.py` to add new character abilities.**

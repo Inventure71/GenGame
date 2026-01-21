@@ -66,7 +66,7 @@ If you can't explain *why* the fix works, **you haven't found the bug.**
 
 **Example:**
 - ✗ BAD: Read test → wait → Read implementation → wait → Read docs
-- ✓ GOOD: [Think: I need test_tornado.py, TornadoGun.py, TornadoProjectile.py, BASE_COMPONENTS_DOCS.md] → [4 parallel read_file calls]
+- ✓ GOOD: [Think: I need mandatory_edge_cases_test.py, GAME_effects.py, GAME_arena.py, BASE_COMPONENTS_DOCS.md] → [4 parallel read_file calls]
 
 ---
 
@@ -82,7 +82,7 @@ Use these patterns when writing task descriptions:
 | Registration missing | Add to `setup.py` |
 | Fragile collision test | Loop until behavior, don't single-frame test |
 | Coordinate bug | Check world-Y vs screen-Y conversion |
-| Hitbox origin bug | Ensure character/projectile `location` is treated as a world-space center when building `pygame.Rect` (origin = center_x - width/2, screen_y_center - height/2) and add tests that verify melee/AoE hits on both sides of the attacker. |
+| Hitbox origin bug | Ensure character/effect `location` is treated as a world-space center when building `pygame.Rect` (origin = center_x - width/2, screen_y_center - height/2) and add tests that verify melee/AoE hits on both sides of the attacker. |
 
 ---
 
@@ -110,7 +110,7 @@ Use `append_to_todo_list`. Each task must be **self-contained**.
 
 ## [success] Fix Task Template (for `append_to_todo_list`)
 
-**task_title**: Brief description (e.g., "Add missing import in MyWeapon.py")
+**task_title**: Brief description (e.g., "Add missing import in GAME_effects.py")
 
 **task_description** should include:
 - **Root Cause**: WHY it's broken

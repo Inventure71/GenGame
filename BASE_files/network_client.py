@@ -1032,17 +1032,17 @@ class EntityManager:
         self.platforms.clear()
         self.interpolation_buffers.clear()
 
-    def draw_all(self, screen, arena_height: float):
+    def draw_all(self, screen, arena_height: float, camera=None):
         """Draw all entities and platforms."""
         # Draw platforms first (background)
         for platform in self.platforms.values():
             if hasattr(platform, 'draw'):
-                platform.draw(screen, arena_height)
+                platform.draw(screen, arena_height, camera=camera)
 
         # Draw entities (characters, projectiles, weapons)
         for entity in self.entities.values():
             if hasattr(entity, 'draw'):
-                entity.draw(screen, arena_height)
+                entity.draw(screen, arena_height, camera=camera)
 
 
 def sync_game_files(files: dict):

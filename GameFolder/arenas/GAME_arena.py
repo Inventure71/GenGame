@@ -1,292 +1,330 @@
-from BASE_components.BASE_arena import Arena as BaseArena
-from GameFolder.characters.GAME_character import Character
-from GameFolder.platforms.GAME_platform import Platform
-from GameFolder.ui.GAME_ui import GameUI
-from GameFolder.weapons.BlackHoleGun import BlackHoleGun
-from GameFolder.weapons.TornadoGun import TornadoGun
-from GameFolder.weapons.OrbitalCannon import OrbitalCannon
-from GameFolder.projectiles.GAME_projectile import StormCloud
-from GameFolder.projectiles.BlackHoleProjectile import BlackHoleProjectile
-from GameFolder.projectiles.TornadoProjectile import TornadoProjectile
-from GameFolder.projectiles.OrbitalProjectiles import TargetingLaser, OrbitalStrikeMarker, OrbitalBlast
-from BASE_components.BASE_projectile import BaseProjectile
-import pygame
+import math
 import random
+import pygame
+from BASE_components.BASE_arena import Arena as BaseArena
+from GameFolder.effects.GAME_effects import (
+    ConeEffect,
+    RadialEffect,
+    LineEffect,
+    WaveProjectileEffect,
+    ObstacleEffect,
+    ZoneIndicator,
+)
+from GameFolder.world.GAME_world_objects import WorldObstacle, GrassField
+from GameFolder.pickups.GAME_pickups import AbilityPickup, PRIMARY_ABILITY_NAMES, PASSIVE_ABILITY_NAMES
+from GameFolder.ui.GAME_ui import GameUI
 
 
 class Arena(BaseArena):
-    def __init__(self, width: int = 800, height: int = 600, headless: bool = False):
-        super().__init__(width, height, headless)
+    """MS2 arena implementation with obstacles, grass, abilities, and effects."""
 
-        # Remove the default floor so players can fall out
-        self.platforms = [p for p in self.platforms if p.rect.y < self.height - 50]  # Keep only non-floor platforms
+    def __init__(self, width: int = 1400, height: int = 900, headless: bool = False):
+        super().__init__(width, height, headless=headless)
+        self.platforms = []
+        self.weapon_pickups = []
+        self.projectiles = []
 
-        # Register custom weapons
-        self.register_weapon_type("BlackHoleGun", BlackHoleGun)
-        self.register_weapon_type("TornadoGun", TornadoGun)
-        self.register_weapon_type("OrbitalCannon", OrbitalCannon)
+        self.grass_fields = []
+        self.obstacles = []
+        self.effects = []
 
-        # Register projectile types for binary serialization
-        self.register_projectile_type(StormCloud)
-        self.register_projectile_type(BlackHoleProjectile)
-        self.register_projectile_type(TornadoProjectile)
-        self.register_projectile_type(TargetingLaser)
-        self.register_projectile_type(OrbitalStrikeMarker)
-        self.register_projectile_type(OrbitalBlast)
+        self.zone_indicator = ZoneIndicator(self.safe_zone.center[:], self.safe_zone.radius)
+
+        self.effect_hit_times = {}
+        self.cow_hit_times = {}
+
+        self.ability_spawn_timer = 0.0
+        self.ability_spawn_interval = 6.0
+        self.max_primary_pickups = 4
+        self.max_passive_pickups = 4
+
+        self._spawn_world()
+        self._spawn_initial_pickups()
 
         if not self.headless:
-            pygame.display.set_caption(f"GenGame - Battle Arena")
             self.ui = GameUI(self.screen, self.width, self.height)
         else:
             self.ui = None
 
-        # Out-of-bounds damage tracking
-        self.out_of_bounds_damage_timer = 0.0
-        self.out_of_bounds_damage_interval = 1.0  # Damage every 1 second
-        self.out_of_bounds_damage_amount = 20.0   # 5 damage per second
+    def _spawn_world(self):
+        random.seed(42)
+        for _ in range(8):
+            size = random.randint(50, 120)
+            cx = random.randint(size, self.width - size)
+            cy = random.randint(size, self.height - size)
+            obstacle = WorldObstacle(cx, cy, size, "blocking", self.height)
+            self.obstacles.append(obstacle)
+            self.platforms.append(obstacle)
 
-    def update_world(self, delta_time: float):
-        """Update the world simulation (alias for update method for test compatibility)."""
-        self.update(delta_time)
+        for _ in range(6):
+            size = random.randint(60, 140)
+            cx = random.randint(size, self.width - size)
+            cy = random.randint(size, self.height - size)
+            obstacle = WorldObstacle(cx, cy, size, "slowing", self.height)
+            self.obstacles.append(obstacle)
+            self.platforms.append(obstacle)
 
-    def _capture_input(self):
-        """Capture local player input."""
-        # Skip pygame event handling in headless mode to avoid main thread issues
-        if not self.headless:
-            pygame.event.pump()
-            mx, my = pygame.mouse.get_pos()
-            world_mx, world_my = self.screen_to_world(mx, my)
-            pressed = pygame.mouse.get_pressed()
+        for _ in range(10):
+            radius = random.randint(20, 60)
+            cx = random.randint(radius, self.width - radius)
+            cy = random.randint(radius, self.height - radius)
+            grass = GrassField(cx, cy, radius, max_food=10, arena_height=self.height)
+            self.grass_fields.append(grass)
+            self.platforms.append(grass)
 
-            # Handle events
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    self.running = False
-                elif event.type == pygame.KEYDOWN:
-                    self.held_keycodes.add(event.key)
-                elif event.type == pygame.KEYUP:
-                    self.held_keycodes.discard(event.key)
+    def _spawn_initial_pickups(self):
+        for _ in range(3):
+            self._spawn_ability_pickup("primary")
+        for _ in range(3):
+            self._spawn_ability_pickup("passive")
 
-        # Process held keys for the first character (local player)
-        if self.characters:
-            char = self.characters[0]
-            if char.is_alive:
-                # Movement
-                move_dir = [0, 0]
-                for kc in self.held_keycodes:
-                    if kc == pygame.K_ESCAPE:
-                        self.running = False
-                    elif kc in (pygame.K_LEFT, pygame.K_a):
-                        move_dir[0] -= 1
-                    elif kc in (pygame.K_RIGHT, pygame.K_d):
-                        move_dir[0] += 1
-                    elif kc in (pygame.K_UP, pygame.K_w, pygame.K_SPACE):
-                        move_dir[1] += 1
-                    elif kc in (pygame.K_DOWN, pygame.K_s):
-                        move_dir[1] -= 1
-                    elif kc == pygame.K_q:
-                        # Drop weapon
-                        dropped = char.drop_weapon()
-                        if dropped:
-                            dropped.drop([char.location[0] + 80, char.location[1]])
-                            self.spawn_weapon(dropped)
+    def _spawn_ability_pickup(self, ability_type: str):
+        if ability_type == "primary":
+            ability_name = random.choice(PRIMARY_ABILITY_NAMES)
+        else:
+            ability_name = random.choice(PASSIVE_ABILITY_NAMES)
 
-                char.move(move_dir, self.platforms)
+        for _ in range(12):
+            x = random.uniform(60, self.width - 60)
+            y = random.uniform(60, self.height - 60)
+            blocked = False
+            for obstacle in self.obstacles:
+                if abs(x - obstacle.world_center[0]) < obstacle.size / 2 + 40 and abs(y - obstacle.world_center[1]) < obstacle.size / 2 + 40:
+                    blocked = True
+                    break
+            if blocked:
+                continue
+            pickup = AbilityPickup(ability_name, ability_type, [x, y])
+            self.weapon_pickups.append(pickup)
+            return
 
-                # Shooting - only in non-headless mode
-                if not self.headless and pressed[0]:  # Left mouse button
-                    proj = char.shoot([world_mx, world_my])
-                    if proj:
-                        if isinstance(proj, list):
-                            self.projectiles.extend(proj)
+    def update(self, delta_time: float):
+        for grass in self.grass_fields:
+            grass.regrow(delta_time)
+
+        super().update(delta_time)
+
+        self.zone_indicator.update_from_safe_zone(self.safe_zone.center[:], self.safe_zone.radius)
+        self.projectiles = self.effects + [self.zone_indicator]
+
+        self._manage_pickups(delta_time)
+
+    def _manage_pickups(self, delta_time: float):
+        self.ability_spawn_timer += delta_time
+        if self.ability_spawn_timer < self.ability_spawn_interval:
+            return
+        self.ability_spawn_timer = 0.0
+
+        primary_count = len([p for p in self.weapon_pickups if p.ability_type == "primary"])
+        passive_count = len([p for p in self.weapon_pickups if p.ability_type == "passive"])
+
+        if primary_count < self.max_primary_pickups:
+            self._spawn_ability_pickup("primary")
+        if passive_count < self.max_passive_pickups:
+            self._spawn_ability_pickup("passive")
+
+    def handle_collisions(self):
+        for cow in self.characters:
+            if not cow.is_alive:
+                continue
+            cow.is_slowed = False
+
+            self._resolve_obstacle_collisions(cow)
+            self._resolve_poops(cow)
+            self._apply_effects(cow)
+
+        self._resolve_cow_collisions()
+
+        for pickup in self.weapon_pickups[:]:
+            if not pickup.is_active:
+                continue
+            pickup_rect = pickup.get_pickup_rect(self.height)
+            for cow in self.characters:
+                if not cow.is_alive:
+                    continue
+                cow_rect = cow.get_rect(self.height)
+                if cow_rect.colliderect(pickup_rect):
+                    if pickup.ability_type == "primary":
+                        if cow.primary_ability_name is None:
+                            cow.set_primary_ability(pickup.ability_name)
                         else:
-                            self.projectiles.append(proj)
-
-
-
-    def handle_collisions(self, delta_time: float = 0.016):
-        """
-        Custom collision logic for special projectiles.
-        """
-        # Handle out-of-bounds damage
-        self.handle_out_of_bounds_damage(delta_time)
-
-        # 1. Capture special projectiles BEFORE base collision logic removes inactive ones
-        special_projs = [p for p in self.projectiles if isinstance(p, (
-            BlackHoleProjectile, TornadoProjectile, TargetingLaser,
-            OrbitalStrikeMarker, OrbitalBlast, StormCloud
-        ))]
-
-        # 2. Call base collisions for standard projectiles and weapon pickups
-        super().handle_collisions(delta_time)
-        
-        # 3. Handle persistent/special projectiles logic
-        for plat in self.platforms:
-            if hasattr(plat, 'being_pulled'):
-                plat.being_pulled = False
-
-        for proj in special_projs:
-            # Laser precision collision (clipline)
-            if isinstance(proj, TargetingLaser) and proj.active:
-                old_pos = (proj.last_location[0], self.height - proj.last_location[1])
-                new_pos = (proj.location[0], self.height - proj.location[1])
-                hit = False
-                
-                # Check platforms
-                for plat in self.platforms:
-                    res = plat.rect.clipline(old_pos, new_pos)
-                    if res:
-                        hit = True
-                        proj.location = [res[0][0], self.height - res[0][1]]
-                        break
-                
-                # Check characters
-                if not hit:
-                    for char in self.characters:
-                        if not char.is_alive or char.id == proj.owner_id:
                             continue
-                        c_rect = char.get_rect()
-                        char_rect = pygame.Rect(char.location[0], self.height - char.location[1] - c_rect.height, c_rect.width, c_rect.height)
-                        res = char_rect.clipline(old_pos, new_pos)
-                        if res:
-                            hit = True
-                            proj.location = [res[0][0], self.height - res[0][1]]
-                            break
-                
+                    else:
+                        if cow.passive_ability_name is None:
+                            cow.set_passive_ability(pickup.ability_name)
+                        else:
+                            continue
+                    pickup.pickup()
+                    if pickup in self.weapon_pickups:
+                        self.weapon_pickups.remove(pickup)
+                    break
+
+    def _resolve_obstacle_collisions(self, cow):
+        cow_radius = cow.size / 2
+        for obstacle in self.obstacles:
+            dx = cow.location[0] - obstacle.world_center[0]
+            dy = cow.location[1] - obstacle.world_center[1]
+            overlap_x = cow_radius + obstacle.size / 2 - abs(dx)
+            overlap_y = cow_radius + obstacle.size / 2 - abs(dy)
+
+            if overlap_x > 0 and overlap_y > 0:
+                if obstacle.obstacle_type == "slowing":
+                    cow.is_slowed = True
+                    continue
+                if overlap_x < overlap_y:
+                    cow.location[0] += overlap_x if dx > 0 else -overlap_x
+                else:
+                    cow.location[1] += overlap_y if dy > 0 else -overlap_y
+
+    def _resolve_poops(self, cow):
+        for effect in self.effects[:]:
+            if not isinstance(effect, ObstacleEffect):
+                continue
+            if effect.owner_id == cow.id:
+                continue
+            cow_rect = cow.get_rect(self.height)
+            poop_rect = effect.get_rect(self.height)
+            if cow_rect.colliderect(poop_rect):
+                if effect.mine:
+                    cow.take_damage(effect.size / 3)
+                    if effect in self.effects:
+                        self.effects.remove(effect)
+                elif effect.wall:
+                    self._push_out_of_rect(cow, poop_rect)
+
+    def _apply_effects(self, cow):
+        for effect in self.effects:
+            if isinstance(effect, ObstacleEffect):
+                continue
+            if hasattr(effect, "owner_id") and effect.owner_id == cow.id:
+                continue
+
+            hit = False
+            if isinstance(effect, ConeEffect):
+                hit = self._point_in_triangle(cow.location, effect.get_triangle_points())
                 if hit:
-                    proj.active = False
-                    # Create marker
-                    marker = OrbitalStrikeMarker(proj.location[0], proj.location[1], proj.owner_id)
-                    self.projectiles.append(marker)
+                    cow.is_slowed = True
+            elif isinstance(effect, RadialEffect):
+                hit = self._point_in_circle(cow.location, effect.location, effect.radius)
+            elif isinstance(effect, LineEffect):
+                hit = self._point_in_arc(cow.location, effect.location, effect.angle, effect.length, effect.width)
+            elif isinstance(effect, WaveProjectileEffect):
+                cow_rect = cow.get_rect(self.height)
+                hit = cow_rect.colliderect(effect.get_rect(self.height))
 
-            # Storm logic
-            elif isinstance(proj, StormCloud) and getattr(proj, 'is_raining', False):
-                for char in self.characters:
-                    if not char.is_alive or char.id == proj.owner_id:
-                        continue
-                    char_w = char.width * char.scale_ratio
-                    if char.location[0] < proj.location[0] + proj.width and char.location[0] + char_w > proj.location[0]:
-                        if char.location[1] < proj.location[1]:
-                            if random.random() < 0.1:
-                                char.take_damage(proj.damage * 40)
-                            char.speed_multiplier = 0.4
-            
-            # Black Hole logic
-            elif isinstance(proj, BlackHoleProjectile):
-                if not proj.is_stationary:
-                    p_rect = pygame.Rect(proj.location[0] - proj.width/2, self.height - proj.location[1] - proj.height/2, proj.width, proj.height + 2)
-                    for plat in self.platforms:
-                        if p_rect.colliderect(plat.rect):
-                            proj.is_stationary = True
-                            break
+            if not hit:
+                continue
 
-                if proj.is_stationary:
-                    for plat in self.platforms[1:]:  # Skip floor
-                        dx = proj.location[0] - plat.rect.centerx
-                        dy = (self.height - proj.location[1]) - plat.rect.centery
-                        dist = (dx**2 + dy**2)**0.5
-                        if 0 < dist < proj.pull_radius:
-                            if hasattr(plat, 'move'):
-                                plat.move((dx/dist)*proj.pull_strength*0.3, (dy/dist)*proj.pull_strength*0.3)
-                                plat.being_pulled = True
+            key = (effect.network_id, cow.id)
+            last_hit = self.effect_hit_times.get(key, 0.0)
+            cooldown = getattr(effect, "damage_cooldown", 0.4)
+            if self.current_time - last_hit < cooldown:
+                continue
 
-                    for char in self.characters:
-                        if not char.is_alive or char.id == proj.owner_id:
-                            continue
-                        dx = proj.location[0] - char.location[0]
-                        dy = proj.location[1] - char.location[1]
-                        dist = (dx**2 + dy**2)**0.5
-                        if dist < proj.pull_radius:
-                            char.location[0] += (dx/dist)*proj.pull_strength if dist > 0 else 0
-                            char.location[1] += (dy/dist)*proj.pull_strength if dist > 0 else 0
-                            if dist < 50:
-                                char.take_damage(proj.damage * delta_time * 60)
-            
-            # Tornado logic
-            elif isinstance(proj, TornadoProjectile):
-                for char in self.characters:
-                    if not char.is_alive or char.id == proj.owner_id:
-                        continue
-                    h_diff = char.location[1] - proj.location[1]
-                    if 0 <= h_diff <= proj.height + 50:
-                        rad = proj.pull_radius * (0.3 + 0.7 * (min(h_diff, proj.height) / proj.height))
-                        char_w = char.width * char.scale_ratio
-                        if abs(proj.location[0] - (char.location[0] + char_w/2)) < rad:
-                            char.location[0] += (1.0 if char.location[0] < proj.location[0] else -1.0) * proj.pull_strength
-                            char.location[1] += proj.pull_strength * 0.8
-                            char.take_damage(proj.damage * delta_time * 60)
+            damage = getattr(effect, "damage", 0.0)
+            if damage > 0:
+                cow.take_damage(damage)
+            self.effect_hit_times[key] = self.current_time
 
-                for weapon in self.weapon_pickups:
-                    if weapon.is_equipped:
-                        continue
-                    h_diff = weapon.location[1] - proj.location[1]
-                    if 0 <= h_diff <= proj.height + 50:
-                        rad = proj.pull_radius * (0.3 + 0.7 * (min(h_diff, proj.height) / proj.height))
-                        if abs(proj.location[0] - (weapon.location[0] + weapon.width/2)) < rad:
-                            weapon.location[0] += (1.0 if weapon.location[0] < proj.location[0] else -1.0) * proj.pull_strength
-                            weapon.location[1] += proj.pull_strength * 0.8
+            knockback = getattr(effect, "knockback_distance", 0.0)
+            if knockback > 0:
+                self._apply_knockback(cow, effect.location, knockback)
 
-                for plat in self.platforms[1:]:  # Skip floor
-                    plat_world_y = self.height - plat.rect.bottom
-                    h_diff = plat_world_y - proj.location[1]
-                    if 0 <= h_diff <= proj.height + 50:
-                        rad = proj.pull_radius * (0.3 + 0.7 * (min(h_diff, proj.height) / proj.height))
-                        if abs(proj.location[0] - plat.rect.centerx) < rad:
-                            plat.being_pulled = True
-                            plat.move((1.0 if plat.rect.centerx < proj.location[0] else -1.0) * proj.pull_strength * 0.5, -proj.pull_strength * 0.4)
-
-            # Orbital Blast damage
-            elif isinstance(proj, OrbitalBlast):
-                for char in self.characters:
-                    if not char.is_alive or char.id == proj.owner_id:
-                        continue
-                    beam_x_min = proj.location[0] - 50
-                    beam_x_max = proj.location[0] + 50
-                    char_w = char.width * char.scale_ratio
-                    if char.location[0] < beam_x_max and char.location[0] + char_w > beam_x_min:
-                        char.take_damage(proj.damage * delta_time)
-
-        for plat in self.platforms[1:]:
-            if hasattr(plat, 'return_to_origin') and not getattr(plat, 'being_pulled', False):
-                plat.return_to_origin(delta_time)
-
-    def handle_out_of_bounds_damage(self, delta_time: float):
-        """
-        Apply damage to characters who are outside the arena bounds.
-        Damage is applied every second when outside bounds.
-        """
-        self.out_of_bounds_damage_timer += delta_time
-
-        if self.out_of_bounds_damage_timer >= self.out_of_bounds_damage_interval:
-            self.out_of_bounds_damage_timer = 0.0
-
-            for char in self.characters:
-                if not char.is_alive:
+    def _resolve_cow_collisions(self):
+        for i in range(len(self.characters)):
+            for j in range(i + 1, len(self.characters)):
+                cow_a = self.characters[i]
+                cow_b = self.characters[j]
+                if not cow_a.is_alive or not cow_b.is_alive:
+                    continue
+                rect_a = cow_a.get_rect(self.height)
+                rect_b = cow_b.get_rect(self.height)
+                if not rect_a.colliderect(rect_b):
                     continue
 
-                # Check if character is outside arena bounds
-                char_left = char.location[0]
-                char_right = char.location[0] + char.width * char.scale_ratio
-                char_top = char.location[1] + char.height * char.scale_ratio
-                char_bottom = char.location[1]
+                pair_key = tuple(sorted([cow_a.id, cow_b.id]))
+                last_hit = self.cow_hit_times.get(pair_key, 0.0)
+                if self.current_time - last_hit < 0.6:
+                    continue
 
-                out_of_bounds = (
-                    char_right < 0 or                    # Left edge
-                    char_left > self.width or            # Right edge
-                    char_top < 0 or                      # Top edge
-                    char_bottom > self.height            # Bottom edge (though unlikely due to gravity)
-                )
+                if cow_a.is_attacking and not cow_b.is_attacking:
+                    cow_b.take_damage(cow_a.primary_damage * cow_a.damage_multiplier)
+                    self.cow_hit_times[pair_key] = self.current_time
+                elif cow_b.is_attacking and not cow_a.is_attacking:
+                    cow_a.take_damage(cow_b.primary_damage * cow_b.damage_multiplier)
+                    self.cow_hit_times[pair_key] = self.current_time
 
-                if out_of_bounds:
-                    # Calculate distance from arena center
-                    char_center_x = char.location[0] + (char.width * char.scale_ratio) / 2
-                    char_center_y = char.location[1] + (char.height * char.scale_ratio) / 2
-                    arena_center_x = self.width / 2
-                    arena_center_y = self.height / 2
-                    
-                    # Euclidean distance from center
-                    distance = ((char_center_x - arena_center_x) ** 2 + (char_center_y - arena_center_y) ** 2) ** 0.5
-                    
-                    # Scale damage: base damage + distance/10 (adjust divisor for desired scaling)
-                    damage = self.out_of_bounds_damage_amount + distance / 10
-                    char.take_damage(damage)
+    def _apply_knockback(self, cow, source_location, distance):
+        dx = cow.location[0] - source_location[0]
+        dy = cow.location[1] - source_location[1]
+        dist = math.hypot(dx, dy)
+        if dist == 0:
+            return
+        cow.location[0] += (dx / dist) * distance
+        cow.location[1] += (dy / dist) * distance
+        margin = cow.size / 2
+        cow.location[0] = max(margin, min(self.width - margin, cow.location[0]))
+        cow.location[1] = max(margin, min(self.height - margin, cow.location[1]))
+
+    def _push_out_of_rect(self, cow, obstacle_rect: pygame.Rect):
+        cow_rect = cow.get_rect(self.height)
+        overlap_x = cow_rect.width / 2 + obstacle_rect.width / 2 - abs(cow_rect.centerx - obstacle_rect.centerx)
+        overlap_y = cow_rect.height / 2 + obstacle_rect.height / 2 - abs(cow_rect.centery - obstacle_rect.centery)
+        if overlap_x < overlap_y:
+            if cow_rect.centerx < obstacle_rect.centerx:
+                cow.location[0] -= overlap_x
+            else:
+                cow.location[0] += overlap_x
+        else:
+            if cow_rect.centery < obstacle_rect.centery:
+                cow.location[1] += overlap_y
+            else:
+                cow.location[1] -= overlap_y
+
+    @staticmethod
+    def _point_in_circle(point, center, radius) -> bool:
+        dx = point[0] - center[0]
+        dy = point[1] - center[1]
+        return dx * dx + dy * dy <= radius * radius
+
+    @staticmethod
+    def _point_in_triangle(point, triangle_points) -> bool:
+        (x1, y1), (x2, y2), (x3, y3) = triangle_points
+        px, py = point
+        denom = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+        if denom == 0:
+            return False
+        a = ((y2 - y3) * (px - x3) + (x3 - x2) * (py - y3)) / denom
+        b = ((y3 - y1) * (px - x3) + (x1 - x3) * (py - y3)) / denom
+        c = 1 - a - b
+        return 0 <= a <= 1 and 0 <= b <= 1 and 0 <= c <= 1
+
+    @staticmethod
+    def _point_in_arc(point, center, angle, length, width) -> bool:
+        dx = point[0] - center[0]
+        dy = point[1] - center[1]
+        dist = math.hypot(dx, dy)
+        if dist > length or dist == 0:
+            return False
+        point_angle = math.atan2(dy, dx)
+        half_angle = math.atan2(width / 2, max(1.0, dist))
+        diff = (point_angle - angle + math.pi) % (2 * math.pi) - math.pi
+        return abs(diff) <= half_angle
+
+    def render(self):
+        if self.headless:
+            return
+        camera = getattr(self, "camera", None)
+        self.screen.fill((20, 90, 20))
+        for platform in self.platforms:
+            platform.draw(self.screen, self.height, camera=camera)
+        for effect in self.effects:
+            effect.draw(self.screen, self.height, camera=camera)
+        self.zone_indicator.draw(self.screen, self.height, camera=camera)
+        for pickup in self.weapon_pickups:
+            pickup.draw(self.screen, self.height, camera=camera)
+        for cow in self.characters:
+            cow.draw(self.screen, self.height, camera=camera)
+        if self.ui:
+            self.ui.draw(self.characters, self.game_over, self.winner, self.respawn_timer)
+        pygame.display.flip()

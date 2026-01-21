@@ -6,7 +6,7 @@ Before writing **any** test, read the actual implementation.
 You must verify:
 
 * `__init__` signature (parameters, order, types)
-* Method return types (`shoot()` → object, list, or None)
+* Method return types (e.g., `update()` → bool for expiration)
 * Attribute names (`self.horizontal_velocity` ≠ `vx`)
 * State flags (`is_stationary`, `is_alive`, etc.)
 * Inherited APIs via `BASE_COMPONENTS_DOCS.md`
@@ -43,13 +43,13 @@ def test_x(): arena = Arena(...)
 3. Hardcoded config values (arena size, cooldowns)
 4. Reusing stateful objects across tests
 5. Wrong attribute names
-6. **Insufficient damage amounts** - Account for shield + health + defense reduction
+6. **Insufficient damage amounts** - Account for size-based multipliers or cooldown gating
 7. **Single-step physics** - Physics methods may need multiple calls (velocity update → position update)
 8. **Missing entity IDs** - Collision detection requires proper owner/victim IDs
 9. **Coordinate system mismatches** - World Y-up vs Screen Y-down conversions
 10. **Incomplete simulation** - Collision/landing may require multiple update cycles
 11. **Type mismatches** - Sets vs dicts, lists vs tuples, wrong input formats
-12. **Input format incompatibilities** - BASE vs GAME format differences (`'movement'` vs `'move'`, boolean vs position)
+12. **Input format incompatibilities** - Missing `mouse_pos` or raw input passthrough keys
 
 ---
 
@@ -65,32 +65,22 @@ def test_x(): arena = Arena(...)
 
 ## 4. CORE PATTERNS
 
-### Weapons
+### Abilities & Effects
 
 Verify **all**:
 
-* Projectile spawn
-* Damage dealt
-* Ammo consumption
-* Cooldown enforcement
-* Ammo depletion & pickup
-
-### Projectiles
-
-Verify:
-
-* Movement
-* Damage on hit
-* Deactivation after collision
+* Effect spawn
+* Damage dealt (when applicable)
+* Cooldown enforcement per target
+* Effect expiration / cleanup
 
 ### Characters
 
 Verify:
 
-* Weapon integration
-* Shield priority (shield → health)
-* Shield regen timing
-* Death blocks abilities
+* Ability integration (primary + passive)
+* Size/health scaling on grass eat and poop
+* Death eliminates player (single life)
 
 ---
 
@@ -134,17 +124,17 @@ method()  # Applies state change
 * Convert explicitly
 * Leave margins (avoid 1px gaps)
 * **Platform collision**: Character feet position = `arena_height - location[1]`
-* **Projectile collision**: Requires proper owner/victim IDs and rect overlap
+* **Effect collision**: Requires proper owner/victim IDs and rect overlap
 
 ---
 
 ## 7. NEW FEATURE CHECKLIST
 
 * Character size: `width == height == 30`
-* Invulnerability: active after `respawn()`, expires after 8s
-* Ammo scarcity: interval 12s, amounts [5,10,15], max 2
-* Mirrored ammo spawns
-* Weapons do NOT respawn on death
+* Ability slots: one primary + one passive
+* Grass: eating increases size and consumes food
+* Poop: spawns obstacle effect and reduces size
+* Safe zone: damages outside radius
 
 ---
 
@@ -251,9 +241,9 @@ When tests fail:
    - Test all movement key pairs
 
 9. **Input Data Dictionary Structure**
-   - Verify returned dict has keys: `'move'`, `'jump'`, `'shoot'`, `'secondary_fire'`, `'target_pos'`, `'drop_weapon'` (matches `GAME_character.py:81-88`)
-   - Verify `'move'` is `[float, float]`, not `[int, int]`
-   - Test that all expected keys are present
+   - Verify returned dict has keys: `'movement'`, `'mouse_pos'`, `'held_keys'`, `'mouse_buttons'`
+   - Verify optional action keys appear only when triggered: `'eat'`, `'dash'`, `'poop'`, `'primary'`
+   - Verify `'movement'` is `[int, int]` and `'mouse_pos'` is `[float, float]`
 
 10. **Headless Mode Compatibility**
     - Test with `headless=True` (server environment)
@@ -287,66 +277,49 @@ When tests fail:
 
 ### Format Compatibility Tests
 
-16. **Input Dictionary Key Name Mismatch**
-    - Verify `get_input_data()` returns `'move'` key (GAME format) not `'movement'` (BASE format)
-    - Test that `process_input()` correctly reads `input_data.get('move', [0, 0])` not `input_data.get('movement')`
-    - BASE expects `'movement'`, GAME uses `'move'` - ensure consistency
+16. **Input Dictionary Key Name Consistency**
+    - Verify both BASE and GAME use `'movement'` (no legacy `'move'`)
+    - Test that `process_input()` reads `input_data.get('movement', [0, 0])`
+    - Ensure `'mouse_pos'` is always present and is a list `[x, y]`
 
-17. **Shoot/Secondary Fire Value Type Mismatch**
-    - Test that `get_input_data()` returns `'shoot': True/False` (boolean) and `process_input()` expects boolean, not mouse position
-    - BASE format uses `'shoot': mouse_pos` (position), GAME uses `'shoot': True` - verify GAME format is used consistently
-    - Test that `process_input()` handles boolean correctly
+17. **Primary Action Value Type**
+    - Test that `'primary'` uses a mouse position list when present
+    - Verify `process_input()` handles missing `'primary'` safely
+    - Ensure `'primary'` matches the click world position
 
-18. **Target Position Key Presence**
-    - Verify `get_input_data()` always includes `'target_pos'` key (matches `GAME_character.py:86`)
-    - Test that `process_input()` safely handles missing `'target_pos'` with `input_data.get('target_pos', [0, 0])` default
-    - Verify `target_pos` is always a list `[x, y]`
+18. **Raw Input Passthrough**
+    - Verify `'held_keys'` and `'mouse_buttons'` are present
+    - Confirm they are lists (serializable) and reflect current input state
 
-19. **Shoot Method Return Value Handling**
-    - Test that `shoot()` and `secondary_fire()` return projectiles (single or list) or `None`
-    - Verify `process_input()` correctly adds returned projectiles to arena (BASE handles this automatically, GAME might not)
-    - Test that `None` returns don't crash
-
-20. **Method Override Completeness**
-    - Test that `GAME_character.get_input_data()` and `process_input()` are complete overrides, not partial
+19. **Method Override Completeness**
+    - Test that `GAME_character.get_input_data()` extends BASE and preserves raw input keys
     - Verify all BASE functionality is preserved or explicitly replaced, not accidentally broken
     - Test inheritance chain works correctly
 
-21. **Network Serialization Attribute Preservation**
-    - Test that custom attributes (like `shield`, `max_shield`) are preserved through `__getstate__()`/`__setstate__()` network serialization
-    - Verify `__setstate__()` initializes missing attributes with defaults (matches `GAME_character.py:23-35`)
+20. **Network Serialization Attribute Preservation**
+    - Test that custom attributes (like `size`, `dashes_left`, ability names) are preserved through `__getstate__()`/`__setstate__()`
+    - Verify `__setstate__()` initializes missing attributes with defaults
     - Test round-trip serialization (serialize → deserialize → verify state)
 
-22. **Default Parameter Values in Overrides**
-    - Test `update()` method with different `arena_height`/`arena_width` values, not just defaults
-    - Verify `update(delta_time, platforms, arena_height=900, arena_width=1400)` doesn't break when called with different dimensions
+21. **Default Parameter Values in Overrides**
+    - Test `update()` method with different arena sizes (world larger than viewport)
+    - Verify logic does not assume `1400x900`
     - Defaults might hide bugs - always test with explicit values
 
-23. **List vs Tuple Type Consistency**
+22. **List vs Tuple Type Consistency**
     - Test that coordinate lists `[x, y]` are consistently lists, not tuples
-    - Verify `location`, `target_pos`, `move` direction are all lists (mutable), not tuples (immutable)
+    - Verify `location`, `mouse_pos`, and `movement` are lists (mutable)
     - Affects network sync and mutation - tuples can't be modified
 
-24. **Boolean vs Position Value Confusion**
-    - Test that boolean flags (`'jump'`, `'shoot'`, `'drop_weapon'`) are actual booleans, not truthy positions
-    - Verify `if input_data.get('shoot'):` works correctly when `'shoot'` is `True`, not `[100, 200]`
-    - Position values are truthy but wrong type
-
-25. **Mouse Button Index Bounds**
+23. **Mouse Button Index Bounds**
     - Test `mouse_pressed` list access with indices 0, 1, 2 (Left, Middle, Right)
     - Verify `mouse_buttons[0]` and `mouse_buttons[2]` don't crash when list has fewer than 3 elements
     - Should always be `[False, False, False]` but test defensive coding
 
-**Critical Format Differences:**
+**Critical Input Format:**
 
-**BASE_character format:**
 - `'movement': [x, y]`
-- `'shoot': [mouse_x, mouse_y]` (position)
-- `'secondary_fire': [mouse_x, mouse_y]` (position)
-
-**GAME_character format (current):**
-- `'move': [x, y]`
-- `'shoot': True/False` (boolean)
-- `'target_pos': [mouse_x, mouse_y]` (separate key)
-
-⚠️ **These format mismatches can cause silent failures if network code or BASE methods expect the BASE format. Always test both formats.**
+- `'mouse_pos': [mouse_x, mouse_y]`
+- `'held_keys': [keycodes...]`
+- `'mouse_buttons': [left, middle, right]`
+- Optional: `'eat'`, `'dash'`, `'poop'`, `'primary'`

@@ -26,6 +26,10 @@ from coding.non_callable_tools.helpers import clear_python_cache
 from coding.non_callable_tools.action_logger import action_logger
 # Set up headless mode for automated testing (only when run directly)
 import pygame
+from BASE_components.BASE_arena import Arena as BaseArena
+from BASE_components.BASE_platform import BasePlatform
+from BASE_components.BASE_effects import TimedEffect
+from BASE_components.BASE_camera import BaseCamera
 
 
 # =============================================================================
@@ -429,84 +433,46 @@ def test_character_creation(character_class: Type):
     assert char.location == [100.0, 100.0], "Character location not set correctly"
     assert char.width == 50, "Character width not set correctly"
     assert char.height == 50, "Character height not set correctly"
-    assert char.lives == 3, "Character should start with 3 lives"
+    assert char.lives == char.MAX_LIVES, "Character should start with MAX_LIVES"
     assert not char.is_eliminated, "Character should not be eliminated initially"
 
 
-def test_character_horizontal_movement(character_class: Type):
-    """Test that a character can move horizontally."""
+def test_character_movement_bounds(character_class: Type):
+    """Test that a character moves via process_input and respects arena bounds."""
+    arena = BaseArena(width=300, height=200, headless=True)
     char = character_class(
         name="Test Player",
         description="Test",
         image="",
-        location=[100.0, 100.0]
+        location=[150.0, 100.0],
+        width=30,
+        height=30,
     )
-    
-    initial_x = char.location[0]
-    
-    # Move right
-    char.location[0] += char.speed
-    assert char.location[0] > initial_x, "Character should move right"
-    
-    # Move left
-    char.location[0] -= char.speed * 2
-    assert char.location[0] < initial_x, "Character should move left"
+    arena.add_character(char)
 
+    input_data = {"movement": [1, 0], "mouse_pos": [0.0, 0.0]}
+    char.process_input(input_data, arena)
+    assert char.location[0] > 150.0, "Character should move right"
 
-def test_character_jumping(character_class: Type):
-    """Test that a character can jump when on ground."""
-    char = character_class(
-        name="Test Player",
-        description="Test",
-        image="",
-        location=[100.0, 100.0]
-    )
-    
-    char.on_ground = True
-    initial_y = char.location[1]
-    
-    # Simulate jump
-    if char.on_ground and char.can_jump:
-        char.vertical_velocity = -char.jump_height
-        char.on_ground = False
-    
-    assert char.vertical_velocity == -char.jump_height, "Jump should set negative velocity"
-    assert not char.on_ground, "Character should not be on ground after jump"
-
-
-def test_character_gravity(character_class: Type):
-    """Test that gravity affects a character in the air."""
-    char = character_class(
-        name="Test Player",
-        description="Test",
-        image="",
-        location=[100.0, 200.0]
-    )
-    
-    char.on_ground = False
-    char.vertical_velocity = 0.0
-    
-    # Apply gravity
-    char.vertical_velocity += char.gravity
-    
-    assert char.vertical_velocity > 0, "Gravity should increase vertical velocity (downward)"
+    input_data = {"movement": [-1, 0], "mouse_pos": [0.0, 0.0]}
+    char.process_input(input_data, arena)
+    assert 0.0 < char.location[0] < arena.width, "Character should remain within horizontal bounds"
 
 
 def test_character_max_lives(character_class: Type):
-    """Test that characters always start with MAX_LIVES (3)."""
+    """Test that characters start with MAX_LIVES."""
     char = character_class(
         name="Test Player",
         description="Test",
         image="",
         location=[100.0, 100.0]
     )
-    
-    assert char.MAX_LIVES == 3, "MAX_LIVES should be 3"
-    assert char.lives == 3, "Character should start with 3 lives"
+
+    assert char.lives == char.MAX_LIVES, "Character should start with MAX_LIVES"
 
 
 def test_character_take_damage(character_class: Type):
-    """Test that a character can take damage (with shields and defense applied)."""
+    """Test that a character can take damage and lose health."""
     char = character_class(
         name="Test Player",
         description="Test",
@@ -515,48 +481,31 @@ def test_character_take_damage(character_class: Type):
     )
 
     initial_health = char.health
-    initial_shield = getattr(char, 'shield', 0)  # Handle characters without shields
-    damage = 20
-
-    char.take_damage(damage)
-
-    # With shield system: shields absorb damage first, then defense applies to remaining
-    shield_damage = min(damage, initial_shield)
-    remaining_damage = max(0, damage - initial_shield)
-    health_damage = max(0, remaining_damage - (char.defense * char.defense_multiplier))
-    health_damage = max(1, health_damage) if remaining_damage > 0 else 0
-
-    expected_shield = initial_shield - shield_damage
-    expected_health = initial_health - health_damage
-
-    # Verify shield absorption
-    if hasattr(char, 'shield'):
-        assert char.shield == expected_shield, f"Shield should be {expected_shield}, got {char.shield}"
-    assert char.health == expected_health, f"Health should be {expected_health}, got {char.health}"
+    char.take_damage(20)
+    assert char.health < initial_health, "Health should decrease after taking damage"
 
 
 def test_character_death_and_respawn(character_class: Type):
-    """Test that a character loses a life when health reaches 0."""
+    """Test that a character loses a life and can respawn if not eliminated."""
     char = character_class(
         name="Test Player",
         description="Test",
         image="",
         location=[100.0, 100.0]
     )
-    
+
+    char.lives = 2
     initial_lives = char.lives
-    char.health = 0
-    
-    # Simulate death
-    if char.health <= 0 and not char.is_eliminated:
-        char.lives -= 1
-        if char.lives > 0:
-            char.health = char.max_health
-        else:
-            char.is_eliminated = True
-    
-    assert char.lives == initial_lives - 1, "Character should lose a life"
-    assert char.health == char.max_health or char.is_eliminated, "Character should respawn with full health"
+    char.take_damage(char.health + 10)
+
+    assert not char.is_alive, "Character should be dead after lethal damage"
+    assert char.lives == initial_lives - 1, "Character should lose one life"
+    assert not char.is_eliminated, "Character should not be eliminated with lives remaining"
+
+    char.respawn([120.0, 120.0])
+    assert char.is_alive, "Character should be alive after respawn"
+    assert char.health == char.max_health, "Character should respawn with full health"
+    assert char.location == [120.0, 120.0], "Character should respawn at the provided location"
 
 
 def test_character_elimination(character_class: Type):
@@ -585,131 +534,8 @@ def test_platform_creation(platform_class: Type):
     assert platform.rect.height == 20, "Platform height not set"
 
 
-def test_weapon_creation(weapon_class: Type):
-    """Test that a weapon can be created with properties."""
-    weapon = weapon_class(
-        name="Test Gun",
-        damage=25,
-        cooldown=0.5,
-        projectile_speed=30.0,
-        location=[150.0, 150.0]
-    )
-    
-    assert weapon.name == "Test Gun", "Weapon name not set"
-    assert weapon.damage == 25, "Weapon damage not set"
-    assert weapon.cooldown == 0.5, "Weapon cooldown not set"
-    assert weapon.projectile_speed == 30.0, "Weapon projectile speed not set"
-    assert not weapon.is_equipped, "Weapon should start unequipped"
-
-
-def test_weapon_shooting(weapon_class: Type):
-    """Test that a weapon can shoot projectiles."""
-    weapon = weapon_class(
-        name="Test Gun",
-        damage=25,
-        cooldown=0.1,
-        projectile_speed=30.0
-    )
-    
-    # First shot should work
-    assert weapon.can_shoot(), "Weapon should be able to shoot initially"
-    
-    result = weapon.shoot(100, 100, 200, 100, "test_owner")
-    
-    assert result is not None, "Weapon should return projectile(s)"
-    
-    # Handle both single projectile and list of projectiles
-    projectiles = result if isinstance(result, list) else [result]
-    
-    assert len(projectiles) > 0, "Weapon should create at least one projectile"
-    projectile = projectiles[0]
-    assert projectile.damage == 25, "Projectile should have weapon's damage"
-    assert projectile.owner_id == "test_owner", "Projectile should track owner"
-
-
-def test_weapon_cooldown(weapon_class: Type):
-    """Test that weapon cooldown prevents rapid fire."""
-    weapon = weapon_class(
-        name="Test Gun",
-        damage=25,
-        cooldown=1.0,  # 1 second cooldown
-        projectile_speed=30.0
-    )
-    
-    # First shot
-    result1 = weapon.shoot(100, 100, 200, 100, "test_owner")
-    assert result1 is not None, "First shot should work"
-    
-    # Immediate second shot should fail
-    result2 = weapon.shoot(100, 100, 200, 100, "test_owner")
-    assert result2 is None, "Second shot should be blocked by cooldown"
-
-
-def test_weapon_pickup_drop(weapon_class: Type):
-    """Test that weapons can be picked up and dropped."""
-    weapon = weapon_class(
-        name="Test Gun",
-        damage=25,
-        cooldown=0.5,
-        projectile_speed=30.0,
-        location=[100.0, 100.0]
-    )
-    
-    assert not weapon.is_equipped, "Weapon should start unequipped"
-    
-    # Pickup
-    weapon.pickup()
-    assert weapon.is_equipped, "Weapon should be equipped after pickup"
-    
-    # Drop
-    weapon.drop([200.0, 200.0])
-    assert not weapon.is_equipped, "Weapon should be unequipped after drop"
-    assert weapon.location == [200.0, 200.0], "Weapon should be at drop location"
-
-
-def test_projectile_creation(projectile_class: Type):
-    """Test that a projectile can be created."""
-    projectile = projectile_class(
-        x=100,
-        y=100,
-        direction=[1, 0],
-        speed=25.0,
-        damage=15,
-        owner_id="test_owner"
-    )
-    
-    assert projectile.location[0] == 100, "Projectile x not set"
-    assert projectile.location[1] == 100, "Projectile y not set"
-    assert projectile.direction == [1, 0], "Projectile direction not set"
-    assert projectile.speed == 25.0, "Projectile speed not set"
-    assert projectile.damage == 15, "Projectile damage not set"
-    assert projectile.owner_id == "test_owner", "Projectile owner not set"
-
-
-def test_projectile_movement(projectile_class: Type):
-    """Test that a projectile moves in its direction."""
-    projectile = projectile_class(
-        x=100,
-        y=100,
-        direction=[1, 0],  # Moving right
-        speed=10.0,
-        damage=15,
-        owner_id="test_owner"
-    )
-    
-    initial_x = projectile.location[0]
-    
-    # Update position (delta_time = 1/60 for one frame at 60fps)
-    projectile.update(1/60)
-    
-    assert projectile.location[0] > initial_x, "Projectile should move right"
-    # Speed is scaled by delta_time * 60, so at 1/60, it moves by speed
-    expected_x = initial_x + 10.0
-    assert abs(projectile.location[0] - expected_x) < 0.01, f"Projectile should be at {expected_x}, got {projectile.location[0]}"
-
-
 def test_character_input_keybinds(character_class: Type):
-    """Test that get_input_data uses the BASE schema: movement + positional shoot/secondary."""
+    """Test that get_input_data includes movement + mouse_pos (base schema)."""
     import pygame
     
     mouse_pos = [100.0, 200.0]
@@ -733,36 +559,10 @@ def test_character_input_keybinds(character_class: Type):
             "DEBUG test_character_input_keybinds: 'movement' missing from input_data.\n"
             "Possible cause: Character.get_input_data is still using the GAME schema "
             "with 'move' / 'jump' instead of BASE 'movement'.\n"
-            "Expected BASE schema: 'movement', optional 'shoot'/'secondary_fire' as positions.\n"
+            "Expected BASE schema: 'movement' plus 'mouse_pos'.\n"
             f"Got keys: {list(input_data.keys())}"
         )
     assert input_data["movement"] == [0, 0], "No movement when no keys pressed (BASE schema uses 'movement', not 'move')"
-    
-    if "shoot" in input_data:
-        print(
-            "DEBUG test_character_input_keybinds: unexpected 'shoot' key when no mouse button pressed.\n"
-            "Possible cause: Client or Character.get_input_data is sending boolean 'shoot' flags "
-            "instead of only including 'shoot' when mouse is pressed.\n"
-            f"input_data['shoot'] value: {input_data['shoot']!r}"
-        )
-    assert "shoot" not in input_data, "shoot should not exist when left mouse not pressed (BASE schema)"
-    
-    if "secondary_fire" in input_data:
-        print(
-            "DEBUG test_character_input_keybinds: unexpected 'secondary_fire' key when no mouse button pressed.\n"
-            "Possible cause: Client or Character.get_input_data is sending boolean 'secondary_fire' flags "
-            "instead of only including it when right mouse is pressed.\n"
-            f"input_data['secondary_fire'] value: {input_data['secondary_fire']!r}"
-        )
-    assert "secondary_fire" not in input_data, "secondary_fire should not exist when right mouse not pressed"
-    
-    if "drop_weapon" in input_data:
-        print(
-            "DEBUG test_character_input_keybinds: unexpected 'drop_weapon' when Q not held.\n"
-            "Possible cause: key-mapping logic changed or stale input state.\n"
-            f"input_data['drop_weapon'] value: {input_data['drop_weapon']!r}"
-        )
-    assert "drop_weapon" not in input_data, "drop_weapon should not exist when Q not held"
     
     # Movement keys
     held_keys = {pygame.K_a}
@@ -790,83 +590,54 @@ def test_character_input_keybinds(character_class: Type):
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
     assert input_data["movement"][0] == 1, "Should move right when RIGHT arrow is pressed"
     
-    # Drop weapon (Q)
-    held_keys = {pygame.K_q}
-    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    assert input_data.get("drop_weapon") is True, "Should set drop_weapon when Q is held"
-    
     # Multiple keys simultaneously
     held_keys = {pygame.K_d, pygame.K_w}
     input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
     assert input_data["movement"] == [1, 1], "Should combine movement directions"
 
 
-def test_character_input_mouse_capture(character_class: Type):
-    """Test that mouse buttons map to positional shoot/secondary_fire (BASE schema)."""
-    held_keys = set()
-    mouse_pos = [500.0, 300.0]
+def test_timed_effect_expiration():
+    """Test that TimedEffect expires after its lifetime."""
+    effect = TimedEffect([50.0, 50.0], lifetime=0.5)
+    expired = effect.update(0.2)
+    assert not expired, "Effect should not be expired yet"
+    expired = effect.update(0.4)
+    assert expired, "Effect should expire after lifetime"
 
-    # Left click -> shoot carries mouse_pos
-    mouse_buttons = [True, False, False]
-    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    if "mouse_pos" not in input_data:
-        print(
-            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when left click pressed.\n"
-            "Possible cause: Character.get_input_data override removed 'mouse_pos' from the schema.\n"
-            f"Got keys: {list(input_data.keys())}"
-        )
-    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
-    if input_data.get("shoot") != mouse_pos:
-        print(
-            "DEBUG test_character_input_mouse_capture: 'shoot' value does not match mouse_pos on left click.\n"
-            "Possible causes:\n"
-            "  - Character.get_input_data is still using boolean 'shoot' flags (GAME schema).\n"
-            "  - Client is transforming input and not passing raw mouse_pos through.\n"
-            f"input_data.get('shoot'): {input_data.get('shoot')!r}, expected: {mouse_pos!r}"
-        )
-    assert input_data.get("shoot") == mouse_pos, "shoot should equal mouse_pos when left mouse is pressed (BASE schema)"
 
-    # Right click -> secondary_fire carries mouse_pos
-    mouse_buttons = [False, False, True]
-    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    if "mouse_pos" not in input_data:
-        print(
-            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when right click pressed.\n"
-            f"Got keys: {list(input_data.keys())}"
-        )
-    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
-    if input_data.get("secondary_fire") != mouse_pos:
-        print(
-            "DEBUG test_character_input_mouse_capture: 'secondary_fire' value does not match mouse_pos on right click.\n"
-            "Possible causes:\n"
-            "  - Character.get_input_data is using boolean 'secondary_fire' flags.\n"
-            "  - Mouse button mapping changed.\n"
-            f"input_data.get('secondary_fire'): {input_data.get('secondary_fire')!r}, expected: {mouse_pos!r}"
-        )
-    assert input_data.get("secondary_fire") == mouse_pos, "secondary_fire should equal mouse_pos when right mouse is pressed"
+def test_safe_zone_damage(character_class: Type):
+    """Test that the safe zone damages characters outside its radius."""
+    arena = BaseArena(width=200, height=200, headless=True)
+    arena.safe_damage_interval = 0.0
+    arena.safe_zone.center = [0.0, 0.0]
+    arena.safe_zone.target_center = [0.0, 0.0]
+    arena.safe_zone.radius = 10.0
 
-    # No click -> neither key present, but mouse_pos still present
-    mouse_buttons = [False, False, False]
-    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
-    if "mouse_pos" not in input_data:
-        print(
-            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when no mouse buttons pressed.\n"
-            f"Got keys: {list(input_data.keys())}"
-        )
-    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
-    if "shoot" in input_data:
-        print(
-            "DEBUG test_character_input_mouse_capture: unexpected 'shoot' key when no mouse button pressed.\n"
-            "Possible cause: boolean 'shoot' state being sent every frame instead of only when pressed.\n"
-            f"input_data['shoot'] value: {input_data['shoot']!r}"
-        )
-    assert "shoot" not in input_data, "shoot should not exist when not clicking"
-    if "secondary_fire" in input_data:
-        print(
-            "DEBUG test_character_input_mouse_capture: unexpected 'secondary_fire' key when no mouse button pressed.\n"
-            f"input_data['secondary_fire'] value: {input_data['secondary_fire']!r}"
-        )
-    assert "secondary_fire" not in input_data, "secondary_fire should not exist when not clicking"
+    char = character_class(
+        name="Test Player",
+        description="Test",
+        image="",
+        location=[150.0, 150.0],
+        width=30,
+        height=30,
+    )
+    arena.add_character(char)
+
+    initial_health = char.health
+    arena.update(0.1)
+    assert char.health < initial_health, "Character should take safe zone damage outside radius"
+
+
+def test_camera_world_screen_roundtrip():
+    """Test camera world/screen conversion roundtrip."""
+    camera = BaseCamera(world_width=2000, world_height=1500, view_width=400, view_height=300)
+    camera.set_center(1000, 750)
+
+    screen_x, screen_y = camera.world_to_screen_point(1000, 750)
+    world_x, world_y = camera.screen_to_world_point(screen_x, screen_y)
+
+    assert abs(world_x - 1000) < 0.01
+    assert abs(world_y - 750) < 0.01
 
 
 # =============================================================================
@@ -882,30 +653,22 @@ def get_base_test_functions() -> List[tuple]:
     """
     return [
         (test_character_creation, "character_class", "Character class to test"),
-        (test_character_horizontal_movement, "character_class", "Character class to test"),
-        (test_character_jumping, "character_class", "Character class to test"),
-        (test_character_gravity, "character_class", "Character class to test"),
+        (test_character_movement_bounds, "character_class", "Character movement in arena bounds"),
         (test_character_max_lives, "character_class", "Character class to test"),
         (test_character_take_damage, "character_class", "Character class to test"),
         (test_character_death_and_respawn, "character_class", "Character class to test"),
         (test_character_elimination, "character_class", "Character class to test"),
         (test_character_input_keybinds, "character_class", "Character input keybinds (set format)"),
-        (test_character_input_mouse_capture, "character_class", "Character mouse position capture"),
         (test_platform_creation, "platform_class", "Platform class to test"),
-        (test_weapon_creation, "weapon_class", "Weapon class to test"),
-        (test_weapon_shooting, "weapon_class", "Weapon class to test"),
-        (test_weapon_cooldown, "weapon_class", "Weapon class to test"),
-        (test_weapon_pickup_drop, "weapon_class", "Weapon class to test"),
-        (test_projectile_creation, "projectile_class", "Projectile class to test"),
-        (test_projectile_movement, "projectile_class", "Projectile class to test"),
+        (test_timed_effect_expiration, None, "TimedEffect expiration"),
+        (test_safe_zone_damage, "character_class", "Safe zone damage ticks"),
+        (test_camera_world_screen_roundtrip, None, "Camera world/screen roundtrip"),
     ]
 
 
 def run_all_tests(
     character_class: Type = None,
     platform_class: Type = None,
-    weapon_class: Type = None,
-    projectile_class: Type = None,
     verbose: bool = True
 ) -> TestSuite:
     """
@@ -915,9 +678,7 @@ def run_all_tests(
     
     Args:
         character_class: The Character class to test (from GameFolder/characters/)
-        platform_class: The Platform class to test (from GameFolder/platforms/)
-        weapon_class: The Weapon class to test (from GameFolder/weapons/)
-        projectile_class: The Projectile class to test (from GameFolder/projectiles/)
+        platform_class: The Platform class to test (from BASE_components or GameFolder)
         verbose: If True, print progress messages
         
     Returns:
@@ -944,35 +705,12 @@ def run_all_tests(
                 print("Warning: Could not import Character from GameFolder")
 
     if platform_class is None:
-        try:
-            from GameFolder.platforms.GAME_platform import Platform
-            platform_class = Platform
-        except ImportError:
-            if verbose:
-                print("Warning: Could not import Platform from GameFolder")
-
-    if weapon_class is None:
-        try:
-            from GameFolder.weapons.GAME_weapon import Weapon
-            weapon_class = Weapon
-        except ImportError:
-            if verbose:
-                print("Warning: Could not import Weapon from GameFolder")
-
-    if projectile_class is None:
-        try:
-            from GameFolder.projectiles.GAME_projectile import Projectile
-            projectile_class = Projectile
-        except ImportError:
-            if verbose:
-                print("Warning: Could not import Projectile from GameFolder")
+        platform_class = BasePlatform
     
     # Map parameter names to classes
     class_map = {
         "character_class": character_class,
         "platform_class": platform_class,
-        "weapon_class": weapon_class,
-        "projectile_class": projectile_class,
     }
     
     # 1. Run base tests
@@ -987,20 +725,20 @@ def run_all_tests(
     
     passed = 0
     for test_func, param_name, description in base_tests:
-        required_class = class_map.get(param_name)
-        
-        if required_class is None:
-            # Skip test if required class not available
-            result = TestResult(
-                test_name=test_func.__name__,
-                passed=False,
-                duration=0.0,
-                error_msg=f"Required class '{param_name}' not available",
-                source_file="BASE_tests.py"
-            )
+        if param_name is None:
+            result = runner.run_test(test_func, "BASE_tests.py")
         else:
-            # Run test with the required class
-            result = runner.run_test_with_args(test_func, [required_class], "BASE_tests.py")
+            required_class = class_map.get(param_name)
+            if required_class is None:
+                result = TestResult(
+                    test_name=test_func.__name__,
+                    passed=False,
+                    duration=0.0,
+                    error_msg=f"Required class '{param_name}' not available",
+                    source_file="BASE_tests.py"
+                )
+            else:
+                result = runner.run_test_with_args(test_func, [required_class], "BASE_tests.py")
         
         # Log individual test result to visual logger
         if hasattr(action_logger, 'log_test_result'):

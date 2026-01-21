@@ -44,9 +44,9 @@ You are a QA engineer writing tests in `GameFolder/tests/` for new game features
 def test_feature_scenario():
     arena = Arena(800, 600, headless=True)
     char = Character(...)
-    weapon = Weapon(...)
-    result = weapon.shoot(...)
-    assert result is not None, "Expected projectile"
+    char.set_primary_ability("Stomp")
+    char.use_primary_ability(arena, [400, 300])
+    assert len(arena.effects) > 0, "Expected an effect"
 ```
 
 ---
@@ -61,27 +61,20 @@ def test_feature_scenario():
 
 ## MANDATORY BASE VERIFICATIONS
 
-### Weapons
+### Abilities & Effects
 
-* Damage applied on hit
-* Damage amount correct
-* Cooldown enforced
-* Ammo consumption & depletion
-* Ammo persists across pickup/drop
-
-### Projectiles
-
-* Movement
-* Damage on collision
-* Deactivation after hit
+* Damage applied on hit (when applicable)
+* Cooldown enforced per target (damage_cooldown)
+* Effect expiration / lifetime
+* Owner immunity where expected
 
 ### Characters
 
-* Shield absorbs before health
-* Shield regeneration delay
-* Death disables abilities
+* Lives decrement on death
+* Respawn behavior (if enabled)
+* Ability slots (one primary / one passive)
 
-**Special effects never replace base damage.**
+**Effects never bypass core health rules.**
 
 ---
 
@@ -98,7 +91,7 @@ def test_feature_scenario():
 * Multiple spawn positions (edges, corners)
 * Boundary collisions
 * Owner ID correctness
-* Melee / area-effect hit symmetry: for any melee or AoE weapon/projectile, include tests where the target is on both the left and the right of the attacker (and above/below if relevant) to confirm hitboxes are centered correctly and not biased to one side.
+* Melee / area-effect hit symmetry: for any melee or AoE ability/effect, include tests where the target is on both the left and the right of the attacker (and above/below if relevant) to confirm hitboxes are centered correctly and not biased to one side.
 
 ---
 

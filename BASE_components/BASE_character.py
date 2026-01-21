@@ -1,288 +1,110 @@
 import pygame
-import uuid
-import random
-from BASE_components.BASE_weapon import BaseWeapon
-from BASE_components.BASE_projectile import BaseProjectile
 from BASE_files.BASE_network import NetworkObject
 
+
 class BaseCharacter(NetworkObject):
-    # IMMUTABLE: Life system - all players have exactly 3 lives
-    MAX_LIVES = 3
+    """Low-level character building block to be extended by GameFolder."""
+
+    MAX_LIVES = 1
 
     def __init__(self, name: str, description: str, image: str, location: [float, float], width: float = 30, height: float = 30):
-        # Initialize network capabilities first
         super().__init__()
-        # Network identity is automatically set by NetworkObject.__init__
-
-        self.id = str(uuid.uuid4())
+        self.id = name
         self.name = name
         self.description = description
         self.image = image
-        
-        # Dimensions
-        self.width = width
-        self.height = height
 
-        """Movement"""
-        self.location = location # [x, y]
-        self.spawn_location = location.copy()  # Store spawn point for respawn
-        self.rotation = 0 # 0-360 degrees
-        self.scale_ratio = 1.0 
-        self.speed = 4.0 # Increased speed
-        self.jump_height = 15.0 
-        self.gravity = 0.4
-        self.vertical_velocity = 0.0
-        
-        """Movement Flags"""
-        self.can_move = True
-        self.can_rotate = True
-        self.can_jump = True
-        self.can_scale = True
-        self.can_fly = False
-        self.on_ground = False
-        self.is_dropping = False # Input flag for dropping through platforms
-        self.is_moving_up = False # Input flag for moving up (jumping/flying)
-        self.hover_time = 0.0 # current hover time
-        self.max_hover_time = 0.0 # max time it can hover for
-        
-        # Flight Mechanic
-        self.max_flight_time = 3.0
-        self.flight_time_remaining = self.max_flight_time
-        self.needs_recharge = False
-        self.is_currently_flying = False
-        self.physics_inverted = False # Can be used for status effects
-        
-        """Combat"""
-        self.weapon = None  # No weapon by default - must pick up
+        self.location = location
+        self.width = float(width)
+        self.height = float(height)
 
-        """Life System - IMMUTABLE"""
-        self.lives = self.MAX_LIVES  # Cannot be changed by children
-        self.is_eliminated = False  # True when all lives are lost
+        self.speed = 3.0
 
-        """Vitals"""
         self.max_health = 100.0
-        self.health = 100.0
-        self.max_stamina = 100.0
-        self.stamina = 100.0
+        self.health = self.max_health
         self.is_alive = True
 
-        """Invulnerability System"""
-        self.is_invulnerable = False
-        self.invulnerability_timer = 0.0
+        self.lives = self.MAX_LIVES
+        self.is_eliminated = False
 
-        """Attributes"""
-        self.strength = 10.0
-        self.defense = 5.0
-        self.agility = 10.0
+        self.color = (220, 220, 220)
+        self.last_arena_height = 900
 
-        """Temporary Modifiers"""
-        self.speed_multiplier = 1.0
-        self.rotation_multiplier = 1.0
-        self.scale_multiplier = 1.0
-        self.jump_height_multiplier = 1.0
-        self.gravity_multiplier = 1.0
-        self.damage_multiplier = 1.0
-        self.defense_multiplier = 1.0
+        self.init_graphics()
 
-        # Initialize graphics (can be called later for headless mode)
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if not hasattr(self, "lives"):
+            self.lives = self.MAX_LIVES
+        if not hasattr(self, "is_eliminated"):
+            self.is_eliminated = False
         self.init_graphics()
 
     def init_graphics(self):
-        """
-        Initialize graphics resources.
-        Safe to call multiple times and works even if pygame is not initialized.
-        Thread-safe for testing scenarios.
-        """
         super().init_graphics()
-
-        # Skip pygame operations if we're in a thread other than the main thread
-        # or if pygame operations might cause issues (like during testing)
         try:
-            import threading
-            if threading.current_thread() != threading.main_thread():
-                # We're in a background thread, skip pygame operations to avoid thread safety issues
-                return
-
-            # Only initialize pygame-dependent graphics if pygame is available
-            # and we're in the main thread
             pygame.display.get_surface()
-            # If we get here, pygame is initialized, so we can load graphics
-            # Note: In a real implementation, you'd cache and load actual images here
-            # For now, we just set a flag that graphics are ready
-            pass
-        except:
-            # Pygame not initialized or no display - skip graphics initialization
-            pass
-
-    def get_rect(self) -> pygame.Rect:
-        # In Pygame, y increases downwards. 
-        # For our internal logic (y up), we will flip y in the Arena/Renderer.
-        return pygame.Rect(self.location[0], self.location[1], self.width * self.scale_ratio, self.height * self.scale_ratio)
-
-    def shoot(self, target_pos: [float, float]) -> BaseProjectile | list[BaseProjectile] | None:
-        if not self.is_alive or not self.weapon:
-            return None
-        
-        # Center of character
-        start_x = self.location[0] + (self.width * self.scale_ratio) / 2
-        start_y = self.location[1] + (self.height * self.scale_ratio) / 2
-        
-        return self.weapon.shoot(start_x, start_y, target_pos[0], target_pos[1], self.id)
-
-    def secondary_fire(self, target_pos: [float, float]) -> BaseProjectile | list[BaseProjectile] | None:
-        """Override to implement secondary fire mode"""
-        if not self.is_alive or not self.weapon:
-            return None
-        
-        start_x = self.location[0] + (self.width * self.scale_ratio) / 2
-        start_y = self.location[1] + (self.height * self.scale_ratio) / 2
-        
-        if hasattr(self.weapon, 'secondary_fire'):
-            return self.weapon.secondary_fire(start_x, start_y, target_pos[0], target_pos[1], self.id)
-        return None
-
-    def special_fire(self, target_pos: [float, float], is_holding: bool) -> BaseProjectile | list[BaseProjectile] | None:
-        """Override to implement special fire/charge mode"""
-        if not self.is_alive or not self.weapon:
-            return None
-            
-        start_x = self.location[0] + (self.width * self.scale_ratio) / 2
-        start_y = self.location[1] + (self.height * self.scale_ratio) / 2
-        
-        if hasattr(self.weapon, 'special_fire'):
-            return self.weapon.special_fire(start_x, start_y, target_pos[0], target_pos[1], self.id, is_holding)
-        return None
-
-    """Movement"""
-    def move(self, direction: [float, float], platforms: list = None):
-        """
-        Move in a 2D direction [x, y].
-        y > 0 is up, y < 0 is down.
-        """
-        if not self.can_move or not self.is_alive:
+        except Exception:
             return
 
-        # Apply status effects like inverted physics
-        actual_dir = [direction[0], direction[1]]
-        if self.physics_inverted:
-            actual_dir[0] *= -1
-            actual_dir[1] *= -1
+    @staticmethod
+    def get_input_data(held_keys, mouse_buttons, mouse_pos):
+        input_data = {
+            "mouse_pos": mouse_pos,
+            "held_keys": sorted(list(held_keys)),
+            "mouse_buttons": list(mouse_buttons),
+        }
+        direction = [0, 0]
+        if pygame.K_LEFT in held_keys or pygame.K_a in held_keys:
+            direction[0] = -1
+        if pygame.K_RIGHT in held_keys or pygame.K_d in held_keys:
+            direction[0] = 1
+        if pygame.K_UP in held_keys or pygame.K_w in held_keys:
+            direction[1] = 1
+        if pygame.K_DOWN in held_keys or pygame.K_s in held_keys:
+            direction[1] = -1
+        input_data["movement"] = direction
+        return input_data
 
-        # Handle horizontal movement
-        self.location[0] += actual_dir[0] * self.speed * self.speed_multiplier
-
-        # Handle vertical movement
-        # Update flags
-        self.is_dropping = (actual_dir[1] < -0.5)
-        self.is_moving_up = (actual_dir[1] > 0)
-
-        # Integrated flight logic
-        # Allow flight when airborne, falling (or at peak), and have flight energy
-        if not self.on_ground and self.vertical_velocity <= 0 and self.flight_time_remaining > 0 and not self.needs_recharge and self.is_moving_up:
-            self.can_fly = True
-            self.is_currently_flying = True
-        else:
-            self.can_fly = False # Reset if not meeting conditions
-            self.is_currently_flying = False
-
-        if actual_dir[1] > 0:
-            if self.on_ground:
-                if self.can_jump:
-                    self.jump()
-            elif self.can_fly:
-                self.location[1] += actual_dir[1] * self.speed * self.speed_multiplier
-                self.vertical_velocity = 0
-        elif actual_dir[1] < 0:
-            if self.can_fly:
-                self.location[1] += actual_dir[1] * self.speed * self.speed_multiplier
-                self.vertical_velocity = 0 # Cancel gravity
-                
-                # Prevent going below floor
-                if self.location[1] < 0:
-                    self.location[1] = 0
-
-    def jump(self):
-        if not self.can_jump or not self.is_alive:
-            return
-        self.vertical_velocity = self.jump_height * self.jump_height_multiplier
-        self.on_ground = False
-
-    def hover(self, duration: float):
-        if self.max_hover_time <= 0 or not self.is_alive:
-            return
-        if self.hover_time < self.max_hover_time:
-            self.hover_time += duration
-            self.vertical_velocity = 0 # stop falling while hovering
-
-    def apply_gravity(self, arena_height: float = 600, platforms: list = None, arena_width: float = 800):
+    def process_input(self, input_data: dict, arena):
         if not self.is_alive:
             return
+        if "movement" in input_data:
+            self.move(input_data["movement"], arena)
+        self.handle_actions(input_data, arena)
 
-        # Don't apply gravity if actively flying
-        if self.is_currently_flying:
-            return
+    def handle_actions(self, input_data: dict, arena):
+        """Hook for game-specific actions (abilities, pickups, etc.)."""
+        return
 
-        # Update position based on vertical velocity
-        self.location[1] += self.vertical_velocity
-        # Apply gravity to velocity
-        self.vertical_velocity -= self.gravity * self.gravity_multiplier
+    def update(self, delta_time: float, arena):
+        self.last_arena_height = arena.height
 
-        # Check floor
-        if self.location[1] <= 0:
-            self.location[1] = 0
-            self.vertical_velocity = 0
-            self.on_ground = True
-            self.hover_time = 0
-        else:
-            self.on_ground = False
-            
-            # Check platforms
-            if platforms and self.vertical_velocity <= 0:
-                char_rect = self.get_rect()
-                # Feet position in screen coordinates
-                py_feet_y = arena_height - self.location[1]
+    def get_rect(self, arena_height: float = None) -> pygame.Rect:
+        if arena_height is None:
+            arena_height = self.last_arena_height
+        py_x = self.location[0] - self.width / 2
+        py_y = arena_height - self.location[1] - self.height / 2
+        return pygame.Rect(py_x, py_y, self.width, self.height)
 
-                for plat in platforms:
-                    # Don't allow dropping through floor-like platforms (wide platforms)
-                    # Consider platforms wider than 60% of arena width as floors
-                    is_floor = (plat.rect.width > arena_width * 0.6)
-                    if self.is_dropping and not is_floor:
-                        continue  # Skip collision with this platform if dropping through non-floor platforms
+    def get_draw_rect(self, arena_height: float = None, camera=None) -> pygame.Rect:
+        if camera is not None:
+            return camera.world_center_rect_to_screen(self.location[0], self.location[1], self.width, self.height)
+        return self.get_rect(arena_height)
 
-                    # If feet are at or below platform top, but were above it
-                    # We use a small buffer (20) to catch fast falling characters
-                    overlap = py_feet_y - plat.rect.top
-                    if 0 <= overlap < 20:
-                        # Horizontal check
-                        if self.location[0] + char_rect.width > plat.rect.left and self.location[0] < plat.rect.right:
-                            # Land on platform
-                            self.location[1] = arena_height - plat.rect.top
-                            self.vertical_velocity = 0
-                            self.on_ground = True
-                            self.hover_time = 0
-                            break
+    def move(self, direction, arena):
+        dx, dy = direction
+        self.location[0] += dx * self.speed
+        self.location[1] += dy * self.speed
+        margin_x = self.width / 2
+        margin_y = self.height / 2
+        self.location[0] = max(margin_x, min(arena.width - margin_x, self.location[0]))
+        self.location[1] = max(margin_y, min(arena.height - margin_y, self.location[1]))
 
-    def rotate(self, angle: float): # in degrees
-        if not self.can_rotate or not self.is_alive:
-            return
-        self.rotation = (self.rotation + angle * self.rotation_multiplier) % 360
-
-    def scale(self, scale_delta: float): # 0-100%
-        if not self.can_scale or not self.is_alive:
-            return
-        self.scale_ratio += scale_delta * self.scale_multiplier
-        # Keep scale positive
-        self.scale_ratio = max(0.1, self.scale_ratio)
-
-    """Vitals & Combat"""
     def take_damage(self, amount: float):
-        if not self.is_alive or amount <= 0 or self.is_invulnerable:
+        if not self.is_alive or amount <= 0:
             return
-        
-        # Simple defense calculation
-        reduced_damage = max(1, amount - (self.defense * self.defense_multiplier))
-        self.health -= reduced_damage
-        
+        self.health -= amount
         if self.health <= 0:
             self.health = 0
             self.die()
@@ -292,208 +114,32 @@ class BaseCharacter(NetworkObject):
             return
         self.health = min(self.max_health, self.health + amount)
 
-    def use_stamina(self, amount: float) -> bool:
-        if self.stamina >= amount:
-            self.stamina -= amount
-            return True
-        return False
-
-    def regenerate_stamina(self, amount: float):
-        if self.is_alive:
-            self.stamina = min(self.max_stamina, self.stamina + amount)
-
-    def attack(self, target: 'BaseCharacter'):
-        if not self.is_alive:
-            return
-        
-        damage = self.strength * self.damage_multiplier
-        target.take_damage(damage)
-
     def die(self):
-        """
-        Handle character death.
-        """
         self.is_alive = False
         self.lives -= 1
-        
-        if self.lives > 0:
-            print(f"{self.name} has died. Lives remaining: {self.lives}")
-        else:
+        if self.lives <= 0:
             self.is_eliminated = True
-            print(f"{self.name} has been eliminated from the game!")
 
     def respawn(self, respawn_location: [float, float] = None, arena=None):
         if self.is_eliminated:
             return
-
         if respawn_location:
             self.location = respawn_location.copy()
-        else:
-            self.location = self.spawn_location.copy()
-
-        # Reset vitals
         self.health = self.max_health
-        self.stamina = self.max_stamina
         self.is_alive = True
-        self.vertical_velocity = 0.0
-        self.on_ground = False
-        self.flight_time_remaining = self.max_flight_time
 
-        # Drop weapon on death
-        self.weapon = None
-
-        # Activate brief invulnerability period on respawn
-        self.is_invulnerable = True
-        self.invulnerability_timer = 8.0
-
-        # Spawn a pistol near the respawn location if arena is provided
-        if arena is not None:
-            from GameFolder.weapons.Pistol import Pistol
-            pistol_offset = random.randint(50, 100)
-            pistol_x = min(arena.width - 30, self.location[0] + pistol_offset)
-            pistol = Pistol([pistol_x, self.location[1]])
-            arena.spawn_weapon(pistol)
-
-        print(f"{self.name} has respawned!")
-
-    def pickup_weapon(self, weapon):
-        if self.weapon is not None:
-            return False
-        
-        self.weapon = weapon
-        return True
-
-    def drop_weapon(self):
-        self.weapon = None
-        return None
-
-    @staticmethod
-    def get_input_data(held_keys, mouse_buttons, mouse_pos):
-        """
-        TRANSFORMS raw hardware input into a logical input dictionary.
-        This runs on the CLIENT. Override this in GAME_character.py to add new keys.
-        """
-        input_data = {}
-        input_data['mouse_pos'] = mouse_pos
-
-        # Movement mapping
-        direction = [0, 0]
-        if pygame.K_LEFT in held_keys or pygame.K_a in held_keys: direction[0] = -1
-        if pygame.K_RIGHT in held_keys or pygame.K_d in held_keys: direction[0] = 1
-        if pygame.K_UP in held_keys or pygame.K_w in held_keys: direction[1] = 1
-        if pygame.K_DOWN in held_keys or pygame.K_s in held_keys: direction[1] = -1
-        input_data['movement'] = direction
-
-        # Combat mapping
-        if mouse_buttons[0]: input_data['shoot'] = mouse_pos
-        if mouse_buttons[2]: input_data['secondary_fire'] = mouse_pos
-        
-        if pygame.K_e in held_keys or pygame.K_f in held_keys:
-            input_data['special_fire'] = mouse_pos
-            input_data['special_fire_holding'] = True
-        
-        if pygame.K_q in held_keys:
-            input_data['drop_weapon'] = True
-
-        return input_data
-
-    def process_input(self, input_data: dict, arena):
-        """
-        EXECUTES actions based on the input dictionary.
-        This runs on the SERVER. Override this in GAME_character.py to add new abilities.
-        """
-        if not self.is_alive:
+    def draw(self, screen: pygame.Surface, arena_height: float = None, camera=None):
+        if not self._graphics_initialized:
             return
+        rect = self.get_draw_rect(arena_height, camera)
+        color = self.color if self.is_alive else (120, 120, 120)
+        pygame.draw.rect(screen, color, rect)
+        pygame.draw.rect(screen, (30, 30, 30), rect, 2)
 
-        # 1. Update arena-wide tracking
-        if 'mouse_pos' in input_data:
-            arena.last_mouse_world_pos = input_data['mouse_pos']
-
-        # 2. Movement
-        if 'movement' in input_data:
-            self.move(input_data['movement'], arena.platforms)
-
-        # 3. Combat Helper
-        def add_projs(res):
-            if not res: return
-            if isinstance(res, list): arena.projectiles.extend(res)
-            else: arena.projectiles.append(res)
-
-        if 'shoot' in input_data:
-            add_projs(self.shoot(input_data['shoot']))
-        
-        if 'secondary_fire' in input_data:
-            add_projs(self.secondary_fire(input_data['secondary_fire']))
-            
-        if 'special_fire' in input_data:
-            add_projs(self.special_fire(input_data['special_fire'], input_data.get('special_fire_holding', False)))
-
-        # 4. Weapon Management
-        if input_data.get('drop_weapon', False):
-            self.drop_weapon()  # Weapon is permanently discarded
-
-    def update(self, delta_time: float, platforms: list = None, arena_height: float = 600, arena_width: float = 800):
-        """Per-frame update logic"""
-        if not self.is_alive:
-            return
-        
-        # Flight recharge logic
-        if self.on_ground:
-            self.flight_time_remaining = min(self.max_flight_time, self.flight_time_remaining + delta_time * 1.5)
-            if self.flight_time_remaining >= self.max_flight_time:
-                self.needs_recharge = False
-        
-        # Fuel consumption
-        if self.is_currently_flying and not self.on_ground:
-            self.flight_time_remaining -= delta_time
-            if self.flight_time_remaining <= 0:
-                self.flight_time_remaining = 0
-                self.needs_recharge = True
-                self.can_fly = False
-                self.is_currently_flying = False
-
-        self.apply_gravity(arena_height, platforms, arena_width)
-        self.regenerate_stamina(self.agility * 0.1 * delta_time)
-
-        # Gradually recover multipliers
-        recovery_speed = 0.5 * delta_time
-        if self.speed_multiplier < 1.0:
-            self.speed_multiplier = min(1.0, self.speed_multiplier + recovery_speed)
-        elif self.speed_multiplier > 1.0:
-            self.speed_multiplier = max(1.0, self.speed_multiplier - recovery_speed)
-
-        if self.jump_height_multiplier < 1.0:
-            self.jump_height_multiplier = min(1.0, self.jump_height_multiplier + recovery_speed)
-        elif self.jump_height_multiplier > 1.0:
-            self.jump_height_multiplier = max(1.0, self.jump_height_multiplier - recovery_speed)
-
-        # Update invulnerability timer
-        if self.invulnerability_timer > 0:
-            self.invulnerability_timer -= delta_time
-            if self.invulnerability_timer <= 0:
-                self.invulnerability_timer = 0.0
-                self.is_invulnerable = False
-
-
-    def draw(self, screen: pygame.Surface, arena_height: float):
-        if not self.is_alive or not self._graphics_initialized:
-            return
-
-        # Map our y-up coordinates to Pygame's y-down coordinates
-        py_y = arena_height - self.location[1] - (self.height * self.scale_ratio)
-        py_rect = pygame.Rect(self.location[0], py_y, self.width * self.scale_ratio, self.height * self.scale_ratio)
-
-        # Attempt to draw image, fallback to rect
-        try:
-            # This is a placeholder, normally you'd load and cache images
-            # image = pygame.image.load(self.image)
-            # screen.blit(image, py_rect)
-            pygame.draw.rect(screen, (0, 255, 0), py_rect)
-        except:
-            pygame.draw.rect(screen, (0, 255, 0), py_rect)
-
-        # Draw health bar
-        health_bar_width = self.width * self.scale_ratio
-        health_ratio = self.health / self.max_health
-        pygame.draw.rect(screen, (255, 0, 0), (self.location[0], py_y - 10, health_bar_width, 5))
-        pygame.draw.rect(screen, (0, 255, 0), (self.location[0], py_y - 10, health_bar_width * health_ratio, 5))
+        health_ratio = self.health / max(1.0, self.max_health)
+        bar_width = self.width
+        bar_height = 6
+        bar_x = rect.x
+        bar_y = rect.y - 10
+        pygame.draw.rect(screen, (60, 60, 60), (bar_x, bar_y, bar_width, bar_height))
+        pygame.draw.rect(screen, (80, 220, 80), (bar_x, bar_y, bar_width * health_ratio, bar_height))

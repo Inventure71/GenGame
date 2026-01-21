@@ -100,8 +100,7 @@ class BasePlatform(NetworkObject):
             self.health = 0
             self.is_destroyed = True
 
-    def draw(self, screen: pygame.Surface, arena_height: float = None):
+    def draw(self, screen: pygame.Surface, arena_height: float = None, camera=None):
         if self.is_destroyed or not self._graphics_initialized:
             return
         pygame.draw.rect(screen, self.color, self.rect)
-

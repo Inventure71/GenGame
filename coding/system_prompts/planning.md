@@ -26,7 +26,7 @@ Each task must be **self-contained** (coding agent only sees current task). Incl
 - Exact class/method signatures
 - Integration steps (especially `setup.py` registration)
 - Coordinate context (World-Y vs Screen-Y) when physics/positions are involved
-- For melee or area-effect logic, explicitly call out how hitboxes are anchored: tasks must ensure hitboxes are centered on the character/projectile **center point** (not top-left), and must include tests that verify hits on both left and right sides of the attacker where applicable.
+- For melee or area-effect logic, explicitly call out how hitboxes are anchored: tasks must ensure hitboxes are centered on the character/effect **center point** (not top-left), and must include tests that verify hits on both left and right sides of the attacker where applicable.
 
 ## Task Quality
 - **Atomic**: One clear change per task.

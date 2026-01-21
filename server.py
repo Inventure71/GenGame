@@ -309,7 +309,9 @@ class GameServer:
             setup_module = GameFolder.setup
 
             # Recreate arena with actual player names
-            self.arena = setup_module.setup_battle_arena(width=1400, height=900, headless=True, player_names=connected_player_names)
+            world_width = getattr(setup_module, "WORLD_WIDTH", 1400)
+            world_height = getattr(setup_module, "WORLD_HEIGHT", 900)
+            self.arena = setup_module.setup_battle_arena(width=world_width, height=world_height, headless=True, player_names=connected_player_names)
 
             # In practice mode, disable game over checking
             if self.practice_mode:
