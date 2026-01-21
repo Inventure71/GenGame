@@ -226,29 +226,44 @@ class NetworkClient:
         
         # Mark as ready ONCE after all files sent
         self.mark_patches_ready()
+
+    def _queue_chunked_file(
+        self,
+        file_path: str,
+        message_factory: Callable[[int, int, bytes], dict],
+        on_chunk: Optional[Callable[[int, int, bytes], None]] = None,
+        chunk_size: int = 64 * 1024,
+        file_size: Optional[int] = None,
+    ) -> int:
+        """Queue a file for transfer in chunks and return total_chunks."""
+        if file_size is None:
+            file_size = os.path.getsize(file_path)
+        total_chunks = (file_size + chunk_size - 1) // chunk_size
+
+        with open(file_path, 'rb') as f:
+            for chunk_num in range(total_chunks):
+                chunk_data = f.read(chunk_size)
+                message = message_factory(chunk_num, total_chunks, chunk_data)
+                self.outgoing_queue.append(message)
+                if on_chunk:
+                    on_chunk(chunk_num, total_chunks, chunk_data)
+
+        return total_chunks
     
     def _send_patch_file(self, file_path: str, patch_name: str):
         """Send a patch file to server in chunks."""
         try:
-            file_size = os.path.getsize(file_path)
-            chunk_size = 64 * 1024  # 64KB chunks
-            total_chunks = (file_size + chunk_size - 1) // chunk_size
-            
-            with open(file_path, 'rb') as f:
-                for chunk_num in range(total_chunks):
-                    chunk_data = f.read(chunk_size)
-                    
-                    message = {
-                        'type': 'patch_chunk',
-                        'patch_name': patch_name,
-                        'chunk_num': chunk_num,
-                        'total_chunks': total_chunks,
-                        'data': chunk_data,
-                        'player_id': self.player_id
-                    }
-                    
-                    self.outgoing_queue.append(message)
-            
+            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
+                return {
+                    'type': 'patch_chunk',
+                    'patch_name': patch_name,
+                    'chunk_num': chunk_num,
+                    'total_chunks': total_chunks,
+                    'data': chunk_data,
+                    'player_id': self.player_id
+                }
+
+            total_chunks = self._queue_chunked_file(file_path, message_factory)
             print(f"Sent patch file: {patch_name} ({total_chunks} chunks)")
             
         except Exception as e:
@@ -321,34 +336,24 @@ class NetworkClient:
                 print(f"File not found: {file_path}")
                 return False
 
-            file_size = os.path.getsize(file_path)
             file_name = os.path.basename(file_path)
             target_path = target_path or file_name
+            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
+                return {
+                    'type': 'file_chunk',
+                    'file_path': target_path,
+                    'chunk_num': chunk_num,
+                    'total_chunks': total_chunks,
+                    'data': chunk_data,
+                    'player_id': self.player_id
+                }
 
-            # Read file in chunks to avoid memory issues
-            chunk_size = 64 * 1024  # 64KB chunks
-            total_chunks = (file_size + chunk_size - 1) // chunk_size
+            def on_chunk(chunk_num: int, total_chunks: int, _chunk_data: bytes) -> None:
+                if self.on_file_transfer_progress:
+                    progress = (chunk_num + 1) / total_chunks
+                    self.on_file_transfer_progress(target_path, progress, 'sending')
 
-            with open(file_path, 'rb') as f:
-                for chunk_num in range(total_chunks):
-                    chunk_data = f.read(chunk_size)
-
-                    message = {
-                        'type': 'file_chunk',
-                        'file_path': target_path,
-                        'chunk_num': chunk_num,
-                        'total_chunks': total_chunks,
-                        'data': chunk_data,
-                        'player_id': self.player_id
-                    }
-
-                    self.outgoing_queue.append(message)
-
-                    # Call progress callback if available
-                    if self.on_file_transfer_progress:
-                        progress = (chunk_num + 1) / total_chunks
-                        self.on_file_transfer_progress(target_path, progress, 'sending')
-
+            self._queue_chunked_file(file_path, message_factory, on_chunk=on_chunk)
             return True
 
         except Exception as e:
@@ -389,6 +394,15 @@ class NetworkClient:
                 return None
         return data
 
+    def _maybe_request_file_sync(self, reason: str) -> bool:
+        """Request file sync if we're missing it and haven't asked yet."""
+        if self.file_sync_complete or self.file_sync_requested:
+            return False
+        print(f"{reason} - requesting file sync for recovery")
+        self.file_sync_requested = True
+        self.request_file_sync()
+        return True
+
     def _receive_loop(self):
         """Background thread for receiving messages."""
         while self.running and self.connected:
@@ -416,10 +430,7 @@ class NetworkClient:
                             # If this is game_state and file sync hasn't completed, skip it
                             if message.get('type') == 'game_state' and not self.file_sync_complete:
                                 print("[warning] Received game_state before file sync complete - skipping")
-                                # Request file sync if we haven't already
-                                if not self.file_sync_requested:
-                                    self.file_sync_requested = True
-                                    self.request_file_sync()
+                                self._maybe_request_file_sync("Received game_state before file sync complete")
                                 continue
                             
                             self.incoming_queue.append(message)
@@ -428,11 +439,7 @@ class NetworkClient:
                             print(f"Failed to unpickle message: {type(pickle_error).__name__} (data length: {len(data)} bytes)")
                             
                             # If file sync hasn't completed, try requesting it as recovery
-                            if not self.file_sync_complete and not self.file_sync_requested:
-                                print("Unpickle error - requesting file sync for recovery")
-                                self.file_sync_requested = True
-                                self.request_file_sync()
-                                # Don't disconnect immediately - wait for file sync
+                            if self._maybe_request_file_sync("Unpickle error"):
                                 continue
                             
                             self.disconnect()
@@ -449,10 +456,7 @@ class NetworkClient:
                 # Handle UTF-8 decode errors specifically
                 print(f"Receive error: UnicodeDecodeError at position {decode_error.start}")
                 # Try recovery if file sync hasn't completed
-                if not self.file_sync_complete and not self.file_sync_requested:
-                    print("UnicodeDecodeError - requesting file sync for recovery")
-                    self.file_sync_requested = True
-                    self.request_file_sync()
+                if self._maybe_request_file_sync("UnicodeDecodeError"):
                     continue
                 self.disconnect()
                 break
@@ -534,7 +538,7 @@ class NetworkClient:
                 if msgpack is None:
                     print("[error] Msgpack payload received but msgpack is unavailable")
                     return None
-                return msgpack.unpackb(data, raw=False)
+                return msgpack.unpackb(data, raw=False, strict_map_key=False)
             return pickle.loads(data)
         except Exception as e:
             print(f"[error] Failed to decode game state payload ({serialization}): {e}")
@@ -684,26 +688,30 @@ class NetworkClient:
 
             print(f"📦 BACKUP SEND: Compressed '{backup_name}' to {file_size} bytes, will send in {total_chunks} chunks")
 
-            # Read and send in chunks
-            with open(temp_path, 'rb') as f:
-                for chunk_num in range(total_chunks):
-                    chunk_data = f.read(chunk_size)
+            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
+                return {
+                    'type': 'file_chunk',
+                    'backup_name': backup_name,
+                    'chunk_num': chunk_num,
+                    'total_chunks': total_chunks,
+                    'data': chunk_data,
+                    'is_backup': True
+                }
 
-                    chunk_message = {
-                        'type': 'file_chunk',
-                        'backup_name': backup_name,
-                        'chunk_num': chunk_num,
-                        'total_chunks': total_chunks,  # Now included in EVERY chunk
-                        'data': chunk_data,
-                        'is_backup': True
-                    }
+            def on_chunk(chunk_num: int, total_chunks: int, chunk_data: bytes) -> None:
+                progress = (chunk_num + 1) / total_chunks * 100
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 📤 BACKUP SEND: Queued chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' - data size: {len(chunk_data)} bytes")
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
 
-                    self.outgoing_queue.append(chunk_message)
-                    progress = (chunk_num + 1) / total_chunks * 100
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] 📤 BACKUP SEND: Queued chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' - data size: {len(chunk_data)} bytes")
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
+            self._queue_chunked_file(
+                temp_path,
+                message_factory,
+                on_chunk=on_chunk,
+                chunk_size=chunk_size,
+                file_size=file_size,
+            )
 
             print(f"[success] BACKUP SEND: Successfully queued all {total_chunks} chunks for backup '{backup_name}' to server")
 
@@ -745,6 +753,17 @@ class NetworkClient:
         if transfer['received_chunks'] == total_chunks:
             self._assemble_file(file_path)
 
+    def _queue_file_ack(self, file_path: str, success: bool, error: Optional[str] = None):
+        message = {
+            'type': 'file_ack',
+            'file_path': file_path,
+            'player_id': self.player_id,
+            'success': success
+        }
+        if error:
+            message['error'] = error
+        self.outgoing_queue.append(message)
+
     def _assemble_file(self, file_path: str):
         """Assemble received chunks into a complete file."""
         transfer = self.file_transfers[file_path]
@@ -762,13 +781,7 @@ class NetworkClient:
                         raise ValueError(f"Missing chunk {chunk_num} for file {file_path}")
 
             # Send acknowledgment to server
-            message = {
-                'type': 'file_ack',
-                'file_path': file_path,
-                'player_id': self.player_id,
-                'success': True
-            }
-            self.outgoing_queue.append(message)
+            self._queue_file_ack(file_path, True)
 
             # Call completion callback
             if self.on_file_received:
@@ -780,14 +793,7 @@ class NetworkClient:
             print(f"Failed to assemble file {file_path}: {e}")
 
             # Send failure acknowledgment
-            message = {
-                'type': 'file_ack',
-                'file_path': file_path,
-                'player_id': self.player_id,
-                'success': False,
-                'error': str(e)
-            }
-            self.outgoing_queue.append(message)
+            self._queue_file_ack(file_path, False, str(e))
 
             # Call completion callback with failure
             if self.on_file_received:
