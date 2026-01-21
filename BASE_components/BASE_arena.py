@@ -187,6 +187,11 @@ class Arena:
 
     def check_winner(self):
         if self.game_over: return
+
+        # In practice mode, never end the game
+        if hasattr(self, 'practice_mode') and self.practice_mode:
+            return
+
         alive = [char for char in self.characters if not char.is_eliminated]
         if len(alive) == 1:
             self.winner = alive[0]

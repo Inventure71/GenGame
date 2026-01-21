@@ -17,7 +17,53 @@ class MenuRenderers:
     def __init__(self, menu_instance):
         self.menu = menu_instance
         self.managers = {}
+
+        # Initialize dynamic scaling system
+        self._init_scaling()
+
         self._init_managers()
+
+    def _init_scaling(self):
+        """Initialize the dynamic scaling system for all menu components."""
+        # Get screen dimensions
+        self.screen_width, self.screen_height = self.menu.screen.get_size()
+
+        # Reference dimensions (original design)
+        self.REF_WIDTH, self.REF_HEIGHT = 1400, 900
+
+        # Scaling functions
+        self.scale_x = lambda x: int(x * self.screen_width / self.REF_WIDTH)
+        self.scale_y = lambda y: int(y * self.screen_height / self.REF_HEIGHT)
+
+        # Font scaling with automatic fallback
+        base_scale = min(self.screen_width / self.REF_WIDTH, self.screen_height / self.REF_HEIGHT)
+        self.scale_font_size = lambda size: max(12, int(size * base_scale))
+
+        # Pre-create scaled fonts with fallback handling
+        self._create_scaled_fonts()
+
+    def _create_scaled_fonts(self):
+        """Create scaled fonts with automatic fallback to system fonts."""
+        try:
+            self.scaled_menu_font = pygame.font.Font(None, self.scale_font_size(48))
+            self.scaled_button_font = pygame.font.Font(None, self.scale_font_size(32))
+            self.scaled_small_font = pygame.font.Font(None, self.scale_font_size(24))
+        except Exception as e:
+            print(f"Warning: Default fonts failed ({e}), using system fonts")
+            try:
+                self.scaled_menu_font = pygame.font.SysFont("Arial", self.scale_font_size(48))
+                self.scaled_button_font = pygame.font.SysFont("Arial", self.scale_font_size(32))
+                self.scaled_small_font = pygame.font.SysFont("Arial", self.scale_font_size(24))
+            except Exception as e2:
+                print(f"Warning: System fonts also failed ({e2}), using minimal fonts")
+                # Ultimate fallback - create fonts at minimum size
+                self.scaled_menu_font = pygame.font.Font(None, 12)
+                self.scaled_button_font = pygame.font.Font(None, 12)
+                self.scaled_small_font = pygame.font.Font(None, 12)
+
+    def _get_scaled_fonts(self):
+        """Get the appropriate fonts based on scaling (returns tuple: menu, button, small)."""
+        return self.scaled_menu_font, self.scaled_button_font, self.scaled_small_font
 
     def _init_managers(self):
         """Initialize UIManagers for each menu state."""
@@ -35,136 +81,178 @@ class MenuRenderers:
 
     def _setup_settings_menu(self):
         ui = self.managers["settings"]
-        center_x = 700
+        center_x = self.screen_width // 2
 
-        ui.add(Label(center_x, 40, "Settings", self.menu.menu_font, center=True))
+        # Get scaled fonts
+        menu_font, button_font, small_font = self._get_scaled_fonts()
+
+        ui.add(Label(center_x, self.scale_y(40), "Settings", menu_font, center=True))
 
         # Predefined Username
-        ui.add(Label(center_x - 200, 120, "Username:", self.menu.button_font))
-        ui.add(TextField(center_x - 200, 150, 400, 45, self.menu.button_font, name="settings_username"))
+        ui.add(Label(center_x - self.scale_x(200), self.scale_y(120), "Username:", button_font))
+        ui.add(TextField(center_x - self.scale_x(200), self.scale_y(150), self.scale_x(400), self.scale_y(45), button_font, name="settings_username"))
 
         # API Keys
-        ui.add(Label(center_x - 200, 220, "API Keys:", self.menu.button_font))
-        ui.add(Label(center_x - 200, 250, "Gemini API Key:", self.menu.small_font))
-        ui.add(TextFieldWithPaste(center_x - 200, 270, 400, 45, self.menu, self.menu.button_font, name="settings_gemini_key"))
-        ui.add(Label(center_x - 200, 330, "OpenAI API Key:", self.menu.small_font))
-        ui.add(TextFieldWithPaste(center_x - 200, 350, 400, 45, self.menu, self.menu.button_font, name="settings_openai_key"))
+        ui.add(Label(center_x - self.scale_x(200), self.scale_y(220), "API Keys:", button_font))
+        ui.add(Label(center_x - self.scale_x(200), self.scale_y(250), "Gemini API Key:", small_font))
+        ui.add(TextFieldWithPaste(center_x - self.scale_x(200), self.scale_y(270), self.scale_x(400), self.scale_y(45), self.menu, button_font, name="settings_gemini_key"))
+        ui.add(Label(center_x - self.scale_x(200), self.scale_y(330), "OpenAI API Key:", small_font))
+        ui.add(TextFieldWithPaste(center_x - self.scale_x(200), self.scale_y(350), self.scale_x(400), self.scale_y(45), self.menu, button_font, name="settings_openai_key"))
 
         # Provider Selection
-        ui.add(Label(center_x - 200, 420, "AI Provider:", self.menu.button_font))
-        ui.add(Button(center_x - 200, 450, 190, 45, "GEMINI", self.menu.button_font, lambda: self._on_provider_select("GEMINI"), name="btn_gemini"))
-        ui.add(Button(center_x + 10, 450, 190, 45, "OPENAI", self.menu.button_font, lambda: self._on_provider_select("OPENAI"), name="btn_openai"))
+        ui.add(Label(center_x - self.scale_x(200), self.scale_y(420), "AI Provider:", button_font))
+        ui.add(Button(center_x - self.scale_x(200), self.scale_y(450), self.scale_x(190), self.scale_y(45), "GEMINI", button_font, lambda: self._on_provider_select("GEMINI"), name="btn_gemini"))
+        ui.add(Button(center_x + self.scale_x(10), self.scale_y(450), self.scale_x(190), self.scale_y(45), "OPENAI", button_font, lambda: self._on_provider_select("OPENAI"), name="btn_openai"))
 
         # Model Selection
-        ui.add(Label(center_x - 200, 520, "AI Model:", self.menu.button_font))
-        ui.add(TextField(center_x - 200, 550, 400, 45, self.menu.button_font, name="settings_model"))
+        ui.add(Label(center_x - self.scale_x(200), self.scale_y(520), "AI Model:", button_font))
+        ui.add(TextField(center_x - self.scale_x(200), self.scale_y(550), self.scale_x(400), self.scale_y(45), button_font, name="settings_model"))
 
         # Save and Back buttons
-        ui.add(Button(center_x - 150, 650, 140, 50, "Save", self.menu.button_font, self.menu.on_settings_save_click, style="primary"))
-        ui.add(Button(center_x + 10, 650, 140, 50, "Back", self.menu.button_font, self.menu.on_settings_back_click))
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(650), self.scale_x(140), self.scale_y(50), "Save", button_font, self.menu.on_settings_save_click, style="primary"))
+        ui.add(Button(center_x + self.scale_x(10), self.scale_y(650), self.scale_x(140), self.scale_y(50), "Back", button_font, self.menu.on_settings_back_click))
 
     def _setup_main_menu(self):
         ui = self.managers["main"]
-        center_x = 700
-        
-        # Player ID Field
-        ui.add(TextField(center_x - 150, 20, 300, 40, self.menu.button_font, placeholder="Enter Player ID", name="player_id"))
-        
-        # Title
-        ui.add(Label(center_x, 120, "CORE CONFLICT", self.menu.menu_font, center=True))
-        ui.add(Label(center_x, 180, "Multiplayer Gaming Platform", self.menu.small_font, center=True))
 
-        # Buttons
-        button_y = 250
-        button_spacing = 80
-        btns = [
-            ("Create Local Room", self.menu.on_create_local_room_click, "normal"),
-            ("Remote Public Game", self.menu.on_create_remote_room_click, "normal"),
-            ("Join Room", self.menu.on_join_room_click, "normal"),
-            ("Game Library", self.menu.on_library_click, "normal"),
-            ("Agent Content", self.menu.on_agent_content_click, "normal"),
-            ("Settings", self.menu.on_settings_click, "normal"),
-            ("Quit", self.menu.on_quit_click, "danger")
-        ]
+        # Get scaled fonts
+        menu_font, button_font, small_font = self._get_scaled_fonts()
 
-        for text, callback, style in btns:
-            ui.add(Button(center_x - 150, button_y, 300, 60, text, self.menu.button_font, callback, style=style))
-            button_y += button_spacing
+        # Player ID Field (top center, scaled)
+        player_id_width = self.scale_x(300)
+        player_id_height = self.scale_y(40)
+        ui.add(TextField(self.scale_x(550), self.scale_y(30), player_id_width, player_id_height, button_font, placeholder="Enter Player ID", name="player_id"))
+
+        # Title (left side, scaled)
+        ui.add(Label(self.scale_x(200), self.scale_y(90), "CORE CONFLICT", menu_font))
+        ui.add(Label(self.scale_x(200), self.scale_y(150), "Multiplayer Gaming Platform", small_font))
+
+        # Buttons layout (scaled)
+        button_y = self.scale_y(200)
+        button_spacing = self.scale_y(65)
+        button_height = self.scale_y(55)
+        button_width = self.scale_x(300)
+        dual_button_width = self.scale_x(250)
+
+        # Public Lobby (was "Remote Public Game")
+        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Public Lobby", button_font, self.menu.on_create_remote_room_click, style="normal"))
+        button_y += button_spacing
+
+        # Create Local Room and Practice Mode on same line (symmetric around screen center)
+        center_x = self.screen_width // 2
+        left_dual_x = center_x - dual_button_width
+        right_dual_x = center_x
+
+        ui.add(Button(left_dual_x, button_y, dual_button_width, button_height, "Create Local Room", button_font, self.menu.on_create_local_room_click, style="normal"))
+        ui.add(Button(right_dual_x, button_y, dual_button_width, button_height, "Practice Mode", button_font, self.menu.on_practice_mode_click, style="normal"))
+        button_y += button_spacing
+
+        # Join Room
+        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Join Room", button_font, self.menu.on_join_room_click, style="normal"))
+        button_y += button_spacing
+
+        # Creator Agent (was "Agent Content")
+        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Creator Agent", button_font, self.menu.on_agent_content_click, style="normal"))
+        button_y += button_spacing
+
+        # Patches Library (was "Game Library")
+        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Patches Library", button_font, self.menu.on_library_click, style="normal"))
+        button_y += button_spacing
+
+        # Settings button (above quit)
+        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Settings", button_font, self.menu.on_settings_click, style="normal"))
+        button_y += button_spacing
+
+        # Quit
+        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Quit", button_font, self.menu.on_quit_click, style="danger"))
 
     def _setup_join_room_menu(self):
         ui = self.managers["join_room_code"]
-        center_x = 700
+        center_x = self.screen_width // 2
 
-        ui.add(Label(center_x, 80, "Join Room", self.menu.menu_font, center=True))
-        ui.add(Label(center_x, 140, "Enter the room code to join:", self.menu.button_font, center=True))
+        # Get scaled fonts
+        menu_font, button_font, small_font = self._get_scaled_fonts()
 
-        ui.add(TextFieldWithPaste(center_x - 200, 200, 400, 50, self.menu, self.menu.button_font, placeholder="Enter room code", name="join_code"))
+        ui.add(Label(center_x, self.scale_y(80), "Join Room", menu_font, center=True))
+        ui.add(Label(center_x, self.scale_y(140), "Enter the room code to join:", button_font, center=True))
 
-        ui.add(Button(center_x - 150, 320, 300, 60, "Join Room", self.menu.button_font, self.menu.on_join_room_with_code_click, style="primary"))
-        ui.add(Button(center_x - 150, 400, 300, 60, "Back to Menu", self.menu.button_font, self.menu.on_join_room_back_click))
+        ui.add(TextFieldWithPaste(center_x - self.scale_x(200), self.scale_y(200), self.scale_x(400), self.scale_y(50), self.menu, button_font, placeholder="Enter room code", name="join_code"))
+
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(320), self.scale_x(300), self.scale_y(60), "Join Room", button_font, self.menu.on_join_room_with_code_click, style="primary"))
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(400), self.scale_x(300), self.scale_y(60), "Back to Menu", button_font, self.menu.on_join_room_back_click))
 
     def _setup_room_menu(self):
         ui = self.managers["room"]
-        center_x = 700
-        
-        ui.add(Label(center_x, 40, "Game Room", self.menu.menu_font, center=True))
+        center_x = self.screen_width // 2
+
+        # Get scaled fonts
+        menu_font, button_font, small_font = self._get_scaled_fonts()
+
+        ui.add(Label(center_x, self.scale_y(40), "Game Room", menu_font, center=True))
         ui.add(RoomStatusBar(self.menu))
-        
-        ui.add(PatchBrowser(150, 130, 1100, 450, self.menu, name="patch_browser"))
-        
-        ui.add(Button(center_x - 150, 620, 300, 60, "Mark as Ready", self.menu.button_font, self.menu.on_ready_click, name="ready_btn"))
-        ui.add(Button(center_x - 150, 700, 300, 60, "Back to Menu", self.menu.button_font, self.menu.on_back_to_menu_click))
+
+        ui.add(PatchBrowser(self.scale_x(150), self.scale_y(130), self.scale_x(1100), self.scale_y(450), self.menu, name="patch_browser"))
+
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(620), self.scale_x(300), self.scale_y(60), "Mark as Ready", button_font, self.menu.on_ready_click, name="ready_btn"))
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(700), self.scale_x(300), self.scale_y(60), "Back to Menu", button_font, self.menu.on_back_to_menu_click))
 
     def _setup_library_menu(self):
         ui = self.managers["library"]
-        center_x = 700
-        
-        ui.add(Label(center_x, 40, "Game Library", self.menu.menu_font, center=True))
-        ui.add(Label(center_x, 90, "Available Patches", self.menu.small_font, center=True))
-        
+        center_x = self.screen_width // 2
+
+        # Get scaled fonts
+        menu_font, button_font, small_font = self._get_scaled_fonts()
+
+        ui.add(Label(center_x, self.scale_y(40), "Game Library", menu_font, center=True))
+        ui.add(Label(center_x, self.scale_y(90), "Available Patches", small_font, center=True))
+
         # Simple read-only browser (reuse PatchBrowser component)
-        ui.add(PatchBrowser(150, 130, 1100, 450, self.menu))
-        
-        ui.add(Button(center_x - 150, 620, 300, 60, "Back to Menu", self.menu.button_font, self.menu.on_library_back_click))
+        ui.add(PatchBrowser(self.scale_x(150), self.scale_y(130), self.scale_x(1100), self.scale_y(450), self.menu))
+
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(620), self.scale_x(300), self.scale_y(60), "Back to Menu", button_font, self.menu.on_library_back_click))
 
     def _setup_agent_menu(self):
         ui = self.managers["agent"]
-        main_x = 410
-        center_x = 860 # Center of the area to the right of sidebar (410 + 900/2)
-        
+
+        # Get scaled fonts
+        menu_font, button_font, small_font = self._get_scaled_fonts()
+
+        main_x = self.scale_x(410)
+        center_x = main_x + self.scale_x(450)  # Center of the area to the right of sidebar
+
         # Sidebar Panel
-        ui.add(Panel(0, 0, 380, 900, color=(30, 30, 45)))
-        ui.add(Label(190, 40, "Available Patches", self.menu.button_font, center=True))
-        
-        patch_list = ui.add(ScrollableList(10, 80, 360, 700, name="sidebar_patches"))
+        ui.add(Panel(0, 0, self.scale_x(380), self.screen_height, color=(30, 30, 45)))
+        ui.add(Label(self.scale_x(190), self.scale_y(40), "Available Patches", button_font, center=True))
+
+        patch_list = ui.add(ScrollableList(self.scale_x(10), self.scale_y(80), self.scale_x(360), self.scale_y(700), name="sidebar_patches"))
         patch_list.on_item_click = lambda idx, item: self.menu.handlers.on_load_patch_to_agent_click(idx)
-        
+
         # Main Workspace (Prompt and Start Agent)
-        ui.add(Label(center_x, 40, "Agent Control Center", self.menu.menu_font, center=True))
-        ui.add(AgentWorkspace(main_x, 90, 900, 380, self.menu, name="agent_workspace"))
+        ui.add(Label(center_x, self.scale_y(40), "Agent Control Center", menu_font, center=True))
+        ui.add(AgentWorkspace(main_x, self.scale_y(90), self.scale_x(900), self.scale_y(380), self.menu, name="agent_workspace"))
         
         # --- Bottom Section organized into sections ---
-        
+
         # 1. Patch Saving Section
-        save_y = 490
-        ui.add(Panel(main_x - 10, save_y - 10, 920, 75, color=(35, 35, 50), border_width=1)) # Small frame for saving
-        ui.add(Label(main_x, save_y + 5, "Patch Name:", self.menu.button_font))
-        ui.add(TextField(main_x + 150, save_y, 300, 45, self.menu.button_font, name="patch_name"))
-        ui.add(Button(main_x + 460, save_y, 140, 45, "Save Patch", self.menu.button_font, self.menu.on_agent_save_patch_click))
-        
+        save_y = self.scale_y(490)
+        ui.add(Panel(main_x - self.scale_x(10), save_y - self.scale_y(10), self.scale_x(920), self.scale_y(75), color=(35, 35, 50), border_width=1)) # Small frame for saving
+        ui.add(Label(main_x, save_y + self.scale_y(5), "Patch Name:", button_font))
+        ui.add(TextField(main_x + self.scale_x(150), save_y, self.scale_x(300), self.scale_y(45), button_font, name="patch_name"))
+        ui.add(Button(main_x + self.scale_x(460), save_y, self.scale_x(140), self.scale_y(45), "Save Patch", button_font, self.menu.on_agent_save_patch_click))
+
         # 2. Workspace Management Section (Left Column)
-        mgmt_y = 585
-        ui.add(Label(main_x, mgmt_y, "No patch loaded", self.menu.button_font, name="loaded_patch"))
-        ui.add(Button(main_x, mgmt_y + 45, 200, 45, "Reset to Base", self.menu.button_font, self.menu.handlers.on_reset_to_base_click, style="danger"))
-        ui.add(Button(main_x, mgmt_y + 105, 250, 45, "Save Current State", self.menu.button_font, self.menu.handlers.on_save_current_state_click))
-        
+        mgmt_y = self.scale_y(585)
+        ui.add(Label(main_x, mgmt_y, "No patch loaded", button_font, name="loaded_patch"))
+        ui.add(Button(main_x, mgmt_y + self.scale_y(45), self.scale_x(200), self.scale_y(45), "Reset to Base", button_font, self.menu.handlers.on_reset_to_base_click, style="danger"))
+        ui.add(Button(main_x, mgmt_y + self.scale_y(105), self.scale_x(250), self.scale_y(45), "Save Current State", button_font, self.menu.handlers.on_save_current_state_click))
+
         # 3. Test & Fix Section (Right Column)
         test_y = mgmt_y
-        ui.add(Label(center_x + 150, test_y, "Results: Pending...", self.menu.button_font, center=True, name="test_results"))
-        ui.add(Button(center_x + 150 - 150, test_y + 45, 300, 50, "Fix Issues", self.menu.button_font, self.menu.on_agent_fix_click, name="fix_btn"))
-        
+        ui.add(Label(center_x + self.scale_x(150), test_y, "Results: Pending...", button_font, center=True, name="test_results"))
+        ui.add(Button(center_x + self.scale_x(150) - self.scale_x(150), test_y + self.scale_y(45), self.scale_x(300), self.scale_y(50), "Fix Issues", button_font, self.menu.on_agent_fix_click, name="fix_btn"))
+
         # 4. Navigation
-        ui.add(Button(center_x - 150, 820, 300, 55, "Back to Main Menu", self.menu.button_font, self.menu.on_agent_back_click))
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(820), self.scale_x(300), self.scale_y(55), "Back to Main Menu", button_font, self.menu.on_agent_back_click))
 
     def _get_current_ui(self):
         return self.managers.get(self.menu.current_menu)
@@ -224,6 +312,7 @@ class MenuRenderers:
                     comp.color = (100, 255, 100) if passed == total else (255, 100, 100)
             elif comp.name == "fix_btn":
                 comp.visible = bool(self.menu.agent_results and self.menu.agent_results['passed'] < self.menu.agent_results['total'])
+                comp.enabled = not self.menu.agent_running
             elif comp.name == "settings_username":
                 if not comp.focused: comp.text = getattr(self.menu, 'settings_username', '')
                 else: self.menu.settings_username = comp.text
@@ -253,6 +342,8 @@ class MenuRenderers:
                 )
 
                 if should_refresh:
+                    # Store current scroll position
+                    current_scroll = comp.scroll_offset
                     comp.clear_items()
                     for i, patch in enumerate(self.menu.patch_manager.available_patches):
                         name = patch.name if len(patch.name) < 25 else patch.name[:22] + "..."
@@ -263,6 +354,8 @@ class MenuRenderers:
                             display_name = f"{name} ({patch.num_changes})"
                         comp.add_item(display_name, patch)
                     comp.last_loaded_idx = current_loaded_idx
+                    # Restore scroll position
+                    comp.scroll_offset = current_scroll
             elif comp.name == "loaded_patch":
                 # Update the loaded patch indicator
                 if hasattr(self.menu, 'agent_selected_patch_idx') and self.menu.agent_selected_patch_idx >= 0:

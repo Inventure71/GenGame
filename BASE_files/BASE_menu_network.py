@@ -37,9 +37,9 @@ class MenuNetwork:
                     continue
         raise RuntimeError(f"No available port found in range {preferred_port}-{preferred_port + max_tries - 1}")
 
-    def run_server(self, host: str = "127.0.0.1", port: int = 5555):
+    def run_server(self, host: str = "127.0.0.1", port: int = 5555, practice_mode: bool = False):
         """Start the game server."""
-        self.server_instance = GameServer(host, port)
+        self.server_instance = GameServer(host, port, practice_mode=practice_mode)
         # Start server in a thread
         self.server_thread = threading.Thread(target=self.server_instance.start)
         self.server_thread.start()
@@ -78,9 +78,12 @@ class MenuNetwork:
 
         return True
 
-    def create_local_room(self):
+    def create_local_room(self, practice_mode: bool = False):
         """Create a local room (accessible on the local network)."""
-        print("Creating local room...")
+        if practice_mode:
+            print("Creating practice room...")
+        else:
+            print("Creating local room...")
 
         # Bind to all interfaces (0.0.0.0) so other machines can connect
         bind_host = "0.0.0.0"
@@ -90,12 +93,18 @@ class MenuNetwork:
         self.server_port = chosen_port
 
         # Start server first, then generate room code using the actual chosen port
-        self.run_server(bind_host, self.server_port)
+        self.run_server(bind_host, self.server_port, practice_mode=practice_mode)
 
-        from BASE_files.BASE_helpers import get_local_ip
-        local_ip = get_local_ip()
-        self.menu.room_code = encrypt_code(local_ip, self.server_port, "LOCAL")
-        print(f"Local room code: {self.menu.room_code}")
+        if practice_mode:
+            # Practice mode uses simple room code
+            self.menu.room_code = "PRACTICE"
+            print(f"Practice room created: {self.menu.room_code}")
+        else:
+            # Normal local room uses encrypted code
+            from BASE_files.BASE_helpers import get_local_ip
+            local_ip = get_local_ip()
+            self.menu.room_code = encrypt_code(local_ip, self.server_port, "LOCAL")
+            print(f"Local room code: {self.menu.room_code}")
 
         self.connect_to_server("localhost", self.server_port)
 

@@ -39,9 +39,10 @@ class GameServer:
     Authoritative server that runs the game simulation and broadcasts state to clients.
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 5555):
+    def __init__(self, host: str = "0.0.0.0", port: int = 5555, practice_mode: bool = False):
         self.host = host
         self.port = port
+        self.practice_mode = practice_mode
         self.running = False
 
         # Network setup
@@ -107,6 +108,9 @@ class GameServer:
         self.backup_transfer_client = None
         self.backup_transfer_name = None
         self.backup_transfer_start_time = 0.0
+
+        # Patch validation limits
+        self.MAX_PATCHES_PER_CLIENT = 1  # Configurable limit, set to 1 for now
 
         print(f"Server initialized on {host}:{port}")
         if host == "0.0.0.0":
@@ -284,15 +288,22 @@ class GameServer:
         """Recreate the arena with the currently connected players."""
         # Get list of connected player names (these are already the custom names)
         connected_player_names = list(self.clients.keys())
-        print(f"Recreating arena with players: {connected_player_names}")
-        
+
+        # In practice mode, add a dummy AI player with unlimited lives
+        if self.practice_mode and len(connected_player_names) == 1:
+            # Add dummy AI player for practice mode
+            connected_player_names.append("AI_Bot_Practice")
+            print(f"Practice mode: Adding AI bot. Players: {connected_player_names}")
+        else:
+            print(f"Recreating arena with players: {connected_player_names}")
+
         try:
             # CRITICAL FIX: Always re-import setup to get the fresh module object after a reload!
             # The global 'GameFolder.setup' might point to the old module object.
             if 'GameFolder.setup' in sys.modules:
                 # Force re-import to pick up new modules
                 del sys.modules['GameFolder.setup']
-            
+
             # Import fresh - this will also import any new modules
             import GameFolder.setup
             setup_module = GameFolder.setup
@@ -300,11 +311,24 @@ class GameServer:
             # Recreate arena with actual player names
             self.arena = setup_module.setup_battle_arena(width=1400, height=900, headless=True, player_names=connected_player_names)
 
+            # In practice mode, disable game over checking
+            if self.practice_mode:
+                self.arena.practice_mode = True
+                print("Practice mode: Game over checking disabled")
+
             # Set character IDs to match player names
             for i, character in enumerate(self.arena.characters):
                 if i < len(connected_player_names):
                     player_name = connected_player_names[i]
                     character.id = player_name
+
+                    # In practice mode, make AI bot have unlimited lives
+                    if self.practice_mode and player_name == "AI_Bot_Practice":
+                        # PRACTICE MODE ONLY: AI bot with unlimited lives for endless practice
+                        # This special behavior only applies in practice mode - never in normal multiplayer
+                        character.lives = float('inf')  # Unlimited lives
+
+                        print("PRACTICE MODE: AI bot configured with unlimited lives (dies but respawns infinitely)")
                     
             print(f"[success] Arena recreated successfully with {len(self.arena.characters)} characters")
             
@@ -804,6 +828,16 @@ class GameServer:
         elif msg_type == 'patches_selection':
             # Client sent their patch selection
             patches = message.get('patches', [])
+
+            # Server-side validation: Limit number of patches per client
+            if len(patches) > self.MAX_PATCHES_PER_CLIENT:
+                print(f"[security] {player_id} attempted to send {len(patches)} patches (max allowed: {self.MAX_PATCHES_PER_CLIENT})")
+                self._send_message(player_id, {
+                    'type': 'error',
+                    'message': f'Too many patches selected. Maximum allowed: {self.MAX_PATCHES_PER_CLIENT}'
+                })
+                return
+
             self.client_patches[player_id] = patches
 
             # Extract backup name from first patch (all patches should have same base)
@@ -1584,14 +1618,15 @@ class GameServer:
         while self.running:
             current_time = time.time()
 
-            # Check if we need to restart after game over
-            if self.waiting_for_restart:
+            # Check if we need to restart after game over (skip in practice mode)
+            if self.waiting_for_restart and not self.practice_mode:
                 if current_time - self.game_finished_time >= self.restart_delay:
                     self._restart_server()
                     continue
 
             # Check if game just finished (send restart message immediately)
-            if self.arena and self.arena.game_over and not self.waiting_for_restart:
+            # Skip game over logic in practice mode
+            if self.arena and self.arena.game_over and not self.waiting_for_restart and not self.practice_mode:
                 self.game_finished_time = time.time()
                 self.waiting_for_restart = True
 
@@ -1888,10 +1923,11 @@ def main():
     parser = argparse.ArgumentParser(description='Core Conflict Server')
     parser.add_argument('--host', default='0.0.0.0', help='Server host (default: 0.0.0.0)')
     parser.add_argument('--port', type=int, default=5555, help='Server port (default: 5555)')
+    parser.add_argument('--practice', action='store_true', help='Enable practice mode (no auto-restart)')
 
     args = parser.parse_args()
 
-    server = GameServer(args.host, args.port)
+    server = GameServer(args.host, args.port, practice_mode=args.practice)
 
     try:
         server.start()

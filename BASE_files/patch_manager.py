@@ -26,7 +26,7 @@ class PatchManager:
         self.patches_directory = patches_directory
         self.available_patches: List[PatchInfo] = []
         self.selected_patches: List[PatchInfo] = []
-        self.max_selections = 3
+        self.max_selections = 1
         
     def scan_patches(self) -> List[PatchInfo]:
         """

@@ -24,6 +24,15 @@ class MenuHandlers:
         self.menu.network.create_local_room()
         self.menu.show_menu("room")
 
+    def on_practice_mode_click(self):
+        """Handle practice mode button click."""
+        if not self.menu.player_id.strip():
+            self.menu.show_error_message("Error: Please enter a Player ID before starting practice mode")
+            return
+        print("Practice Mode clicked")
+        self.menu.network.create_local_room(practice_mode=True)
+        self.menu.show_menu("room")
+
     def on_create_remote_room_click(self):
         """Handle remote public game button click."""
         if not self.menu.player_id.strip():
@@ -163,6 +172,15 @@ class MenuHandlers:
             }
         )
         agent_thread.start()
+
+    def on_agent_stop_click(self):
+        """Handle agent stop button click."""
+        print("Agent Stop clicked")
+        if self.menu.agent_running:
+            # For now, just set the flag - the agent thread should check this periodically
+            # TODO: Implement proper agent stopping mechanism
+            self.menu.agent_running = False
+            self.menu.show_error_message("Agent stop requested - may take a moment to complete")
 
     def on_agent_fix_click(self):
         """Handle agent fix button click."""

@@ -201,6 +201,9 @@ class BaseMenu:
     def on_create_local_room_click(self):
         self.handlers.on_create_local_room_click()
 
+    def on_practice_mode_click(self):
+        self.handlers.on_practice_mode_click()
+
     def on_create_remote_room_click(self):
         self.handlers.on_create_remote_room_click()
 
@@ -251,6 +254,9 @@ class BaseMenu:
 
     def on_agent_back_click(self):
         self.handlers.on_agent_back_click()
+
+    def on_agent_stop_click(self):
+        self.handlers.on_agent_stop_click()
 
     # Delegate network operations to network module
     @property

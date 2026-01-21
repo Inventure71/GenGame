@@ -53,25 +53,34 @@ class UIManager:
                 if comp.visible and comp.enabled and comp.rect.collidepoint(event.pos):
                     if self.focused_component and self.focused_component != comp:
                         self.focused_component.focused = False
-                    
+
                     self.focused_component = comp
                     comp.focused = True
                     # Pass the click event to the component
                     comp.handle_event(event)
                     clicked_any = True
                     break
-            
+
             # If clicked outside all components, clear focus
             if not clicked_any and self.focused_component:
                 self.focused_component.focused = False
                 self.focused_component = None
-            
+
             return clicked_any
+
+        # Handle scroll wheel events - pass to any component that can handle them
+        elif event.type == pygame.MOUSEBUTTONDOWN and (event.button == 4 or event.button == 5):
+            # Search in reverse order (topmost first) for components that can handle scroll
+            for comp in reversed(self.components):
+                if comp.visible and comp.enabled and comp.rect.collidepoint(event.pos):
+                    if comp.handle_event(event):
+                        return True
+            return False
 
         # For other events (like keys), send to focused component
         if self.focused_component and self.focused_component.enabled:
             return self.focused_component.handle_event(event)
-        
+
         return False
 
     def update(self):
@@ -83,7 +92,17 @@ class UIManager:
 
     def render(self, screen):
         """Render all visible components."""
-        for comp in self.components:
+        # Render regular components first
+        regular_components = [comp for comp in self.components if not isinstance(comp, NotificationOverlay)]
+        overlay_components = [comp for comp in self.components if isinstance(comp, NotificationOverlay)]
+
+        # Render regular components
+        for comp in regular_components:
+            if comp.visible:
+                comp.render(screen)
+
+        # Render overlays on top
+        for comp in overlay_components:
             if comp.visible:
                 comp.render(screen)
 
@@ -229,17 +248,52 @@ class TextField(UIComponent):
                 self._text_input_enabled = False
 
     def _get_lines(self):
-        """Get text as list of lines."""
-        return self._text.split('\n')
+        """Get text as list of lines, with wrapping for multiline."""
+        if not self.is_multiline:
+            return self._text.split('\n')
+
+        lines = []
+        for line in self._text.split('\n'):
+            if not line:  # Empty line
+                lines.append('')
+                continue
+
+            # Word wrap the line if it's too long
+            words = line.split(' ')
+            current_line = ''
+            for word in words:
+                # Check if adding this word would exceed the width
+                test_line = current_line + (' ' if current_line else '') + word
+                if self.font.size(test_line)[0] <= self.rect.width - self.padding * 2:
+                    current_line = test_line
+                else:
+                    # Start a new line
+                    if current_line:
+                        lines.append(current_line)
+                    current_line = word
+                    # If a single word is too long, break it at character level
+                    if self.font.size(word)[0] > self.rect.width - self.padding * 2:
+                        current_line = ''
+                        for char in word:
+                            if self.font.size(current_line + char)[0] <= self.rect.width - self.padding * 2:
+                                current_line += char
+                            else:
+                                if current_line:
+                                    lines.append(current_line)
+                                current_line = char
+            if current_line:
+                lines.append(current_line)
+        return lines
 
     def _get_cursor_line_col(self):
         """Get current cursor position as (line_index, col_index)."""
         lines = self._get_lines()
         pos = 0
         for line_idx, line in enumerate(lines):
-            if pos + len(line) >= self.cursor_pos:
+            line_len = len(line)
+            if pos + line_len >= self.cursor_pos:
                 return line_idx, self.cursor_pos - pos
-            pos += len(line) + 1  # +1 for newline
+            pos += line_len + 1  # +1 for newline
         return len(lines) - 1, len(lines[-1]) if lines else 0
 
     def _get_pos_from_line_col(self, line_idx, col_idx):
@@ -484,13 +538,13 @@ class ScrollableList(UIComponent):
 
     def clear_items(self):
         self.items = []
-        self.scroll_offset = 0
+        # Don't reset scroll_offset to preserve scroll position
 
     def get_visible_count(self):
         return self.rect.height // self.item_height
 
     def handle_event(self, event):
-        if not self.hovered or not self.enabled:
+        if not self.enabled:
             return False
 
         if event.type == pygame.MOUSEBUTTONDOWN:
@@ -501,7 +555,7 @@ class ScrollableList(UIComponent):
                 max_scroll = max(0, len(self.items) - self.get_visible_count())
                 self.scroll_offset = min(max_scroll, self.scroll_offset + 1)
                 return True
-            elif event.button == 1:
+            elif event.button == 1 and self.hovered:
                 # Calculate which item was clicked
                 rel_y = event.pos[1] - self.rect.y
                 idx = self.scroll_offset + (rel_y // self.item_height)
@@ -609,7 +663,7 @@ class PatchBrowser(UIComponent):
 
         # Header
         count = len(self.menu.patch_manager.selected_patches)
-        header_text = f"Select Patches (0-3) - {count}/3 selected"
+        header_text = f"Select Patch (0-1) - {count}/1 selected"
         surf = self.menu.button_font.render(header_text, True, (255, 255, 255))
         screen.blit(surf, (self.rect.x + 10, self.rect.y + 10))
 
@@ -622,6 +676,7 @@ class AgentWorkspace(UIComponent):
         self.menu = menu
         self.prompt_field = TextField(x, y + 30, width, 250, menu.button_font, placeholder="Describe features...", is_multiline=True)
         self.run_button = Button(x + (width-200)//2, y + 300, 200, 45, "Start Agent", menu.button_font, menu.on_agent_send_click, style="primary")
+        self.stop_button = Button(x + (width-200)//2 + 210, y + 300, 150, 45, "Stop Agent", menu.button_font, menu.on_agent_stop_click, style="danger")
         self.paste_button = Button(x, y + 300, 100, 45, "Paste", menu.small_font, self._on_paste_click)
         self._last_focused_state = False
 
@@ -629,6 +684,7 @@ class AgentWorkspace(UIComponent):
         super().update(mouse_pos)
         self.prompt_field.update(mouse_pos)
         self.run_button.update(mouse_pos)
+        self.stop_button.update(mouse_pos)
         self.paste_button.update(mouse_pos)
 
         # Sync focus: when workspace is focused, keep text field focused
@@ -641,6 +697,7 @@ class AgentWorkspace(UIComponent):
         # Sync state
         self.run_button.text = "Running..." if self.menu.agent_running else "Start Agent"
         self.run_button.enabled = not self.menu.agent_running
+        self.stop_button.visible = self.menu.agent_running
         self.menu.agent_prompt = self.prompt_field.text
 
     def handle_event(self, event):
@@ -654,6 +711,9 @@ class AgentWorkspace(UIComponent):
             elif self.run_button.rect.collidepoint(event.pos):
                 self.prompt_field.focused = False  # Defocus text field when clicking buttons
                 return self.run_button.handle_event(event)
+            elif self.stop_button.rect.collidepoint(event.pos) and self.stop_button.visible:
+                self.prompt_field.focused = False  # Defocus text field when clicking buttons
+                return self.stop_button.handle_event(event)
             elif self.paste_button.rect.collidepoint(event.pos):
                 self.prompt_field.focused = False  # Defocus text field when clicking buttons
                 return self.paste_button.handle_event(event)
@@ -682,9 +742,11 @@ class AgentWorkspace(UIComponent):
         # Label
         surf = self.menu.button_font.render("Describe features or improvements:", True, (255, 255, 255))
         screen.blit(surf, (self.rect.x, self.rect.y))
-        
+
         self.prompt_field.render(screen)
         self.run_button.render(screen)
+        if self.stop_button.visible:
+            self.stop_button.render(screen)
         self.paste_button.render(screen)
         
         # Monitor link
@@ -755,12 +817,19 @@ class TextFieldWithPaste(UIComponent):
 class NotificationOverlay(UIComponent):
     """Global message display component."""
     def __init__(self, menu, name=None):
-        super().__init__(0, 860, 1400, 40, name=name)
+        super().__init__(0, 50, 1400, 60, name=name)  # Moved to top, larger height for background
         self.menu = menu
 
     def render(self, screen):
         if self.menu.error_message and pygame.time.get_ticks() - self.menu.error_message_time < 5000:
-            surf = self.menu.small_font.render(self.menu.error_message, True, (255, 100, 100))
-            rect = surf.get_rect(center=(700, 880))
+            # Background panel
+            bg_color = (40, 20, 20)  # Dark red background
+            border_color = (100, 40, 40)  # Red border
+            pygame.draw.rect(screen, bg_color, self.rect)
+            pygame.draw.rect(screen, border_color, self.rect, 2)
+
+            # Error message text
+            surf = self.menu.small_font.render(self.menu.error_message, True, (255, 150, 150))
+            rect = surf.get_rect(center=(700, 80))
             screen.blit(surf, rect)
 
