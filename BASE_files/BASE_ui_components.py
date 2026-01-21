@@ -675,9 +675,10 @@ class AgentWorkspace(UIComponent):
         super().__init__(x, y, width, height, name=name)
         self.menu = menu
         self.prompt_field = TextField(x, y + 30, width, 250, menu.button_font, placeholder="Describe features...", is_multiline=True)
-        self.run_button = Button(x + (width-200)//2, y + 300, 200, 45, "Start Agent", menu.button_font, menu.on_agent_send_click, style="primary")
-        self.stop_button = Button(x + (width-200)//2 + 210, y + 300, 150, 45, "Stop Agent", menu.button_font, menu.on_agent_stop_click, style="danger")
-        self.paste_button = Button(x, y + 300, 100, 45, "Paste", menu.small_font, self._on_paste_click)
+        # Reorganized buttons: Paste at center bottom of text field, Start Agent and Stop Agent at corners
+        self.paste_button = Button(x + (width-100)//2, y + 290, 100, 45, "Paste", menu.small_font, self._on_paste_click)
+        self.run_button = Button(x, y + 290, 200, 45, "Start Agent", menu.button_font, menu.on_agent_send_click, style="primary")
+        self.stop_button = Button(x + width - 150, y + 290, 150, 45, "Stop Agent", menu.button_font, menu.on_agent_stop_click, style="danger")
         self._last_focused_state = False
 
     def update(self, mouse_pos):

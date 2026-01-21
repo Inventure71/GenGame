@@ -140,8 +140,8 @@ class MenuRenderers:
 
         # Create Local Room and Practice Mode on same line (symmetric around screen center)
         center_x = self.screen_width // 2
-        left_dual_x = center_x - dual_button_width
-        right_dual_x = center_x
+        left_dual_x = center_x - dual_button_width - 5
+        right_dual_x = center_x + 5
 
         ui.add(Button(left_dual_x, button_y, dual_button_width, button_height, "Create Local Room", button_font, self.menu.on_create_local_room_click, style="normal"))
         ui.add(Button(right_dual_x, button_y, dual_button_width, button_height, "Practice Mode", button_font, self.menu.on_practice_mode_click, style="normal"))
@@ -233,26 +233,29 @@ class MenuRenderers:
         
         # --- Bottom Section organized into sections ---
 
-        # 1. Patch Saving Section
-        save_y = self.scale_y(490)
-        ui.add(Panel(main_x - self.scale_x(10), save_y - self.scale_y(10), self.scale_x(920), self.scale_y(75), color=(35, 35, 50), border_width=1)) # Small frame for saving
-        ui.add(Label(main_x, save_y + self.scale_y(5), "Patch Name:", button_font))
-        ui.add(TextField(main_x + self.scale_x(150), save_y, self.scale_x(300), self.scale_y(45), button_font, name="patch_name"))
-        ui.add(Button(main_x + self.scale_x(460), save_y, self.scale_x(140), self.scale_y(45), "Save Patch", button_font, self.menu.on_agent_save_patch_click))
+        # 1. Test Results Section
+        test_y = self.scale_y(500)
+        ui.add(Panel(main_x - self.scale_x(10), test_y - self.scale_y(10), self.scale_x(920), self.scale_y(120), color=(35, 35, 50), border_width=1))
+        ui.add(Label(center_x, test_y + self.scale_y(5), "Test Results", button_font, center=True))
+        ui.add(Label(center_x, test_y + self.scale_y(30), "Results: Pending...", button_font, center=True, name="test_results"))
+        ui.add(Button(center_x - self.scale_x(150), test_y + self.scale_y(50), self.scale_x(300), self.scale_y(50), "Fix Issues", button_font, self.menu.on_agent_fix_click, name="fix_btn"))
 
-        # 2. Workspace Management Section (Left Column)
-        mgmt_y = self.scale_y(585)
-        ui.add(Label(main_x, mgmt_y, "No patch loaded", button_font, name="loaded_patch"))
-        ui.add(Button(main_x, mgmt_y + self.scale_y(45), self.scale_x(200), self.scale_y(45), "Reset to Base", button_font, self.menu.handlers.on_reset_to_base_click, style="danger"))
-        ui.add(Button(main_x, mgmt_y + self.scale_y(105), self.scale_x(250), self.scale_y(45), "Save Current State", button_font, self.menu.handlers.on_save_current_state_click))
+        # 2. Section to save current state as a patch
+        save_y = self.scale_y(620)
+        ui.add(Panel(main_x - self.scale_x(10), save_y - self.scale_y(10), self.scale_x(920), self.scale_y(90), color=(35, 35, 50), border_width=1))
+        ui.add(Label(center_x, save_y + self.scale_y(5), "Save Current State as Patch", button_font, center=True))
+        ui.add(Label(main_x, save_y + self.scale_y(30), "Patch Name:", button_font))
+        ui.add(TextField(main_x + self.scale_x(150), save_y + self.scale_y(25), self.scale_x(300), self.scale_y(45), button_font, name="patch_name"))
+        ui.add(Button(main_x + self.scale_x(460), save_y + self.scale_y(25), self.scale_x(140), self.scale_y(45), "Save Patch", button_font, self.menu.on_agent_save_patch_click))
 
-        # 3. Test & Fix Section (Right Column)
-        test_y = mgmt_y
-        ui.add(Label(center_x + self.scale_x(150), test_y, "Results: Pending...", button_font, center=True, name="test_results"))
-        ui.add(Button(center_x + self.scale_x(150) - self.scale_x(150), test_y + self.scale_y(45), self.scale_x(300), self.scale_y(50), "Fix Issues", button_font, self.menu.on_agent_fix_click, name="fix_btn"))
+        # 3. Big button to rebase to default state (remove patches from game folder)
+        rebase_y = self.scale_y(740)
+        ui.add(Panel(main_x - self.scale_x(10), rebase_y - self.scale_y(10), self.scale_x(920), self.scale_y(100), color=(45, 35, 35), border_width=2))
+        ui.add(Button(center_x - self.scale_x(200), rebase_y, self.scale_x(400), self.scale_y(60), "Rebase to Default State", button_font, self.menu.handlers.on_reset_to_base_click, style="danger"))
+        ui.add(Label(center_x, rebase_y + self.scale_y(70), "Remove patches from game folder", small_font, center=True))
 
         # 4. Navigation
-        ui.add(Button(center_x - self.scale_x(150), self.scale_y(820), self.scale_x(300), self.scale_y(55), "Back to Main Menu", button_font, self.menu.on_agent_back_click))
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(860), self.scale_x(300), self.scale_y(55), "Back to Main Menu", button_font, self.menu.on_agent_back_click))
 
     def _get_current_ui(self):
         return self.managers.get(self.menu.current_menu)
