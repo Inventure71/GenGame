@@ -14,6 +14,6 @@ This is an INCREMENTAL summary - focus only on the most recent work since the la
 
 ## Example Format:
 - Modified `GameFolder/characters/GAME_character.py`: Added a new passive ability hook and tuning
-- Created `GameFolder/effects/GAME_effects.py`: New area effect with cooldown tracking
+- Created `GameFolder/effects/waveprojectileeffect.py`: New area effect with cooldown tracking
 - Updated `GameFolder/arenas/GAME_arena.py`: Integrated ability pickup handling
 - Remaining work: Add tests for the new effect cooldown edge case

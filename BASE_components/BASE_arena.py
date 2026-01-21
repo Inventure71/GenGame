@@ -21,7 +21,7 @@ class Arena:
 
         if not self.headless:
             pygame.init()
-            self.screen = pygame.display.set_mode((self.width, self.height), pygame.FULLSCREEN)
+            self.screen = pygame.display.set_mode((self.width, self.height))# ,pygame.FULLSCREEN)
             pygame.display.set_caption("Core Arena")
             self.clock = pygame.time.Clock()
         else:

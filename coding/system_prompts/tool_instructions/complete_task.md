@@ -28,7 +28,7 @@ This is an INCREMENTAL summary - focus only on the most recent work since the la
 ### Example Usage
 **[success] CORRECT - Complete with proper summary:**
 complete_task(summary="""- Modified `GameFolder/characters/GAME_character.py`: Added a new primary ability handler
-- Created `GameFolder/effects/GAME_effects.py`: Added a timed area effect with draw/update logic
+- Created `GameFolder/effects/waveprojectileeffect.py`: Added a timed area effect with draw/update logic
 - Updated `GameFolder/arenas/GAME_arena.py`: Integrated pickup handling for abilities
 - Remaining work: Add tests for the new effect cooldown edge case""")
 

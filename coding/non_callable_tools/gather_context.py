@@ -39,7 +39,12 @@ def gather_context_planning():
     for filepath in [
         'GameFolder/arenas/GAME_arena.py',
         'GameFolder/characters/GAME_character.py',
-        'GameFolder/effects/GAME_effects.py',
+        'GameFolder/effects/coneeffect.py',
+        'GameFolder/effects/radialeffect.py',
+        'GameFolder/effects/lineeffect.py',
+        'GameFolder/effects/waveprojectileeffect.py',
+        'GameFolder/effects/obstacleeffect.py',
+        'GameFolder/effects/zoneindicator.py',
         'GameFolder/pickups/GAME_pickups.py',
         'GameFolder/world/GAME_world_objects.py',
         'GameFolder/abilities/ability_loader.py',

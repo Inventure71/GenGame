@@ -3,7 +3,7 @@ import random
 import pygame
 from BASE_components.BASE_character import BaseCharacter
 from GameFolder.abilities.ability_loader import get_primary_abilities, get_passive_abilities
-from GameFolder.effects.GAME_effects import ObstacleEffect
+from GameFolder.effects.obstacleeffect import ObstacleEffect
 
 
 class Character(BaseCharacter):

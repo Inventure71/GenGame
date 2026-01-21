@@ -1,4 +1,4 @@
-from GameFolder.effects.GAME_effects import WaveProjectileEffect
+from GameFolder.effects.waveprojectileeffect import WaveProjectileEffect
 
 
 def activate(cow, arena, mouse_pos):

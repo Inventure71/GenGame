@@ -91,7 +91,7 @@ Low‑level effect primitives. No gameplay shapes or damage logic exist here.
 - `BaseEffect`: network‑serializable object with `location`, `update`, `draw`
 - `TimedEffect`: base effect with lifetime tracking
 
-All concrete effects (cones, shockwaves, walls, etc.) should live in `GameFolder/effects/`.
+All concrete effects (cones, shockwaves, walls, etc.) should live in `GameFolder/effects/` in one class per file (for example `coneeffect.py`, `radialeffect.py`, `lineeffect.py`, `waveprojectileeffect.py`, `obstacleeffect.py`, `zoneindicator.py`).
 
 ---
 
@@ -151,7 +151,7 @@ Concrete gameplay lives in these modules:
 - `GameFolder/characters/GAME_character.py`: MS2 cow logic and abilities
 - `GameFolder/abilities/`: one file per primary/passive ability with descriptions
 - `GameFolder/arenas/GAME_arena.py`: collisions, pickup handling, effect damage
-- `GameFolder/effects/GAME_effects.py`: cone, radial, line, wave, poop effects
+- `GameFolder/effects/`: concrete cone, radial, line, wave, and obstacle effects (one class per module)
 - `GameFolder/world/GAME_world_objects.py`: obstacles + grass
 - `GameFolder/pickups/GAME_pickups.py`: ability pickups
 - `GameFolder/ui/GAME_ui.py`: MS2 UI

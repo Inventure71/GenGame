@@ -1,4 +1,4 @@
-from GameFolder.effects.GAME_effects import ConeEffect
+from GameFolder.effects.coneeffect import ConeEffect
 
 
 def activate(cow, arena, mouse_pos):

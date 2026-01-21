@@ -4,7 +4,8 @@ Edge case tests for MS2 effects and safe zone logic.
 
 from GameFolder.arenas.GAME_arena import Arena
 from GameFolder.characters.GAME_character import Character
-from GameFolder.effects.GAME_effects import RadialEffect, WaveProjectileEffect
+from GameFolder.effects.radialeffect import RadialEffect
+from GameFolder.effects.waveprojectileeffect import WaveProjectileEffect
 
 
 def test_safe_zone_damage_tick():

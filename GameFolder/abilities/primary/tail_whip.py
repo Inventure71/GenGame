@@ -1,4 +1,4 @@
-from GameFolder.effects.GAME_effects import LineEffect
+from GameFolder.effects.lineeffect import LineEffect
 
 
 def activate(cow, arena, mouse_pos):

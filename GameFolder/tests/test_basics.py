@@ -5,7 +5,8 @@ Covers characters, grass eating, poop, abilities, and pickups.
 
 from GameFolder.arenas.GAME_arena import Arena
 from GameFolder.characters.GAME_character import Character
-from GameFolder.effects.GAME_effects import RadialEffect, ObstacleEffect
+from GameFolder.effects.radialeffect import RadialEffect
+from GameFolder.effects.obstacleeffect import ObstacleEffect
 
 
 def test_character_creation():

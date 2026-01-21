@@ -66,7 +66,7 @@ If you can't explain *why* the fix works, **you haven't found the bug.**
 
 **Example:**
 - ✗ BAD: Read test → wait → Read implementation → wait → Read docs
-- ✓ GOOD: [Think: I need mandatory_edge_cases_test.py, GAME_effects.py, GAME_arena.py, BASE_COMPONENTS_DOCS.md] → [4 parallel read_file calls]
+- ✓ GOOD: [Think: I need mandatory_edge_cases_test.py, waveprojectileeffect.py, GAME_arena.py, BASE_COMPONENTS_DOCS.md] → [4 parallel read_file calls]
 
 ---
 
@@ -110,7 +110,7 @@ Use `append_to_todo_list`. Each task must be **self-contained**.
 
 ## [success] Fix Task Template (for `append_to_todo_list`)
 
-**task_title**: Brief description (e.g., "Add missing import in GAME_effects.py")
+**task_title**: Brief description (e.g., "Add missing import in waveprojectileeffect.py")
 
 **task_description** should include:
 - **Root Cause**: WHY it's broken

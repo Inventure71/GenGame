@@ -715,7 +715,12 @@ class VersionControl:
         expected_structure = {
             "arenas/GAME_arena.py": "exists",
             "characters/GAME_character.py": "exists", 
-            "effects/GAME_effects.py": "exists",
+            "effects/coneeffect.py": "exists",
+            "effects/radialeffect.py": "exists",
+            "effects/lineeffect.py": "exists",
+            "effects/waveprojectileeffect.py": "exists",
+            "effects/obstacleeffect.py": "exists",
+            "effects/zoneindicator.py": "exists",
             "pickups/GAME_pickups.py": "exists",
             "world/GAME_world_objects.py": "exists",
             "abilities/ability_loader.py": "exists",

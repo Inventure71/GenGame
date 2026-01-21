@@ -4,7 +4,9 @@ Primary ability tests for MS2 cows.
 
 from GameFolder.arenas.GAME_arena import Arena
 from GameFolder.characters.GAME_character import Character
-from GameFolder.effects.GAME_effects import ConeEffect, RadialEffect, WaveProjectileEffect
+from GameFolder.effects.coneeffect import ConeEffect
+from GameFolder.effects.radialeffect import RadialEffect
+from GameFolder.effects.waveprojectileeffect import WaveProjectileEffect
 from GameFolder.pickups.GAME_pickups import PRIMARY_ABILITY_NAMES
 
 

@@ -14,7 +14,8 @@ You only need to add a new file with an `ABILITY` dict. No registry edits.
 Example (intentionally wild, multi-effect):
 
 ```python
-from GameFolder.effects.GAME_effects import RadialEffect, LineEffect
+from GameFolder.effects.radialeffect import RadialEffect
+from GameFolder.effects.lineeffect import LineEffect
 
 
 def activate(cow, arena, mouse_pos):
@@ -89,5 +90,5 @@ ABILITY = {
 ## Notes
 - **Description is mandatory**. Missing descriptions raise errors.
 - Abilities are discovered at runtime from the folder. No registry file edits.
-- Use `GameFolder/effects/GAME_effects.py` for reusable effect shapes.
+- Use the concrete effect modules in `GameFolder/effects/` (e.g. `coneeffect`, `radialeffect`, `lineeffect`, `waveprojectileeffect`, `obstacleeffect`, `zoneindicator`) for reusable effect shapes.
 - Keep logic inside the ability file as much as possible.

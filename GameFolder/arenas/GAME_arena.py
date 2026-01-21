@@ -2,14 +2,12 @@ import math
 import random
 import pygame
 from BASE_components.BASE_arena import Arena as BaseArena
-from GameFolder.effects.GAME_effects import (
-    ConeEffect,
-    RadialEffect,
-    LineEffect,
-    WaveProjectileEffect,
-    ObstacleEffect,
-    ZoneIndicator,
-)
+from GameFolder.effects.coneeffect import ConeEffect
+from GameFolder.effects.radialeffect import RadialEffect
+from GameFolder.effects.lineeffect import LineEffect
+from GameFolder.effects.waveprojectileeffect import WaveProjectileEffect
+from GameFolder.effects.obstacleeffect import ObstacleEffect
+from GameFolder.effects.zoneindicator import ZoneIndicator
 from GameFolder.world.GAME_world_objects import WorldObstacle, GrassField
 from GameFolder.pickups.GAME_pickups import AbilityPickup, PRIMARY_ABILITY_NAMES, PASSIVE_ABILITY_NAMES
 from GameFolder.ui.GAME_ui import GameUI

@@ -460,8 +460,8 @@ When diagnosing, you may use:
 
 **BATCHING PHASE (all in one turn):**
 * read_file("GameFolder/tests/mandatory_edge_cases_test.py")
-* list_functions_in_file("GameFolder/effects/GAME_effects.py")
-* get_function_source("GameFolder/effects/GAME_effects.py", "update")
+* list_functions_in_file("GameFolder/effects/waveprojectileeffect.py")
+* get_function_source("GameFolder/effects/waveprojectileeffect.py", "update")
 * get_function_source("GameFolder/arenas/GAME_arena.py", "_apply_effects")
 * find_function_usages("damage_cooldown", "GameFolder")
 * read_file("BASE_components/BASE_effects.py")

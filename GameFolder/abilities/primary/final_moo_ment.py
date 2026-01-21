@@ -1,4 +1,4 @@
-from GameFolder.effects.GAME_effects import RadialEffect
+from GameFolder.effects.radialeffect import RadialEffect
 
 
 def activate(cow, arena, mouse_pos):

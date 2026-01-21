@@ -4,7 +4,7 @@ Network serialization tests for MS2 pickups and effects.
 
 from BASE_files.BASE_network import NetworkObject
 from GameFolder.pickups.GAME_pickups import AbilityPickup
-from GameFolder.effects.GAME_effects import ObstacleEffect
+from GameFolder.effects.obstacleeffect import ObstacleEffect
 
 
 def test_ability_pickup_network_roundtrip():

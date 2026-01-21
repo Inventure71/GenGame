@@ -91,7 +91,7 @@ NEXT_ACTIONS_FOR_FIX_AGENT:
 run_all_tests_tool(explanation="""
 FILES_READ:
 - GameFolder/tests/mandatory_edge_cases_test.py: Tests effect damage cooldown timing
-- GameFolder/effects/GAME_effects.py: Effect update and lifetime logic
+- GameFolder/effects/waveprojectileeffect.py: Effect update and lifetime logic
 - GameFolder/arenas/GAME_arena.py: Effect damage cooldown enforcement
 
 FILES_MODIFIED:
