@@ -17,13 +17,13 @@ import importlib
 from typing import Dict, List, Set, Tuple, Optional
 from collections import defaultdict
 import select
-from BASE_files.BASE_helpers import reload_game_code, get_local_ip, encrypt_code
+from BASE_files.BASE_menu_helpers import reload_game_code, get_local_ip, encrypt_code
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Ensure GameFolder exists and is importable before proceeding
-from BASE_files.BASE_helpers import ensure_gamefolder_exists
+from BASE_files.BASE_menu_helpers import ensure_gamefolder_exists
 if not ensure_gamefolder_exists():
     print("Failed to restore GameFolder. Server cannot start.")
     sys.exit(1)
@@ -32,7 +32,7 @@ import GameFolder.setup
 from coding.non_callable_tools.version_control import VersionControl
 from coding.tools.conflict_resolution import get_all_conflicts
 from agent import auto_fix_conflicts
-from BASE_files.BASE_helpers import load_settings
+from BASE_files.BASE_menu_helpers import load_settings
 
 class GameServer:
     """

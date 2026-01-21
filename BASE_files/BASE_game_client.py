@@ -60,7 +60,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         def reload_game_classes():
             """Reload game classes from GameFolder after patches are applied."""
             try:
-                from BASE_files.BASE_helpers import reload_game_code
+                from BASE_files.BASE_menu_helpers import reload_game_code
                 reloaded_setup = reload_game_code()
                 
                 if reloaded_setup:
@@ -85,7 +85,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             if sync_game_files(files):
                 # Import the setup function from the synchronized GameFolder
                 try:
-                    from BASE_files.BASE_helpers import reload_game_code
+                    from BASE_files.BASE_menu_helpers import reload_game_code
                     reloaded_setup = reload_game_code()
                     
                     if reloaded_setup:
@@ -124,7 +124,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             print("Game start received - ensuring classes are loaded...")
 
             try:
-                from BASE_files.BASE_helpers import reload_game_code
+                from BASE_files.BASE_menu_helpers import reload_game_code
                 reloaded_setup = reload_game_code()
                 
                 if reloaded_setup:

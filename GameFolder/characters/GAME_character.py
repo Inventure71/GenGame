@@ -9,6 +9,8 @@ from GameFolder.effects.obstacleeffect import ObstacleEffect
 class Character(BaseCharacter):
     """MS2 cow implementation built on the low-level BaseCharacter."""
 
+    POOP_OBSTACLE_SIZE_MULTIPLIER = 3.0
+
     def __init__(self, name, description, image, location, width=30, height=30):
         super().__init__(name, description, image, location, width, height)
         self.base_size = float(width)
@@ -294,7 +296,7 @@ class Character(BaseCharacter):
 
         poop = ObstacleEffect(
             location=[self.location[0], self.location[1]],
-            size=poop_size * 2,
+            size=poop_size * self.POOP_OBSTACLE_SIZE_MULTIPLIER,
             owner_id=self.id,
             mine=self.mine_poop,
             wall=self.mine_wall,
@@ -371,10 +373,9 @@ class Character(BaseCharacter):
         size_ratio = (self.size - min_size) / max(1.0, (max_size - min_size))
         self.damage_multiplier = max(min_multiplier, min(max_multiplier, min_multiplier + (max_multiplier - min_multiplier) * size_ratio))
 
-        speed_min = 1.5
-        speed_max = 5.5
-        speed_ratio = (self.size - 10.0) / 190.0
-        self.speed = max(speed_min, min(speed_max, speed_max - (speed_max - speed_min) * speed_ratio))
+        # Speed scales with size using the shared BASE_character defaults so other
+        # projects can reuse the same fast-paced movement feel.
+        self.speed = self.compute_speed_for_size(self.size)
 
     def _angle_to_mouse(self, mouse_pos):
         if mouse_pos is None:

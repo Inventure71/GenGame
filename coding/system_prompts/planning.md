@@ -28,6 +28,12 @@ Each task must be **self-contained** (coding agent only sees current task). Incl
 - Coordinate context (World-Y vs Screen-Y) when physics/positions are involved
 - For melee or area-effect logic, explicitly call out how hitboxes are anchored: tasks must ensure hitboxes are centered on the character/effect **center point** (not top-left), and must include tests that verify hits on both left and right sides of the attacker where applicable.
 
+## Game Perspective (Hard Constraint)
+Core Conflict is a **top-down (overhead) 2D** game.
+- All gameplay, effects, AoE shapes, hitboxes, and projectiles exist on the 2D plane (world X/Y).
+- This is **not** a side-scroller; do not assume side-view gravity, platforms, or horizontal parallax.
+- If something is “above/below/orbital/drop”, represent it as a 2D telegraph + timed activation on the plane, following the world-Y up ↔ screen-Y down conversion.
+
 ## Task Quality
 - **Atomic**: One clear change per task.
 - **Sequential**: Later tasks can depend on earlier ones.

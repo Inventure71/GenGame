@@ -5,7 +5,7 @@ These methods handle user interactions and menu navigation.
 
 import os
 import threading
-from BASE_files.BASE_helpers import encrypt_api_key, decrypt_api_key
+from BASE_files.BASE_menu_helpers import encrypt_api_key, decrypt_api_key
 
 
 class MenuHandlers:
@@ -62,7 +62,7 @@ class MenuHandlers:
             return
 
         # Decrypt the code to get IP and PORT
-        from BASE_files.BASE_helpers import decrypt_code
+        from BASE_files.BASE_menu_helpers import decrypt_code
         try:
             server_ip, server_port = decrypt_code(self.menu.join_room_code.strip())
             print(f"Joining room at {server_ip}:{server_port}")
@@ -315,7 +315,7 @@ class MenuHandlers:
     def on_settings_save_click(self):
         """Handle settings save button click."""
         print("Settings Save clicked")
-        from BASE_files.BASE_helpers import create_settings_file
+        from BASE_files.BASE_menu_helpers import create_settings_file
     
         result = create_settings_file(
             username=self.menu.settings_username,

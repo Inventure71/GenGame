@@ -6,9 +6,9 @@ Handles server creation, client connections, and room management.
 import threading
 import socket
 from server import GameServer
-from BASE_files.BASE_helpers import encrypt_code
+from BASE_files.BASE_menu_helpers import encrypt_code
 from BASE_files.network_client import NetworkClient
-from BASE_files.BASE_helpers import REMOTE_DOMAIN
+from BASE_files.BASE_menu_helpers import REMOTE_DOMAIN
 
 
 class MenuNetwork:
@@ -101,7 +101,7 @@ class MenuNetwork:
             print(f"Practice room created: {self.menu.room_code}")
         else:
             # Normal local room uses encrypted code
-            from BASE_files.BASE_helpers import get_local_ip
+            from BASE_files.BASE_menu_helpers import get_local_ip
             local_ip = get_local_ip()
             self.menu.room_code = encrypt_code(local_ip, self.server_port, "LOCAL")
             print(f"Local room code: {self.menu.room_code}")

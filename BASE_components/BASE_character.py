@@ -7,6 +7,11 @@ class BaseCharacter(NetworkObject):
 
     MAX_LIVES = 1
 
+    SPEED_FAST_MIN = 7.0
+    SPEED_SLOW_MAX = 1.6
+    SPEED_MIN_SIZE = 9.0
+    SPEED_MAX_SIZE = 120.0
+
     def __init__(self, name: str, description: str, image: str, location: [float, float], width: float = 30, height: float = 30):
         super().__init__()
         self.id = name
@@ -29,6 +34,12 @@ class BaseCharacter(NetworkObject):
 
         self.color = (220, 220, 220)
         self.last_arena_height = 900
+
+        # Overrideable speed values for games to customize.
+        self.speed_fast_min = self.SPEED_FAST_MIN
+        self.speed_slow_max = self.SPEED_SLOW_MAX
+        self.speed_min_size = self.SPEED_MIN_SIZE
+        self.speed_max_size = self.SPEED_MAX_SIZE
 
         self.init_graphics()
 
@@ -100,6 +111,21 @@ class BaseCharacter(NetworkObject):
         margin_y = self.height / 2
         self.location[0] = max(margin_x, min(arena.width - margin_x, self.location[0]))
         self.location[1] = max(margin_y, min(arena.height - margin_y, self.location[1]))
+
+    # ---- Shared movement helpers -------------------------------------------------
+
+    def compute_speed_for_size(self, size: float) -> float:
+        """
+        Shared helper for size-based speed scaling.
+
+        Smaller characters move faster, larger characters move slower, with
+        clamping so extreme sizes stay in a reasonable range.
+        """
+        t = (size - self.speed_min_size) / max(
+            1.0, (self.speed_max_size - self.speed_min_size)
+        )
+        t = max(0.0, min(1.0, t))
+        return self.speed_fast_min + (self.speed_slow_max - self.speed_fast_min) * t
 
     def take_damage(self, amount: float):
         if not self.is_alive or amount <= 0:

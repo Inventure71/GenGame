@@ -9,7 +9,7 @@ if "SDL_VIDEODRIVER" not in os.environ:
         os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 # Ensure GameFolder exists and is importable before proceeding
-from BASE_files.BASE_helpers import ensure_gamefolder_exists
+from BASE_files.BASE_menu_helpers import ensure_gamefolder_exists
 if not ensure_gamefolder_exists():
     print("Failed to restore GameFolder. Game cannot start.")
     sys.exit(1)

@@ -3,7 +3,7 @@ import math
 import os
 from typing import List, Dict
 from dotenv import load_dotenv
-from BASE_files.BASE_helpers import load_settings
+from BASE_files.BASE_menu_helpers import load_settings
 from coding.non_callable_tools.backup_handling import BackupHandler
 from coding.generic_implementation import GenericHandler
 from coding.non_callable_tools.gather_context import gather_context_planning, gather_context_coding, gather_context_testing, gather_context_fix
@@ -767,7 +767,7 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
             file_containing_patches=patch_to_load,
             skip_warnings=True
         )
-        from BASE_files.BASE_helpers import reload_game_code
+        from BASE_files.BASE_menu_helpers import reload_game_code
         reloaded_setup = reload_game_code()
         if not success:
             print(f"Failed to load patch: {errors}")

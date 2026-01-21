@@ -4,7 +4,7 @@ These methods handle rendering of different menu screens using a component-based
 """
 
 import pygame
-from BASE_files.BASE_helpers import decrypt_code
+from BASE_files.BASE_menu_helpers import decrypt_code
 from BASE_files.BASE_ui_components import (
     UIManager, Button, TextField, Label, Panel,
     ScrollableList, RoomStatusBar, PatchBrowser,

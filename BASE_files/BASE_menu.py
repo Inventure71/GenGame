@@ -13,7 +13,7 @@ import platform
 import subprocess
 import threading
 
-from BASE_files.BASE_helpers import load_settings
+from BASE_files.BASE_menu_helpers import load_settings
 from BASE_files.patch_manager import PatchManager
 from BASE_files.BASE_game_client import run_client, DEFAULT_WIDTH, DEFAULT_HEIGHT
 from BASE_files.BASE_menu_renderers import MenuRenderers

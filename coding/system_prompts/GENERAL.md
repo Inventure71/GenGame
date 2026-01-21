@@ -5,6 +5,7 @@
 - **Documentation**: Use `BASE_components/BASE_COMPONENTS_DOCS.md` as the primary reference for all `BASE_` classes. Do NOT read files inside `BASE_components/` unless the documentation is insufficient.
 - **Inheritance**: Always inherit from the appropriate BASE class in `GameFolder/` implementations.
 - **New Entities**: Each ability/effect/pickup/arena feature lives in its own file in the appropriate `GameFolder/` subdirectory.
+- **Game Perspective**: Top-down (overhead) 2D only. Not side-scrolling; effects/collisions stay on the X/Y plane (no Z-axis or platforming).
 
 ## Technical Standards
 - **Arena Dimensions**: Use `arena.width` and `arena.height`; never hardcode sizes.
