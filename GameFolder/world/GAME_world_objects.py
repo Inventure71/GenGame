@@ -1,12 +1,14 @@
 import pygame
+import random
 from BASE_components.BASE_platform import BasePlatform
-
+from BASE_components.BASE_asset_handler import AssetHandler
 
 class WorldObstacle(BasePlatform):
     def __init__(self, center_x: float, center_y: float, size: float, obstacle_type: str, arena_height: float):
         self.world_center = [center_x, center_y]
         self.size = size
         self.obstacle_type = obstacle_type
+        self._anim_offset = random.randint(0, 1000)
 
         py_x = center_x - size / 2
         py_y = arena_height - center_y - size / 2
@@ -18,11 +20,30 @@ class WorldObstacle(BasePlatform):
     def draw(self, screen: pygame.Surface, arena_height: float = None, camera=None):
         if self.is_destroyed or not self._graphics_initialized:
             return
-        color = (90, 90, 90) if self.obstacle_type == "blocking" else (70, 140, 180)
         if camera is not None:
             rect = camera.world_center_rect_to_screen(self.world_center[0], self.world_center[1], self.size, self.size)
         else:
             rect = self.rect
+
+        if self.obstacle_type == "slowing":
+            def fallback(surface):
+                surface.fill((70, 140, 180))
+                pygame.draw.rect(surface, (30, 60, 80), surface.get_rect(), 2)
+
+            frames, _ = AssetHandler.get_animation(
+                "ACQUA_",
+                5,
+                size=(int(rect.width), int(rect.height)),
+                fallback_draw=fallback,
+            )
+            if frames:
+                tick = pygame.time.get_ticks() if pygame.get_init() else 0
+                frame_index = int((tick / 120) + self._anim_offset) % len(frames)
+                screen.blit(frames[frame_index], rect)
+            return
+
+        color = (90, 90, 90)
+
         pygame.draw.rect(screen, color, rect)
         pygame.draw.rect(screen, (30, 30, 30), rect, 2)
 
@@ -59,11 +80,32 @@ class GrassField(BasePlatform):
         if self.is_destroyed or not self._graphics_initialized:
             return
         fullness = self.current_food / max(1.0, self.max_food)
-        color = (40, int(120 + 100 * fullness), 40)
+
         if camera is not None:
-            center = camera.world_to_screen_point(self.world_center[0], self.world_center[1])
-            center = (int(center[0]), int(center[1]))
+            rect = camera.world_center_rect_to_screen(self.world_center[0], self.world_center[1], self.radius * 2, self.radius * 2)
         else:
-            center = (int(self.world_center[0]), int(arena_height - self.world_center[1]))
-        pygame.draw.circle(screen, color, center, int(self.radius))
-        pygame.draw.circle(screen, (20, 60, 20), center, int(self.radius), 2)
+            rect = pygame.Rect(
+                self.world_center[0] - self.radius,
+                arena_height - self.world_center[1] - self.radius,
+                self.radius * 2,
+                self.radius * 2,
+            )
+        def fallback(surface):
+            center = (surface.get_width() // 2, surface.get_height() // 2)
+            radius = min(center[0], center[1])
+            color = (40, int(120 + 100 * fullness), 40)
+            pygame.draw.circle(surface, color, center, radius)
+            pygame.draw.circle(surface, (20, 60, 20), center, radius, 2)
+
+        grass_surface, loaded = AssetHandler.get_image(
+            "ERBA.png",
+            size=(int(rect.width), int(rect.height)),
+            fallback_draw=fallback,
+            fallback_tag=f"fullness_{int(fullness * 10)}",
+        )
+        if grass_surface is None:
+            return
+        if loaded and fullness < 1.0:
+            grass_surface = grass_surface.copy()
+            grass_surface.set_alpha(int(120 + 120 * fullness))
+        screen.blit(grass_surface, rect)

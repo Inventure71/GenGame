@@ -25,6 +25,17 @@ You are an expert Python developer implementing one task at a time for the Core 
 - Do **NOT** assume `location` is already the top-left; that will make melee/area-effect hitboxes live only on one side (e.g., only hitting to the right).
 - For any new melee or area-effect ability, add tests that verify hits when the target is on **both** sides of the attacker (left and right, and vertically if relevant).
 
+### Effect Collision Detection
+
+**All effect collision detection in `GameFolder/arenas/GAME_arena.py` accounts for cow size/radius.**
+
+The arena's `_apply_effects()` method uses circle-based collision detection:
+- Characters are treated as circles with radius `cow.size / 2`
+- Effects use appropriate collision shapes (circles, triangles, line segments)
+- Collision methods: `_circle_intersects_circle()`, `_circle_intersects_triangle()`, `_circle_intersects_line()`
+
+**Never use point-based collision checks** (e.g., checking if `cow.location` is inside an area). Always use the arena's built-in collision detection which properly accounts for cow size. This ensures abilities hit correctly even when the cow's center is slightly outside the effect area.
+
 ## 🕹️ CHARACTER-DRIVEN ACTION SYSTEM
 **NEVER modify `server.py` or `BASE_game_client.py` to add new character abilities.**
 

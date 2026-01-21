@@ -92,3 +92,17 @@ ABILITY = {
 - Abilities are discovered at runtime from the folder. No registry file edits.
 - Use the concrete effect modules in `GameFolder/effects/` (e.g. `coneeffect`, `radialeffect`, `lineeffect`, `waveprojectileeffect`, `obstacleeffect`, `zoneindicator`) for reusable effect shapes.
 - Keep logic inside the ability file as much as possible.
+
+## Effect Collision Detection
+
+**CRITICAL**: All effect collision detection accounts for cow size/radius, not just center points.
+
+When you create effects, the arena automatically handles collision detection:
+- **RadialEffect**: Uses `_circle_intersects_circle()` - checks if cow's circle intersects effect's circle
+- **ConeEffect**: Uses `_circle_intersects_triangle()` - checks if cow's circle intersects triangle
+- **LineEffect**: Uses `_circle_intersects_line()` - checks if cow's circle intersects line segment
+- **WaveProjectileEffect**: Uses `rect.colliderect()` - rectangle-based collision
+
+**Why this matters**: Cows have a size (`cow.size`), so collision detection uses `cow.size / 2` as the radius. This means effects will hit even when the cow's center is slightly outside the effect area, as long as part of the cow's body overlaps.
+
+**Common mistake**: Don't implement your own point-based collision checks - the arena handles this automatically. Just create the effect with the right parameters (location, radius, angle, length, width, etc.).

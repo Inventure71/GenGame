@@ -691,28 +691,33 @@ class BaseMenu:
         """
         from coding.non_callable_tools.backup_handling import BackupHandler
         handler = BackupHandler("__game_backups")
+        
+        while True:
+            # Ensure we have a base backup recorded
+            if self.base_working_backup is None:
+                print("Creating initial safety backup...")
+                try:
+                    _, self.base_working_backup = handler.create_backup("GameFolder")
+                    print(f"Initial backup created: {self.base_working_backup}")
+                    # Persist it so future runs restore correctly
+                    self.handlers.on_settings_save_click()
+                    break
+                except Exception as e:
+                    print(f"Warning: Failed to create initial backup: {e}")
+                    return False
 
-        # Ensure we have a base backup recorded
-        if self.base_working_backup is None:
-            print("Creating initial safety backup...")
-            try:
-                _, self.base_working_backup = handler.create_backup("GameFolder")
-                print(f"Initial backup created: {self.base_working_backup}")
-                # Persist it so future runs restore correctly
-                self.handlers.on_settings_save_click()
-            except Exception as e:
-                print(f"Warning: Failed to create initial backup: {e}")
-                return False
-
-        # Restore to base backup
-        print(f"Restoring from backup: {self.base_working_backup}")
-        _, restored_name = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
-        if restored_name is None:
-            print("Warning: Failed to restore backup")
-            return False
-
-        self.base_working_backup = restored_name
-        print(f"Backup restored: {self.base_working_backup}")
+            # Restore to base backup
+            print(f"Restoring from backup: {self.base_working_backup}")
+            _, restored_name = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
+            if restored_name is None:
+                print("Warning: Failed to restore backup")
+                #return False
+                self.base_working_backup = None
+                continue
+            else:
+                self.base_working_backup = restored_name
+                print(f"Backup restored: {self.base_working_backup}")
+                break
         return True
 
     def on_start(self):

@@ -323,6 +323,10 @@ class GameServer:
                 if i < len(connected_player_names):
                     player_name = connected_player_names[i]
                     character.id = player_name
+                    # Keep display/name fields consistent across server + clients.
+                    # Some client logic matches on `name`, while server-side control mapping uses `id`.
+                    if hasattr(character, "name"):
+                        character.name = player_name
 
                     # In practice mode, make AI bot have unlimited lives
                     if self.practice_mode and player_name == "AI_Bot_Practice":

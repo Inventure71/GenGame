@@ -148,9 +148,9 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
             # Set local player if not already set and we have character assignment
             if entity_manager.local_player_id is None and assigned_character:
-                # Find character by assigned name
+                # Find character by assigned name/id (games may use either field)
                 for char_data in game_state.get('characters', []):
-                    if char_data.get('name') == assigned_character:
+                    if char_data.get('name') == assigned_character or char_data.get('id') == assigned_character:
                         entity_manager.set_local_player(char_data.get('network_id'))
                         # Initialize prediction with server position
                         server_pos = char_data.get('location', [0, 0])

@@ -191,6 +191,20 @@ class Arena(BaseArena):
                     self._push_out_of_rect(cow, poop_rect)
 
     def _apply_effects(self, cow):
+        """
+        Apply damage and effects from arena effects to a cow.
+        
+        IMPORTANT: All collision detection accounts for cow size/radius.
+        Cows are treated as circles with radius cow.size/2, not point objects.
+        This ensures abilities hit correctly even when the cow's center is slightly
+        outside the effect area, as long as part of the cow's body overlaps.
+        
+        Collision methods used:
+        - RadialEffect: _circle_intersects_circle()
+        - ConeEffect: _circle_intersects_triangle()
+        - LineEffect: _circle_intersects_line()
+        - WaveProjectileEffect: rect.colliderect()
+        """
         for effect in self.effects:
             if isinstance(effect, ObstacleEffect):
                 continue
@@ -198,14 +212,15 @@ class Arena(BaseArena):
                 continue
 
             hit = False
+            cow_radius = cow.size / 2
             if isinstance(effect, ConeEffect):
-                hit = self._point_in_triangle(cow.location, effect.get_triangle_points())
+                hit = self._circle_intersects_triangle(cow.location, cow_radius, effect.get_triangle_points())
                 if hit:
                     cow.is_slowed = True
             elif isinstance(effect, RadialEffect):
-                hit = self._point_in_circle(cow.location, effect.location, effect.radius)
+                hit = self._circle_intersects_circle(cow.location, cow_radius, effect.location, effect.radius)
             elif isinstance(effect, LineEffect):
-                hit = self._point_in_arc(cow.location, effect.location, effect.angle, effect.length, effect.width)
+                hit = self._circle_intersects_line(cow.location, cow_radius, effect.location, effect.angle, effect.length, effect.width)
             elif isinstance(effect, WaveProjectileEffect):
                 cow_rect = cow.get_rect(self.height)
                 hit = cow_rect.colliderect(effect.get_rect(self.height))
@@ -280,34 +295,87 @@ class Arena(BaseArena):
                 cow.location[1] -= overlap_y
 
     @staticmethod
-    def _point_in_circle(point, center, radius) -> bool:
-        dx = point[0] - center[0]
-        dy = point[1] - center[1]
-        return dx * dx + dy * dy <= radius * radius
+    def _circle_intersects_circle(circle1_center, circle1_radius, circle2_center, circle2_radius) -> bool:
+        """Check if two circles intersect."""
+        dx = circle1_center[0] - circle2_center[0]
+        dy = circle1_center[1] - circle2_center[1]
+        dist_sq = dx * dx + dy * dy
+        radius_sum = circle1_radius + circle2_radius
+        return dist_sq <= radius_sum * radius_sum
 
     @staticmethod
-    def _point_in_triangle(point, triangle_points) -> bool:
+    def _circle_intersects_triangle(circle_center, circle_radius, triangle_points) -> bool:
+        """Check if a circle intersects with a triangle."""
         (x1, y1), (x2, y2), (x3, y3) = triangle_points
-        px, py = point
+        cx, cy = circle_center
+        
+        # Check if circle center is inside triangle
         denom = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
-        if denom == 0:
-            return False
-        a = ((y2 - y3) * (px - x3) + (x3 - x2) * (py - y3)) / denom
-        b = ((y3 - y1) * (px - x3) + (x1 - x3) * (py - y3)) / denom
-        c = 1 - a - b
-        return 0 <= a <= 1 and 0 <= b <= 1 and 0 <= c <= 1
+        if denom != 0:
+            a = ((y2 - y3) * (cx - x3) + (x3 - x2) * (cy - y3)) / denom
+            b = ((y3 - y1) * (cx - x3) + (x1 - x3) * (cy - y3)) / denom
+            c = 1 - a - b
+            if 0 <= a <= 1 and 0 <= b <= 1 and 0 <= c <= 1:
+                return True
+        
+        # Check if circle intersects any triangle edge
+        edges = [
+            ((x1, y1), (x2, y2)),
+            ((x2, y2), (x3, y3)),
+            ((x3, y3), (x1, y1))
+        ]
+        for (p1x, p1y), (p2x, p2y) in edges:
+            # Distance from circle center to line segment
+            dx = p2x - p1x
+            dy = p2y - p1y
+            line_len_sq = dx * dx + dy * dy
+            if line_len_sq == 0:
+                # Edge is a point
+                dist = math.hypot(cx - p1x, cy - p1y)
+                if dist <= circle_radius:
+                    return True
+            else:
+                # Project circle center onto line segment
+                t = max(0, min(1, ((cx - p1x) * dx + (cy - p1y) * dy) / line_len_sq))
+                proj_x = p1x + t * dx
+                proj_y = p1y + t * dy
+                dist = math.hypot(cx - proj_x, cy - proj_y)
+                if dist <= circle_radius:
+                    return True
+        
+        return False
 
     @staticmethod
-    def _point_in_arc(point, center, angle, length, width) -> bool:
-        dx = point[0] - center[0]
-        dy = point[1] - center[1]
-        dist = math.hypot(dx, dy)
-        if dist > length or dist == 0:
-            return False
-        point_angle = math.atan2(dy, dx)
-        half_angle = math.atan2(width / 2, max(1.0, dist))
-        diff = (point_angle - angle + math.pi) % (2 * math.pi) - math.pi
-        return abs(diff) <= half_angle
+    def _circle_intersects_line(circle_center, circle_radius, line_start, angle, length, width) -> bool:
+        """Check if a circle intersects with a line segment (arc)."""
+        cx, cy = circle_center
+        
+        # Calculate line end point
+        line_end = (
+            line_start[0] + length * math.cos(angle),
+            line_start[1] + length * math.sin(angle)
+        )
+        
+        # Distance from circle center to line segment
+        dx = line_end[0] - line_start[0]
+        dy = line_end[1] - line_start[1]
+        line_len_sq = dx * dx + dy * dy
+        
+        if line_len_sq == 0:
+            # Line is a point
+            dist = math.hypot(cx - line_start[0], cy - line_start[1])
+            return dist <= circle_radius + width / 2
+        
+        # Project circle center onto line segment
+        t = max(0, min(1, ((cx - line_start[0]) * dx + (cy - line_start[1]) * dy) / line_len_sq))
+        proj_x = line_start[0] + t * dx
+        proj_y = line_start[1] + t * dy
+        
+        # Distance from circle center to projected point
+        dist_to_line = math.hypot(cx - proj_x, cy - proj_y)
+        
+        # Check if within width/2 + circle_radius
+        return dist_to_line <= (width / 2) + circle_radius
 
     def render(self):
         if self.headless:

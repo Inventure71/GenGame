@@ -124,7 +124,12 @@ method()  # Applies state change
 * Convert explicitly
 * Leave margins (avoid 1px gaps)
 * **Platform collision**: Character feet position = `arena_height - location[1]`
-* **Effect collision**: Requires proper owner/victim IDs and rect overlap
+* **Effect collision**: Requires proper owner/victim IDs. Collision detection uses circle-based methods that account for cow radius (`cow.size / 2`), not just center points:
+  - `RadialEffect`: `_circle_intersects_circle()` (cow circle vs effect circle)
+  - `ConeEffect`: `_circle_intersects_triangle()` (cow circle vs triangle)
+  - `LineEffect`: `_circle_intersects_line()` (cow circle vs line segment)
+  - `WaveProjectileEffect`: `rect.colliderect()` (rectangle collision)
+  - When testing, verify hits work when cow's center is near but not inside the effect area
 
 ---
 

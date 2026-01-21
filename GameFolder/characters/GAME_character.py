@@ -2,6 +2,7 @@ import math
 import random
 import pygame
 from BASE_components.BASE_character import BaseCharacter
+from BASE_components.BASE_asset_handler import AssetHandler
 from GameFolder.abilities.ability_loader import get_primary_abilities, get_passive_abilities
 from GameFolder.effects.obstacleeffect import ObstacleEffect
 
@@ -17,6 +18,12 @@ class Character(BaseCharacter):
         self.size = float(width)
         self.width = self.size
         self.height = self.size
+
+        if image:
+            self.skin_name = image
+        else:
+            self.skin_name = random.choice(["mucca0.png", "mucca1.png", "mucca2.png", "mucca3.png"])
+        self.dead_skin_name = "cadavere.png"
 
         self.speed = 3.0
         self.base_max_health = 50.0
@@ -122,6 +129,10 @@ class Character(BaseCharacter):
             self.primary_delay = 0.6
         if not hasattr(self, "_swap_held"):
             self._swap_held = False
+        if not hasattr(self, "skin_name"):
+            self.skin_name = random.choice(["mucca0.png", "mucca1.png", "mucca2.png", "mucca3.png"])
+        if not hasattr(self, "dead_skin_name"):
+            self.dead_skin_name = "cadavere.png"
 
     @staticmethod
     def get_input_data(held_keys, mouse_buttons, mouse_pos):
@@ -201,6 +212,11 @@ class Character(BaseCharacter):
 
     def update(self, delta_time: float, arena):
         self.last_arena_height = arena.height
+
+        if not hasattr(self, "skin_name"):
+            self.skin_name = random.choice(["mucca0.png", "mucca1.png", "mucca2.png", "mucca3.png"])
+        if not hasattr(self, "dead_skin_name"):
+            self.dead_skin_name = "cadavere.png"
 
         if self.is_attacking and arena.current_time >= self.horn_charge_end_time:
             self.is_attacking = False
@@ -388,11 +404,30 @@ class Character(BaseCharacter):
         if not self._graphics_initialized:
             return
         rect = self.get_draw_rect(arena_height, camera)
+        
+        # Ensure rect has valid dimensions
+        if rect.width <= 0 or rect.height <= 0:
+            return
+        
         draw_color = (200, 200, 255) if self.is_attacking else self.color
         if not self.is_alive:
             draw_color = (120, 120, 120)
-        pygame.draw.rect(screen, draw_color, rect)
-        pygame.draw.rect(screen, (30, 30, 30), rect, 2)
+
+        def fallback(surface):
+            surface.fill(draw_color)
+            pygame.draw.rect(surface, (30, 30, 30), surface.get_rect(), 2)
+
+        asset_name = self.skin_name if self.is_alive else self.dead_skin_name
+        sprite, loaded = AssetHandler.get_image(
+            asset_name,
+            size=(int(rect.width), int(rect.height)),
+            fallback_draw=fallback,
+        )
+        if sprite is not None:
+            screen.blit(sprite, rect)
+        elif not loaded:
+            pygame.draw.rect(screen, draw_color, rect)
+            pygame.draw.rect(screen, (30, 30, 30), rect, 2)
 
         health_ratio = self.health / max(1.0, self.max_health)
         bar_width = self.size
