@@ -121,6 +121,33 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
     conflicts_by_file = get_all_conflicts(path_to_problematic_patch)
     print(f"Found conflicts in {len(conflicts_by_file)} file(s)")
 
+    # Auto-resolve seed conflicts because they are predictable and present in all clients
+    import re
+    import random
+    seed_resolved = 0
+    seed_conflicts = []  # Collect conflicts to resolve
+
+    for file_path, conflicts in conflicts_by_file.items():
+        if not file_path.endswith("setup.py"):
+            continue
+        for conflict in conflicts:
+            if len(conflict["option_a"]) == 1 and len(conflict["option_b"]) == 1:
+                a_line = conflict["option_a"][0].strip()
+                b_line = conflict["option_b"][0].strip()
+                if re.match(r'random\.seed\(\s*\d+\s*\)', a_line) and re.match(r'random\.seed\(\s*\d+\s*\)', b_line):
+                    seed_conflicts.append((file_path, conflict))
+
+    # Resolve in reverse order (highest conflict_num first) to avoid number shifts
+    for file_path, conflict in sorted(seed_conflicts, key=lambda x: x[1]["conflict_num"], reverse=True):
+        chosen = random.choice([conflict["option_a"], conflict["option_b"]])
+        resolve_conflict(path_to_problematic_patch, file_path, conflict["conflict_num"], "manual", chosen)
+        seed_resolved += 1
+        print(f"  ✓ Auto-resolved seed conflict #{conflict['conflict_num']} in {file_path}")
+
+    if seed_resolved > 0:
+        print(f"Auto-resolved {seed_resolved} seed conflict(s), re-checking remaining conflicts...")
+        conflicts_by_file = get_all_conflicts(path_to_problematic_patch)
+
     if len(conflicts_by_file) == 0:
         print("No conflicts found, continuing...")
         return

@@ -9,5 +9,5 @@ class BaseUI:
         self.arena_width = arena_width
         self.arena_height = arena_height
 
-    def draw(self, characters: list, game_over: bool = False, winner=None, respawn_timers: dict = None):
+    def draw(self, characters: list, game_over: bool = False, winner=None, respawn_timers: dict = None, local_player_id: str = None, network_stats: dict = None):
         return

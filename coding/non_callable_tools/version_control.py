@@ -5,6 +5,7 @@ import ast
 import time
 import glob
 import difflib
+import random
 from typing import Tuple, List, Dict, Optional
 from merge3 import Merge3
 from coding.non_callable_tools.backup_handling import BackupHandler
@@ -38,7 +39,47 @@ class VersionControl:
     def __init__(self, action_logger_instance: ActionLogger = None, path_to_security_backup: str = "__TEMP_SECURITY_BACKUP"):
         self.action_logger_instance = action_logger_instance
         self.security_backup_handler = BackupHandler(path_to_security_backup)
-    
+
+    def _substitute_seed(self) -> tuple:
+        """
+        Modify setup.py to ensure random.seed() appears in diff.
+        Returns: (original_content, seed_modified) tuple
+        """
+        setup_path = "GameFolder/setup.py"
+        original_setup_content = None
+        seed_modified = False
+        
+        if os.path.exists(setup_path):
+            try:
+                with open(setup_path, 'r', encoding='utf-8') as f:
+                    original_setup_content = f.read()
+                
+                # Find random.seed(...) pattern
+                seed_pattern = r'random\.seed\(\s*(\d+)\s*\)'
+                match = re.search(seed_pattern, original_setup_content)
+                
+                if match:
+                    current_seed = int(match.group(1))
+                    new_seed = current_seed + 7  # Add 7 to ensure it's different
+                    
+                    # Replace with new seed value
+                    modified_content = re.sub(
+                        seed_pattern, 
+                        f'random.seed({new_seed})', 
+                        original_setup_content
+                    )
+                    
+                    # Write modified content
+                    with open(setup_path, 'w', encoding='utf-8') as f:
+                        f.write(modified_content)
+                    
+                    seed_modified = True
+                    print(f"    ✓ Modified random.seed({current_seed}) -> random.seed({new_seed}) in setup.py to ensure it appears in diff")
+            except Exception as e:
+                print(f"    Warning: Could not modify setup.py seed: {e}")
+        
+        return original_setup_content, seed_modified
+
     def save_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups"):
         """
         Saves a patch by comparing the current GameFolder against a base backup.
@@ -60,12 +101,26 @@ class VersionControl:
 
         print(f"Generating patch by comparing GameFolder against {base_folder}...")
 
+        # STEP 1: Modify setup.py BEFORE generating patch (so seed appears in diff)
+        setup_path = "GameFolder/setup.py"
+        original_setup_content, seed_modified = self._substitute_seed()
+
         try:
+            # STEP 2: Generate patch (now includes the seed change)
             changes, metadata = self.create_patch_from_folders(base_folder, "GameFolder", name_of_backup)
         except Exception as e:
             print(f"ERROR: Failed to create patch from folders: {e}")
+            # Restore original if we modified it
+            if seed_modified and original_setup_content:
+                try:
+                    with open(setup_path, 'w', encoding='utf-8') as f:
+                        f.write(original_setup_content)
+                    print(f"    ✓ Restored original setup.py after error")
+                except Exception as e2:
+                    print(f"    Warning: Could not restore setup.py: {e2}")
             return False
 
+        # STEP 3: Save the patch
         if len(changes) > 0:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
@@ -76,12 +131,36 @@ class VersionControl:
                     json.dump({"name_of_backup": name_of_backup, "metadata": metadata}, f, indent=2, ensure_ascii=False)
 
                 print(f"Successfully saved {len(changes)} changes to {file_path}")
+                
+                # STEP 4: Restore original setup.py content
+                if seed_modified and original_setup_content:
+                    try:
+                        with open(setup_path, 'w', encoding='utf-8') as f:
+                            f.write(original_setup_content)
+                        print(f"    ✓ Restored original setup.py content")
+                    except Exception as e:
+                        print(f"    Warning: Could not restore setup.py: {e}")
+                
                 return True
             except Exception as e:
                 print(f"ERROR: Failed to write patch files: {e}")
+                # Restore original if we modified it
+                if seed_modified and original_setup_content:
+                    try:
+                        with open(setup_path, 'w', encoding='utf-8') as f:
+                            f.write(original_setup_content)
+                    except:
+                        pass
                 return False
         else:
             print("No changes found relative to the base backup.")
+            # Restore original if we modified it
+            if seed_modified and original_setup_content:
+                try:
+                    with open(setup_path, 'w', encoding='utf-8') as f:
+                        f.write(original_setup_content)
+                except:
+                    pass
             return False
 
     def load_from_extension_file(self, file_path: str):
