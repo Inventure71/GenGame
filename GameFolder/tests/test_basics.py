@@ -99,3 +99,43 @@ def test_ability_pickup_assigns_ability():
         assert char.primary_ability_name == pickup.ability_name
     else:
         assert char.passive_ability_name == pickup.ability_name
+
+
+def test_q_swaps_ability_with_pickup():
+    """Pressing Q while colliding with a pickup should swap the relevant ability."""
+    from GameFolder.pickups.GAME_pickups import AbilityPickup, PRIMARY_ABILITY_NAMES, PASSIVE_ABILITY_NAMES
+
+    arena = Arena(800, 600, headless=True)
+    char = Character("TestCow", "Test", "", [300.0, 300.0])
+    arena.add_character(char)
+
+    # Primary swap
+    old_primary = "Stomp"
+    new_primary = next(name for name in PRIMARY_ABILITY_NAMES if name != old_primary)
+    char.set_primary_ability(old_primary)
+    p_pickup = AbilityPickup(new_primary, "primary", char.location[:])
+    arena.weapon_pickups.append(p_pickup)
+
+    char.process_input({"swap": True, "movement": [0, 0], "mouse_pos": char.location[:] }, arena)
+    assert char.primary_ability_name == new_primary
+    assert p_pickup.ability_name == old_primary
+    assert p_pickup in arena.weapon_pickups
+    assert p_pickup.is_active is True
+    # Remove primary pickup so the passive swap below targets the passive pickup deterministically.
+    arena.weapon_pickups.remove(p_pickup)
+
+    # Passive swap
+    assert len(PASSIVE_ABILITY_NAMES) >= 2
+    old_passive = PASSIVE_ABILITY_NAMES[0]
+    new_passive = PASSIVE_ABILITY_NAMES[1]
+    char.set_passive_ability(old_passive)
+    s_pickup = AbilityPickup(new_passive, "passive", char.location[:])
+    arena.weapon_pickups.append(s_pickup)
+
+    # Release + press to pass edge-detection
+    char.process_input({"swap": False, "movement": [0, 0], "mouse_pos": char.location[:] }, arena)
+    char.process_input({"swap": True, "movement": [0, 0], "mouse_pos": char.location[:] }, arena)
+    assert char.passive_ability_name == new_passive
+    assert s_pickup.ability_name == old_passive
+    assert s_pickup in arena.weapon_pickups
+    assert s_pickup.is_active is True

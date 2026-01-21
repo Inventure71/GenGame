@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import traceback
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 from coding.non_callable_tools.helpers import open_file
 from coding.tools.file_handling import create_file
 from coding.tools.security import is_file_allowed
@@ -407,13 +407,43 @@ def _apply_unified_diff_safe(original_content: str, diff_text: str) -> Tuple[str
     current_src_line = 1
     modified_ranges: List[Tuple[int, int]] = []  # Track (start, end) line numbers in new file
 
-    for hunk in parsed_hunks:
+    for hunk_index, hunk in enumerate(parsed_hunks, start=1):
         start = hunk["old_start"]
         ops = hunk["ops"]
 
         located_start = _locate_hunk_start(original_lines, start, ops, window=60)
         if located_start is None:
-            raise ValueError(f"Could not locate hunk starting near line {start}. File may have changed.")
+            anchors = _extract_hunk_anchors(ops, max_anchors=3)
+            expected_idx = max(0, min(len(original_lines), start - 1))
+            candidates = _diagnose_hunk_location(
+                original_lines=original_lines,
+                expected_idx=expected_idx,
+                anchors=anchors,
+                window=60,
+                max_candidates=3,
+            )
+            candidates_text = "\n".join(
+                [
+                    (
+                        f"  - candidate_start_line={c['start_line']} "
+                        f"(matched_anchors={c['matched_anchors']}/{c['total_anchors']}, score={c['score']:.2f})\n"
+                        f"{c['snippet']}"
+                    )
+                    for c in candidates
+                ]
+            ) or "  (no candidates found)"
+            raise ValueError(
+                "Failed to apply patch: hunk could not be located (file drift / context mismatch).\n"
+                f"Hunk: #{hunk_index}\n"
+                f"Header: {hunk['header']}\n"
+                f"Expected near old_start line: {start}\n"
+                f"Anchors used: {anchors if anchors else '(none)'}\n"
+                f"Search window: ±60 lines\n\n"
+                "Closest candidate locations:\n"
+                f"{candidates_text}\n\n"
+                "Action: Rebase your diff by copying 3-8 exact lines from the candidate region into your hunk context "
+                "(space/' ' lines) and re-apply."
+            )
         start = located_start
 
         while current_src_line < start:
@@ -426,7 +456,7 @@ def _apply_unified_diff_safe(original_content: str, diff_text: str) -> Tuple[str
         hunk_start_line = len(result_lines) + 1  # Track where this hunk starts in the new file
         has_modifications = False  # Track if this hunk actually modifies anything
 
-        for op in ops:
+        for op_index, op in enumerate(ops):
             if op is None:
                 continue
             if op == "":
@@ -441,18 +471,43 @@ def _apply_unified_diff_safe(original_content: str, diff_text: str) -> Tuple[str
                     src_line = original_lines[current_src_line - 1]
                     if not _fuzzy_match(src_line, content):
                         context_snippet = _get_context_snippet(original_lines, current_src_line - 1)
+                        nearby_occurrences = _find_nearby_line_occurrences(
+                            lines=original_lines,
+                            needle=content.strip(),
+                            center_idx=current_src_line - 1,
+                            window=80,
+                            max_hits=5,
+                        )
+                        occ_text = ""
+                        if nearby_occurrences:
+                            occ_text = (
+                                "\n\nNearest occurrences of the diff's expected context line in the file:\n"
+                                + "\n".join([f"  - line {ln}" for ln in nearby_occurrences])
+                            )
                         raise ValueError(
-                            f"Context mismatch at line {current_src_line}.\n"
+                            "Failed to apply patch: context mismatch.\n"
+                            f"Hunk: #{hunk_index}\n"
+                            f"Header: {hunk['header']}\n"
+                            f"Context op index within hunk: {op_index}\n"
+                            f"Context mismatch at file line {current_src_line}.\n"
                             f"Expected (from file): '{src_line.strip()}'\n"
                             f"Found (in diff):    '{content.strip()}'\n"
                             f"\nActual File Content around line {current_src_line}:\n{context_snippet}"
+                            f"{occ_text}\n\n"
+                            "Action: Update the hunk context (' ' lines) to match the file exactly, or regenerate the diff "
+                            "from the current file. If you intended to insert code, anchor your hunk after a stable line "
+                            "that still exists."
                         )
                     result_lines.append(src_line)
                 else:
                     context_snippet = _get_context_snippet(original_lines, len(original_lines) - 1)
                     raise ValueError(
+                        "Failed to apply patch: diff expects context past end-of-file.\n"
+                        f"Hunk: #{hunk_index}\n"
+                        f"Header: {hunk['header']}\n"
                         f"Diff expects context at line {current_src_line}, but file ended.\n"
                         f"\nActual File Content at end of file:\n{context_snippet}"
+                        "\n\nAction: Rebase the hunk to the current file end (or include correct trailing context)."
                     )
                 current_src_line += 1
                 old_consumed += 1
@@ -464,10 +519,15 @@ def _apply_unified_diff_safe(original_content: str, diff_text: str) -> Tuple[str
                     if not _fuzzy_match(src_line, content):
                         context_snippet = _get_context_snippet(original_lines, current_src_line - 1)
                         raise ValueError(
-                            f"Removal mismatch at line {current_src_line}.\n"
+                            "Failed to apply patch: removal mismatch.\n"
+                            f"Hunk: #{hunk_index}\n"
+                            f"Header: {hunk['header']}\n"
+                            f"Removal mismatch at file line {current_src_line}.\n"
                             f"File has: '{src_line.strip()}'\n"
                             f"Diff wants to remove: '{content.strip()}'\n"
                             f"\nActual File Content around line {current_src_line}:\n{context_snippet}"
+                            "\n\nAction: Rebase the hunk on current file content; the line you want to remove has changed "
+                            "or moved."
                         )
                 current_src_line += 1
                 old_consumed += 1
@@ -516,6 +576,94 @@ def _apply_unified_diff_safe(original_content: str, diff_text: str) -> Tuple[str
         adjusted_ranges.append((start, adjusted_end))
 
     return "\n".join(result_lines), adjusted_ranges
+
+
+def _extract_hunk_anchors(ops: List[str], max_anchors: int = 3) -> List[str]:
+    anchors: List[str] = []
+    for op in ops:
+        if not op:
+            continue
+        if op[0] in (" ", "-"):
+            anchors.append(op[1:].strip())
+        if len(anchors) >= max_anchors:
+            break
+    return anchors
+
+
+def _diagnose_hunk_location(
+    original_lines: List[str],
+    expected_idx: int,
+    anchors: List[str],
+    window: int,
+    max_candidates: int = 3,
+) -> List[Dict[str, Any]]:
+    """
+    Returns best candidate start locations for a hunk when exact relocation fails.
+    A candidate score is the fraction of anchors matched consecutively at that position.
+    """
+    if not anchors:
+        return []
+
+    start_idx = max(0, expected_idx - window)
+    end_idx = min(len(original_lines), expected_idx + window)
+
+    candidates: List[Dict[str, Any]] = []
+    for i0 in range(start_idx, end_idx):
+        matched = 0
+        j = i0
+        for a in anchors:
+            if j >= len(original_lines):
+                break
+            if original_lines[j].strip() == a:
+                matched += 1
+                j += 1
+            else:
+                break
+        if matched > 0:
+            score = matched / max(1, len(anchors))
+            snippet = _get_context_snippet(original_lines, i0, context_size=4)
+            candidates.append(
+                {
+                    "start_line": i0 + 1,
+                    "matched_anchors": matched,
+                    "total_anchors": len(anchors),
+                    "score": score,
+                    "snippet": snippet,
+                }
+            )
+
+    # Prefer higher score, then nearer to expected_idx
+    candidates.sort(
+        key=lambda c: (
+            -c["score"],
+            abs((c["start_line"] - 1) - expected_idx),
+        )
+    )
+    return candidates[:max_candidates]
+
+
+def _find_nearby_line_occurrences(
+    lines: List[str],
+    needle: str,
+    center_idx: int,
+    window: int = 80,
+    max_hits: int = 5,
+) -> List[int]:
+    """
+    Finds nearby line numbers where a stripped line equals the needle.
+    Used to hint where context moved.
+    """
+    if not needle:
+        return []
+    start_idx = max(0, center_idx - window)
+    end_idx = min(len(lines), center_idx + window + 1)
+    hits: List[int] = []
+    for i in range(start_idx, end_idx):
+        if lines[i].strip() == needle:
+            hits.append(i + 1)
+            if len(hits) >= max_hits:
+                break
+    return hits
 
 
 def _locate_hunk_start(original_lines: List[str], old_start: int, ops: List[str], window: int = 60) -> Optional[int]:

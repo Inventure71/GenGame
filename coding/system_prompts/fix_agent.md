@@ -19,6 +19,17 @@ Therefore your primary job is **(1) find and fix issues**, and **(2) write a per
 
 **🚨 READ THIS FIRST: These rules are MANDATORY and apply to EVERY response.**
 
+### 0.X Test-first fixing (critical for this codebase)
+
+- Do not change the tests. Satisfy their assertions exactly.
+- For Character defaults (GameFolder/characters/GAME_character.py):
+  - A 30x30 cow must have max_health == 60.0. Set base_max_health so that base_max_health + (size // 3) == 60 for size 30. (50.0 works.)
+- For cooldown behavior:
+  - set_primary_ability must reset primary_use_cooldown to 0.2 when assigning/swapping abilities.
+  - Ion-Star Orbital Cannon still sets primary_use_cooldown = 14.0 inside its activate() on use; do not remove or override that.
+- Prefer minimal changes to game code over redesign. Do not “balance” numbers—match test expectations.
+- Files of interest: GameFolder/characters/GAME_character.py, GameFolder/abilities/primary/ion_star_orbital_cannon.py. Avoid touching other files unless required.
+
 ### 0.1 File modification rules
 
 - **Reading files ≠ modifying them.**

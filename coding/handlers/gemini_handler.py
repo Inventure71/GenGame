@@ -201,7 +201,7 @@ class GeminiHandler:
             current_turn_log.append(tool_output_content)
 
     def make_api_call(self, api_history: list, config: types.GenerateContentConfig) -> types.GenerateContentResponse:
-        max_retries = 3
+        max_retries = 4
 
         for attempt in range(max_retries):
             try:
@@ -212,17 +212,21 @@ class GeminiHandler:
                 )
                 return response
             except Exception as e:
-                if "500" in str(e) or "INTERNAL" in str(e):  # Server error
+                if "429" in str(e):
+                    print(f"Rate limit exceeded, retrying in 10s...")
+                    delay = 10
+                if "500" in str(e) or "INTERNAL" in str(e) or "503" in str(e) or "504" in str(e):  # Server error
                     if attempt < max_retries - 1:
                         delay = (2 ** (attempt + 1))  # Exponential backoff: 2s, 4s, 8s
                         print(f"Server error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
-                        time.sleep(delay)
-                        continue
                     else:
                         print(f"Failed after {max_retries} attempts: {e}")
                         print(f"The request was: {api_history}")
                         print(f"The config was: {config}")
                         raise e
+                    
+                    time.sleep(delay)
+                    continue
                 else:
                     # Non-server error, re-raise immediately
                     raise e

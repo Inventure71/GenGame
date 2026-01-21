@@ -1,4 +1,5 @@
 from coding.tools.file_handling import get_tree_directory, read_file
+from coding.non_callable_tools.helpers import open_file
 import os
 
 def get_full_directory_tree():
@@ -31,7 +32,7 @@ def gather_context_planning():
         "## Documentation of BASE components:",
         read_file(file_path="BASE_components/BASE_COMPONENTS_DOCS.md"),
         "## Guide for adding abilities:",
-        read_file(file_path="coding/prompts/GUIDE_Adding_Abilities.md"),
+        open_file(file_path="coding/prompts/GUIDE_Adding_Abilities.md"),
     ]
     
     # Read core game files
@@ -106,7 +107,7 @@ def gather_context_testing():
         "- Effects ACCUMULATE across loop iterations",
         "",
         "## Testing Guide:",
-        read_file(file_path="coding/prompts/GUIDE_Testing.md"),
+        open_file(file_path="coding/prompts/GUIDE_Testing.md"),
         "",
         "=== END OF TESTING CONTEXT ==="
     ]

@@ -56,6 +56,7 @@ class Character(BaseCharacter):
         self.dash_multiplier = 5.0
         self.is_slowed = False
         self._dash_held = False
+        self._swap_held = False
 
         self.is_attacking = False
         self.horn_charge_duration = 2.0
@@ -117,6 +118,8 @@ class Character(BaseCharacter):
             self.primary_damage = 0.0
         if not hasattr(self, "primary_delay"):
             self.primary_delay = 0.6
+        if not hasattr(self, "_swap_held"):
+            self._swap_held = False
 
     @staticmethod
     def get_input_data(held_keys, mouse_buttons, mouse_pos):
@@ -128,6 +131,8 @@ class Character(BaseCharacter):
             input_data["dash"] = True
         if pygame.K_p in held_keys:
             input_data["poop"] = True
+        if pygame.K_q in held_keys:
+            input_data["swap"] = True
         if mouse_buttons[0]:
             input_data["primary"] = mouse_pos
         return input_data
@@ -135,6 +140,11 @@ class Character(BaseCharacter):
     def process_input(self, input_data: dict, arena):
         if not self.is_alive:
             return
+        swap_pressed = input_data.get("swap", False)
+        swap = swap_pressed and not self._swap_held
+        self._swap_held = swap_pressed
+        if swap:
+            self.try_swap_ability(arena)
         if input_data.get("eat"):
             self.try_eat(arena)
         if input_data.get("poop"):
@@ -147,6 +157,45 @@ class Character(BaseCharacter):
         dash = dash_pressed and not self._dash_held
         self._dash_held = dash_pressed
         self.move(move_dir, arena, input_data.get("mouse_pos"), dash)
+
+    def try_swap_ability(self, arena):
+        """
+        Swap the cow's current ability with the pickup you're standing on.
+
+        - If the relevant slot is empty, behaves like a normal pickup (assign + remove pickup).
+        - Otherwise, exchanges the cow's ability with the pickup's stored ability.
+        """
+        cow_rect = self.get_rect(arena.height)
+        for pickup in getattr(arena, "weapon_pickups", [])[:]:
+            if not getattr(pickup, "is_active", False):
+                continue
+            pickup_rect = pickup.get_pickup_rect(arena.height)
+            if not cow_rect.colliderect(pickup_rect):
+                continue
+
+            if pickup.ability_type == "primary":
+                if self.primary_ability_name is None:
+                    self.set_primary_ability(pickup.ability_name)
+                    pickup.pickup()
+                    if pickup in arena.weapon_pickups:
+                        arena.weapon_pickups.remove(pickup)
+                else:
+                    old = self.primary_ability_name
+                    new = pickup.ability_name
+                    self.set_primary_ability(new)
+                    pickup.set_ability_name(old)
+            else:
+                if self.passive_ability_name is None:
+                    self.set_passive_ability(pickup.ability_name)
+                    pickup.pickup()
+                    if pickup in arena.weapon_pickups:
+                        arena.weapon_pickups.remove(pickup)
+                else:
+                    old = self.passive_ability_name
+                    new = pickup.ability_name
+                    self.set_passive_ability(new)
+                    pickup.set_ability_name(old)
+            return
 
     def update(self, delta_time: float, arena):
         self.last_arena_height = arena.height

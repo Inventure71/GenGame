@@ -1,4 +1,5 @@
 import os
+import ctypes
 
 # Set video driver BEFORE importing pygame
 #os.environ['SDL_VIDEODRIVER'] = 'cocoa'
@@ -94,6 +95,7 @@ class BaseMenu:
         # Agent menu state
         self.agent_prompt = ""
         self.agent_running = False
+        self.agent_thread = None
         self.agent_results = None
         self.show_fix_prompt = False
         self.agent_values = None
@@ -331,6 +333,33 @@ class BaseMenu:
         print("Failed to retrieve clipboard content")
         return ""
 
+    def _kill_agent_thread(self):
+        """Attempt to stop the running agent thread by raising SystemExit."""
+        thread = getattr(self, "agent_thread", None)
+        if thread and thread.is_alive():
+            res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                ctypes.c_long(thread.ident),
+                ctypes.py_object(SystemExit)
+            )
+            if res == 0:
+                return False  # thread not found
+            if res > 1:
+                # revert if more than one thread was affected
+                ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread.ident), 0)
+                return False
+        return True
+
+    def stop_agent_immediately(self):
+        """Hard kill the agent thread and reset state."""
+        stopped = self._kill_agent_thread()
+        self.agent_running = False
+        self.agent_thread = None
+        try:
+            self.action_logger.end_session()
+        except Exception:
+            pass
+        self.show_error_message("Agent stopped." if stopped else "Failed to stop agent thread.")
+
     # Agent functionality
     def run_agent(self, prompt: str, patch_to_load: str = None, needs_rebase: bool = True):
         """Run the agent with the given prompt."""
@@ -365,6 +394,7 @@ class BaseMenu:
             self.agent_results = {'passed': 0, 'total': 0, 'error': str(e)}
         finally:
             self.agent_running = False
+            self.agent_thread = None
 
     def run_agent_fix(self, results):
         """Run the agent in fix mode."""
@@ -456,6 +486,7 @@ class BaseMenu:
             # End the visual logging session
             self.action_logger.end_session()
             self.agent_running = False
+            self.agent_thread = None
 
     # Callback methods (used by network client)
     def file_received_callback(self, file_path: str, success: bool):
@@ -652,6 +683,37 @@ class BaseMenu:
             self.settings_openai_key = ""
             self.selected_provider = "GEMINI"
             self.settings_model = ""
+    
+    def ensure_base_workspace(self) -> bool:
+        """
+        Ensure we have a base backup and restore GameFolder to it.
+        Safe to call multiple times; keeps code DRY between startup and entering Agent.
+        """
+        from coding.non_callable_tools.backup_handling import BackupHandler
+        handler = BackupHandler("__game_backups")
+
+        # Ensure we have a base backup recorded
+        if self.base_working_backup is None:
+            print("Creating initial safety backup...")
+            try:
+                _, self.base_working_backup = handler.create_backup("GameFolder")
+                print(f"Initial backup created: {self.base_working_backup}")
+                # Persist it so future runs restore correctly
+                self.handlers.on_settings_save_click()
+            except Exception as e:
+                print(f"Warning: Failed to create initial backup: {e}")
+                return False
+
+        # Restore to base backup
+        print(f"Restoring from backup: {self.base_working_backup}")
+        _, restored_name = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
+        if restored_name is None:
+            print("Warning: Failed to restore backup")
+            return False
+
+        self.base_working_backup = restored_name
+        print(f"Backup restored: {self.base_working_backup}")
+        return True
 
     def on_start(self):
         self._load_settings()
@@ -659,31 +721,8 @@ class BaseMenu:
         cleanup_old_logs()
         self.patch_to_apply = None
 
-        from coding.non_callable_tools.backup_handling import BackupHandler
-        handler = BackupHandler("__game_backups")
-
-        # Ensure we have an initial base backup if none is set
-        while True:
-            if self.base_working_backup is None:
-                print("Creating initial safety backup...")
-                try:
-                    _, self.base_working_backup = handler.create_backup("GameFolder")
-                    print(f"Initial backup created: {self.base_working_backup}")
-                    self.handlers.on_settings_save_click()
-                    return True
-
-                except Exception as e:
-                    print(f"Warning: Failed to create initial backup: {e}")
-                    return False
-            else:
-                print(f"Restoring from backup: {self.base_working_backup}")
-                _, self.base_working_backup = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
-                if self.base_working_backup is not None:
-                    print(f"Backup restored: {self.base_working_backup}")
-                    return True
-                else:
-                    print("Warning: Failed to restore backup, creating a new one because we are at startup.")
-                    continue
+        # DRY: reuse the same logic
+        return self.ensure_base_workspace()
     
     def start_game(self):
         """Start the game."""

@@ -87,6 +87,9 @@ class MenuHandlers:
     def on_agent_content_click(self):
         """Handle agent content button click."""
         print("Agent Content clicked")
+        if not self.menu.ensure_base_workspace():
+            self.menu.show_error_message("Failed to restore base workspace; agent may be unsafe.")
+
         self.menu.show_menu("agent")
 
     def on_settings_click(self):
@@ -169,18 +172,17 @@ class MenuHandlers:
             kwargs={
                 'patch_to_load': patch_to_load,
                 'needs_rebase': False # The UI handles rebase during "Load" or initial start
-            }
+            },
+            daemon=True
         )
         agent_thread.start()
+        self.menu.agent_thread = agent_thread
 
     def on_agent_stop_click(self):
         """Handle agent stop button click."""
         print("Agent Stop clicked")
         if self.menu.agent_running:
-            # For now, just set the flag - the agent thread should check this periodically
-            # TODO: Implement proper agent stopping mechanism
-            self.menu.agent_running = False
-            self.menu.show_error_message("Agent stop requested - may take a moment to complete")
+            self.menu.stop_agent_immediately()
 
     def on_agent_fix_click(self):
         """Handle agent fix button click."""
@@ -189,8 +191,9 @@ class MenuHandlers:
         self.menu.show_fix_prompt = False
 
         # Run agent fix in a separate thread
-        agent_thread = threading.Thread(target=self.menu.run_agent_fix, args=(self.menu.agent_results,))
+        agent_thread = threading.Thread(target=self.menu.run_agent_fix, args=(self.menu.agent_results,), daemon=True)
         agent_thread.start()
+        self.menu.agent_thread = agent_thread
 
     def on_agent_save_patch_click(self):
         """Handle agent save patch button click."""

@@ -178,6 +178,7 @@ class GenericHandler:
         # so the model can actually see the results of its actions during THIS turn.
         # But we will NOT append the tool outputs to self.chat_history.
         current_turn_log = [] 
+        current_turn_log_tests = []
         
         while turns < max_turns and not stop_loop:
             turns += 1
@@ -356,11 +357,15 @@ class GenericHandler:
                 
                 # Add the test result as a model response
                 self.clean_chat_history()
+                for item in current_turn_log_tests:
+                    current_turn_log.append(item)
                 response_content = self.client.convert_to_client_schema(role="assistant", content=f"What I did: {explanation_run_tests_tool}")
+                current_turn_log_tests.append(response_content)
                 current_turn_log.append(response_content)
                 # Already filtered in the tool call to be only failures.
                 response_content = self.client.convert_to_client_schema(role="user", content=f"The result of the tests is: {result_run_tests_tool}")
                 current_turn_log.append(response_content)
+                current_turn_log_tests.append(response_content)
 
                 print(f"DEBUG: current_turn_log: {current_turn_log}", flush=True)
             else:  

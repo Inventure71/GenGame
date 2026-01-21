@@ -61,6 +61,11 @@ class AbilityPickup(NetworkObject):
     def pickup(self):
         self.is_active = False
 
+    def set_ability_name(self, ability_name: str):
+        """Update the pickup's ability and refresh any derived fields."""
+        self.ability_name = ability_name
+        self.description = self._lookup_description()
+
     def get_pickup_rect(self, arena_height: float) -> pygame.Rect:
         py_x = self.location[0] - self.pickup_radius / 2
         py_y = arena_height - self.location[1] - self.pickup_radius / 2
