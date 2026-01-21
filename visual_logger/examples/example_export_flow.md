@@ -24,7 +24,7 @@ graph TD
 
 ### 1. read_file
 
-- **Status**: ✅ Success
+- **Status**: [success] Success
 - **Time**: 14:32:18
 - **Arguments**:
 
@@ -48,7 +48,7 @@ graph TD
 
 ### 2. write_file
 
-- **Status**: ✅ Success
+- **Status**: [success] Success
 - **Time**: 14:32:22
 - **Arguments**:
 
@@ -69,7 +69,7 @@ File written successfully
 
 ### 3. grep
 
-- **Status**: ✅ Success
+- **Status**: [success] Success
 - **Time**: 14:32:25
 - **Arguments**:
 
@@ -90,7 +90,7 @@ test.py:1:def hello(name='World'):
 
 ### 4. run_terminal_cmd
 
-- **Status**: ✅ Success
+- **Status**: [success] Success
 - **Time**: 14:32:28
 - **Arguments**:
 

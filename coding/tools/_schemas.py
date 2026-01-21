@@ -13,9 +13,10 @@ TOOL_DEFINITIONS = {
     "get_tree_directory": {
         "name": "get_tree_directory",
         "description": (
-            "Shows directory tree structure. The tree is ALREADY in your Starting Context - "
-            "only call this AFTER creating new files to refresh paths. "
-            "⚠️ WARNING: The directory tree is ALREADY provided in your initial context at the start of each session. "
+            "Shows directory tree structure.\n"
+            "The tree is ALREADY in your Starting Context.\n"
+            "only call this AFTER creating new files to refresh paths.\n"
+            "[warning] WARNING: The directory tree is ALREADY provided in your initial context at the start of each session.\n"
             "Access limited to 'GameFolder' and 'BASE_components'."
         ),
         "parameters": {
@@ -50,17 +51,18 @@ TOOL_DEFINITIONS = {
     "read_file": {
         "name": "read_file",
         "description": (
-            "Reads and returns file content with line numbers. "
-            "IMPORTANT: Only use paths you discovered via get_tree_directory! Never guess paths. "
-            "STRATEGY: Use full read or better get_file_outline when you don't know the file. Use line ranges when you have partial context. "
-            "ALWAYS expand ranges: If you need lines 16-20, request 10-30 for better context. "
-            "Reads file content with line numbers. Use paths from Starting Context or get_tree_directory. "
+            "Reads and returns file content with line numbers.\n"
+            "IMPORTANT: Only use paths you discovered via get_tree_directory! Never guess paths.\n"
+            "STRATEGY: Use full read or better get_file_outline when you don't know the file. Use line ranges when you have partial context.\n"
+            "ALWAYS expand ranges: If you need lines 16-20, request 10-30 for better context.\n"
+            "After `modify_file_inline`, use returned context; only re-read if accessing different sections.\n"
+            "Reads file content with line numbers. Use paths from Starting Context or get_tree_directory. \n"
             "Utilize as many of these as possible in a single turn for highest efficiency."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "path": {
+                "file_path": {
                     "type": "string",
                     "description": "The file path to read - must be a path you discovered from get_tree_directory output"
                 },
@@ -73,7 +75,7 @@ TOOL_DEFINITIONS = {
                     "description": "Optional ending line number (1-indexed, inclusive). Use when you know approximately where to look."
                 }
             },
-            "required": ["path"]
+            "required": ["file_path"]
         }
     },
     
@@ -81,9 +83,14 @@ TOOL_DEFINITIONS = {
     "modify_file_inline": {
         "name": "modify_file_inline",
         "description": (
-            "Applies a unified diff patch to modify a file."
-            "Include 3 lines context before/after changes. Returns modified section for verification."
-            "IMPORTANT: Use EXACTLY the parameter names 'file_path' and 'diff_text'. "
+            "Applies a unified diff patch to modify a file. CRITICAL REQUIREMENTS:\n"
+            "- Use EXACTLY 'file_path' and 'diff_text' parameter names\n"
+            "- Include 3-5 lines of context that match the file exactly\n"
+            "- Line numbers in @@ header must be accurate\n"
+            "- Context lines must match file content precisely (indentation, spacing)\n"
+            "- For new files: use '@@ -0,0 +1,N @@' format\n"
+            "- Returns modified section for verification\n"
+            "- Creates backup before changes, validates Python syntax"
         ),
         "parameters": {
             "type": "object",
@@ -105,7 +112,7 @@ TOOL_DEFINITIONS = {
     "create_file": {
         "name": "create_file",
         "description": (
-            "Creates an EMPTY file. Use modify_file_inline afterwards to add content."
+            "Creates an EMPTY file. Use modify_file_inline afterwards to add content.\n"
             "Always think about what you want to insert in the file before calling this and then call both create_file and modify_file_inline in a single turn for better efficiency."
         ),
         "parameters": {
@@ -123,7 +130,10 @@ TOOL_DEFINITIONS = {
     # === TODO LIST MANAGEMENT ===
     "append_to_todo_list": {
         "name": "append_to_todo_list",
-        "description": "Adds a new task to the architect's todo list. Used during the planning phase.",
+        "description": (
+            "Adds a new task to the architect's todo list. Used during the planning phase.\n"
+            "Think about all the features you want to add and utilize as many of these as possible in a single turn for highest efficiency, without comporomising details."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
@@ -139,32 +149,54 @@ TOOL_DEFINITIONS = {
             "required": ["task_title", "task_description"]
         }
     },
+    
     "complete_task": {
         "name": "complete_task",
-        "description": "Marks the current active task as completed. MUST be called after finishing a task to move to the next one.",
+        "description": (
+            "Marks the current active task as completed.\n"
+            "MUST be called after finishing a task to move to the next one.\n"
+            "REQUIRES a summary parameter (minimum 150 characters) that summarizes the work completed in key technical points."
+        ),
         "parameters": {
             "type": "object",
-            "properties": {},
-            "required": []
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "A bulleted list summarizing the work completed for this task. Must be at least 150 characters. Format: technical bullet points listing files modified, new functions/classes introduced, and any remaining gaps. Follow the given instructions."
+                }
+            },
+            "required": ["summary"]
         }
     },
 
     # === TESTING ===
-    "run_all_tests": {
-        "name": "run_all_tests",
-        "description": "Run all tests (base + custom) and return structured results.",
+    "run_all_tests_tool": {
+        "name": "run_all_tests_tool",
+        "description": (
+            "Run all tests and return structured results with stdout logging from debug prints.\n"
+            "CRITICAL: Always write debug prints in the tests you are modifying to help future debugging.\n"
+            "Add print() statements to all failing tests first, then run this tool to see debug output, then make fixes.\n"
+            "Never run multiple times in one response - that's inefficient debugging.\n"
+            "MANDATORY: Always provide an 'explanation' parameter describing what you changed and why tests should pass now."
+        ),
+        
         "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": []
-        }
+        "type": "object",
+        "properties": {
+            "explanation": {
+                "type": "string",
+                "description": "A string explaining what you changed and why the tests should pass now. Required for tracking debugging rationale."
+            }
+        },
+        "required": ["explanation"]
+    }
     },
 
     # === CODE ANALYSIS ===
     "find_function_usages": {
         "name": "find_function_usages",
         "description": (
-            "Finds all locations where a specific function is used within a directory."
+            "Finds all locations where a specific function is used within a directory.\n"
             "Utilize as many of these as possible in a single turn for highest efficiency."
         ),
         "parameters": {
@@ -185,7 +217,7 @@ TOOL_DEFINITIONS = {
     "get_function_source": {
         "name": "get_function_source",
         "description": (
-            "Extracts the full source code of a specific function from a file."
+            "Extracts the full source code of a specific function from a file.\n"
             "Utilize as many of these as possible in a single turn for highest efficiency."
         ),
         "parameters": {
@@ -206,8 +238,8 @@ TOOL_DEFINITIONS = {
     "get_file_outline": {
         "name": "get_file_outline",
         "description": (
-            "Reads a file efficiently by returning only classes, methods, signatures, docstrings, AND line number ranges."
-            "Use this for high-level understanding before reading specific sections."
+            "Reads a file efficiently by returning only classes, methods, signatures, docstrings, AND line number ranges.\n"
+            "Use this for high-level understanding before reading specific sections.\n"
             "Utilize as many of these as possible in a single turn for highest efficiency."
         ),
         "parameters": {
@@ -226,9 +258,8 @@ TOOL_DEFINITIONS = {
     "resolve_conflict": {
         "name": "resolve_conflict",
         "description": (
-            "Resolves a specific merge conflict in a patch file. "
-            "Choose 'a' for patch A's version, 'b' for patch B's, 'both' for both, or 'manual' with custom content."
-            "When choosing both be aware that the indentation spaces between both need to be the same"
+            "Resolves a specific merge conflict in a patch file.\n"
+            "Choose 'a' for patch A's version, 'b' for patch B's, or 'manual' with custom merged content. CRITICAL: For manual merges, ensure PERFECT indentation - Python syntax depends on it!\n"
             "IMPORTANT: fix as many merge conflicts at once in one turn by calling this function in parallel"
         ),
         "parameters": {
@@ -248,8 +279,8 @@ TOOL_DEFINITIONS = {
                 },
                 "resolution": {
                     "type": "string",
-                    "enum": ["a", "b", "both", "manual"],
-                    "description": "Resolution choice: 'a' (use patch A), 'b' (use patch B), 'both' (keep both), 'manual' (custom)"
+                    "enum": ["a", "b", "manual"],
+                    "description": "Resolution choice: 'a' (use patch A), 'b' (use patch B), 'manual' (custom merge with PERFECT indentation)"
                 },
                 "manual_content": {
                     "type": "array",

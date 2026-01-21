@@ -5,7 +5,8 @@ import random
 
 class TargetingLaser(Projectile):
     def __init__(self, x, y, direction, owner_id, max_dist):
-        super().__init__(x, y, direction, speed=1200, damage=5, owner_id=owner_id, width=6, height=6)
+        super().__init__(x, y, direction, speed=1200, damage=0, owner_id=owner_id, width=6, height=6)
+        self.is_persistent = True
         self.color = (255, 0, 0) # Red
         self.start_location = [x, y]
         self.last_location = [x, y]
@@ -21,6 +22,8 @@ class TargetingLaser(Projectile):
         self.dist_traveled += self.speed * delta_time
         if self.dist_traveled >= self.max_dist and self.active:
             self.active = False
+            return OrbitalStrikeMarker(self.location[0], self.location[1], self.owner_id)
+        return None
 
 
     def draw(self, screen, arena_height):
@@ -43,6 +46,7 @@ class OrbitalStrikeMarker(Projectile):
     def __init__(self, x, y, owner_id):
         # Speed 0, damage 0, width 100, height 20
         super().__init__(x, y, [0, 0], speed=0, damage=0, owner_id=owner_id, width=100, height=20)
+        self.is_persistent = True
         self.warmup_timer = 0.0
         self.warmup_duration = 1.0
 
@@ -51,7 +55,8 @@ class OrbitalStrikeMarker(Projectile):
         if self.warmup_timer >= self.warmup_duration:
             if self.active:
                 self.active = False
-        # No need to call super().update() as speed is 0
+                return OrbitalBlast(self.location[0], self.owner_id)
+        return None
 
     def draw(self, screen, arena_height):
         if not self.active:
@@ -85,6 +90,8 @@ class OrbitalBlast(Projectile):
     def __init__(self, x, owner_id):
         # location [x, 0], speed 0, damage 100 per sec, width 100, height 2000
         super().__init__(x, 0, [0, 1], speed=0, damage=800, owner_id=owner_id, width=100, height=2000)
+        self.is_persistent = True
+        self.skip_collision_damage = True
         self.duration = 0.6
         self.timer = 0.0
 

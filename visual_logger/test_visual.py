@@ -4,7 +4,7 @@ Realistic Visual Logger Test - Simulates actual AI agent workflow exactly as the
 """
 from coding.non_callable_tools.action_logger import action_logger
 from coding.non_callable_tools.todo_list import TodoList
-from coding.tools.testing import run_all_tests
+from coding.tools.testing import run_all_tests_tool as run_all_tests
 import time
 import random
 
@@ -195,12 +195,14 @@ def simulate_parallel_tool_calls(tool_calls):
 
 def simulate_task_completion(todo_list, task_description):
     """Simulate completing a TODO task"""
-    print(f"✅ Completing task: {task_description}")
+    print(f"[success] Completing task: {task_description}")
     simulate_parallel_tool_calls([{
         "name": "complete_task",
-        "args": {}
+        "args": {
+            "summary": f"- Completed task: {task_description}\n- This is a test simulation summary that meets the minimum 150 character requirement for the complete_task function call."
+        }
     }])
-    todo_list.complete_task()
+    todo_list.complete_task(f"- Completed task: {task_description}\n- This is a test simulation summary that meets the minimum 150 character requirement for the complete_task function call.")
 
 def main():
     print("🎯 Starting REALISTIC Visual Logger Test...")
@@ -213,7 +215,7 @@ def main():
 
     # Start the session
     action_logger.start_session(visual=True)
-    print("✅ Session started - Visual Logger active")
+    print("[success] Session started - Visual Logger active")
 
     try:
         # PHASE 1: Initial Analysis and Planning
@@ -254,8 +256,8 @@ def main():
 
         # Simulate model responding with MULTIPLE tool calls in ONE response
         parallel_analysis = [
-            {"name": "read_file", "args": {"path": "BASE_components/BASE_weapon.py"}},
-            {"name": "read_file", "args": {"path": "GameFolder/weapons/GAME_weapon.py"}},
+            {"name": "read_file", "args": {"file_path": "BASE_components/BASE_weapon.py"}},
+            {"name": "read_file", "args": {"file_path": "GameFolder/weapons/GAME_weapon.py"}},
             {"name": "get_tree_directory", "args": {"path": "GameFolder/weapons"}},
             {"name": "list_functions_in_file", "args": {"file_path": "GameFolder/weapons/BlackHoleGun.py"}},
         ]
@@ -269,7 +271,7 @@ def main():
         parallel_inspection = [
             {"name": "find_function_usages", "args": {"function_name": "fire", "directory_path": "GameFolder/weapons"}},
             {"name": "get_function_source", "args": {"file_path": "GameFolder/weapons/TornadoGun.py", "function_name": "fire"}},
-            {"name": "read_file", "args": {"path": "BASE_components/BASE_projectile.py"}},
+            {"name": "read_file", "args": {"file_path": "BASE_components/BASE_projectile.py"}},
         ]
 
         simulate_model_response_with_tools(
@@ -281,7 +283,7 @@ def main():
         simulate_task_completion(todo_list, "Analyze weapon architecture")
 
         # PHASE 2.5: Error Handling Demonstration
-        print("\n❌ PHASE 2.5: Error Handling")
+        print("\n[error] PHASE 2.5: Error Handling")
         simulate_model_thinking("Let me demonstrate what happens when tools fail - trying unauthorized access and invalid operations.")
 
         simulate_model_response_with_tools(
@@ -289,7 +291,7 @@ def main():
             error_scenarios
         )
 
-        print("✅ Error handling demonstrated - check the visual logger for red 'failed' indicators")
+        print("[success] Error handling demonstrated - check the visual logger for red 'failed' indicators")
 
         # PHASE 3: Design and Implementation
         print("\n⚙️ PHASE 3: Design & Implementation")
@@ -419,7 +421,7 @@ class PlasmaProjectile(Projectile):
 
         # Model responds with tools to check setup
         integration_tools = [
-            {"name": "read_file", "args": {"path": "GameFolder/setup.py"}},
+            {"name": "read_file", "args": {"file_path": "GameFolder/setup.py"}},
             {"name": "list_functions_in_file", "args": {"file_path": "GameFolder/setup.py"}},
         ]
 

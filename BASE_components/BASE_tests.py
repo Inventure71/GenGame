@@ -1,5 +1,5 @@
 """
-GenGame Test Framework
+Core Conflict Test Framework
 
 This module contains:
 1. TestRunner - A robust test runner with graceful error handling
@@ -18,12 +18,13 @@ import time
 import traceback
 import importlib.util
 import inspect
+from io import StringIO
+from contextlib import contextmanager
 from typing import List, Callable, Optional, Type, Any
 from dataclasses import dataclass, field
-
-# Set up headless mode for automated testing
-os.environ['SDL_VIDEODRIVER'] = 'dummy'
-
+from coding.non_callable_tools.helpers import clear_python_cache
+from coding.non_callable_tools.action_logger import action_logger
+# Set up headless mode for automated testing (only when run directly)
 import pygame
 
 
@@ -40,6 +41,7 @@ class TestResult:
     error_msg: Optional[str] = None
     error_traceback: Optional[str] = None
     source_file: str = "BASE_tests.py"
+    stdout: str = ""
     
     def __str__(self):
         status = "✓ PASS" if self.passed else "✗ FAIL"
@@ -135,6 +137,21 @@ class TestSuite:
 
 
 # =============================================================================
+# STDOUT CAPTURE HELPER
+# =============================================================================
+
+@contextmanager
+def capture_stdout():
+    """Context manager to capture stdout. helper for test execution."""
+    old_stdout = sys.stdout
+    sys.stdout = captured_output = StringIO()
+    try:
+        yield captured_output
+    finally:
+        sys.stdout = old_stdout
+
+
+# =============================================================================
 # TEST RUNNER
 # =============================================================================
 
@@ -162,14 +179,37 @@ class TestRunner:
     
     def setup_pygame_headless(self):
         """Initialize pygame in headless mode for testing."""
-        if not self.pygame_initialized:
-            try:
-                pygame.init()
-                # Create a minimal dummy surface
-                pygame.display.set_mode((1, 1))
+        if self.pygame_initialized:
+            return
+
+        # FIX: Assume pygame is already initialized when running from menu
+        # This prevents any pygame API calls from background threads which can cause deadlocks
+        try:
+            import threading
+            if threading.current_thread() != threading.main_thread():
+                # We're in a background thread, assume pygame is already set up by main thread
                 self.pygame_initialized = True
-            except Exception as e:
-                print(f"Warning: Could not initialize pygame: {e}")
+                print("Pygame already initialized, skipping initialization")
+                return
+        except:
+            pass
+
+        # Only check pygame status from main thread
+        if pygame.get_init():
+            self.pygame_initialized = True
+            print("Pygame already initialized, skipping initialization")
+            return
+
+        try:
+            # Set headless mode for testing (only if no display exists)
+            import os
+            os.environ['SDL_VIDEODRIVER'] = 'dummy'
+            pygame.init()
+            # Create a minimal dummy surface
+            pygame.display.set_mode((1, 1))
+            self.pygame_initialized = True
+        except Exception as e:
+            print(f"Warning: Could not initialize pygame: {e}")
     
     def run_test_with_args(self, test_func: Callable, args: List[Any], source_file: str = "BASE_tests.py") -> TestResult:
         """
@@ -186,38 +226,42 @@ class TestRunner:
         test_name = test_func.__name__
         start_time = time.time()
         
-        try:
-            # Execute the test with arguments
-            test_func(*args)
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=True,
-                duration=duration,
-                source_file=source_file
-            )
-        except AssertionError as e:
-            # Test failed with assertion
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=False,
-                duration=duration,
-                error_msg=str(e),
-                error_traceback=traceback.format_exc(),
-                source_file=source_file
-            )
-        except Exception as e:
-            # Test crashed with unexpected error
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=False,
-                duration=duration,
-                error_msg=f"Unexpected error: {type(e).__name__}: {str(e)}",
-                error_traceback=traceback.format_exc(),
-                source_file=source_file
-            )
+        with capture_stdout() as output:
+            try:
+                # Execute the test with arguments
+                test_func(*args)
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=True,
+                    duration=duration,
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
+            except AssertionError as e:
+                # Test failed with assertion
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=False,
+                    duration=duration,
+                    error_msg=str(e),
+                    error_traceback=traceback.format_exc(),
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
+            except Exception as e:
+                # Test crashed with unexpected error
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=False,
+                    duration=duration,
+                    error_msg=f"Unexpected error: {type(e).__name__}: {str(e)}",
+                    error_traceback=traceback.format_exc(),
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
     
     def run_test(self, test_func: Callable, source_file: str = "BASE_tests.py") -> TestResult:
         """
@@ -233,38 +277,42 @@ class TestRunner:
         test_name = test_func.__name__
         start_time = time.time()
         
-        try:
-            # Execute the test
-            test_func()
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=True,
-                duration=duration,
-                source_file=source_file
-            )
-        except AssertionError as e:
-            # Test failed with assertion
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=False,
-                duration=duration,
-                error_msg=str(e),
-                error_traceback=traceback.format_exc(),
-                source_file=source_file
-            )
-        except Exception as e:
-            # Test crashed with unexpected error
-            duration = time.time() - start_time
-            return TestResult(
-                test_name=test_name,
-                passed=False,
-                duration=duration,
-                error_msg=f"Unexpected error: {type(e).__name__}: {str(e)}",
-                error_traceback=traceback.format_exc(),
-                source_file=source_file
-            )
+        with capture_stdout() as output:
+            try:
+                # Execute the test
+                test_func()
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=True,
+                    duration=duration,
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
+            except AssertionError as e:
+                # Test failed with assertion
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=False,
+                    duration=duration,
+                    error_msg=str(e),
+                    error_traceback=traceback.format_exc(),
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
+            except Exception as e:
+                # Test crashed with unexpected error
+                duration = time.time() - start_time
+                return TestResult(
+                    test_name=test_name,
+                    passed=False,
+                    duration=duration,
+                    error_msg=f"Unexpected error: {type(e).__name__}: {str(e)}",
+                    error_traceback=traceback.format_exc(),
+                    source_file=source_file,
+                    stdout=output.getvalue()
+                )
     
     def run_tests(self, test_functions: List[Callable], source_file: str = "BASE_tests.py") -> TestSuite:
         """
@@ -319,8 +367,9 @@ class TestRunner:
                         if len(sig.parameters) == 0:
                             test_functions.append(obj)
         except Exception as e:
-            print(f"Warning: Could not load tests from {file_path}: {e}")
-            traceback.print_exc()
+            # Don't just print and return empty - we need to track this failure
+            # The error will be handled by discover_tests_in_directory
+            raise  # Re-raise so discover_tests_in_directory can handle it
         
         return test_functions
     
@@ -342,9 +391,21 @@ class TestRunner:
         for filename in os.listdir(directory):
             if filename.endswith('.py') and not filename.startswith('__'):
                 file_path = os.path.join(directory, filename)
-                test_functions = self.discover_tests_in_file(file_path)
-                if test_functions:
-                    discovered[file_path] = test_functions
+                try:
+                    test_functions = self.discover_tests_in_file(file_path)
+                    if test_functions:
+                        discovered[file_path] = test_functions
+                except Exception as e:
+                    # Track import failures - create a synthetic test result
+                    # Store the error info so we can create a TestResult later
+                    error_msg = str(e)
+                    error_traceback = traceback.format_exc()
+                    # Store as a special marker that indicates import failure
+                    discovered[file_path] = {
+                        '_import_error': True,
+                        'error_msg': error_msg,
+                        'error_traceback': error_traceback
+                    }
         
         return discovered
 
@@ -445,22 +506,32 @@ def test_character_max_lives(character_class: Type):
 
 
 def test_character_take_damage(character_class: Type):
-    """Test that a character can take damage (with defense applied)."""
+    """Test that a character can take damage (with shields and defense applied)."""
     char = character_class(
         name="Test Player",
         description="Test",
         image="",
         location=[100.0, 100.0]
     )
-    
+
     initial_health = char.health
+    initial_shield = getattr(char, 'shield', 0)  # Handle characters without shields
     damage = 20
-    
+
     char.take_damage(damage)
-    
-    # Damage is reduced by defense: max(1, 20 - (5 * 1)) = 15
-    expected_damage = max(1, damage - (char.defense * char.defense_multiplier))
-    expected_health = initial_health - expected_damage
+
+    # With shield system: shields absorb damage first, then defense applies to remaining
+    shield_damage = min(damage, initial_shield)
+    remaining_damage = max(0, damage - initial_shield)
+    health_damage = max(0, remaining_damage - (char.defense * char.defense_multiplier))
+    health_damage = max(1, health_damage) if remaining_damage > 0 else 0
+
+    expected_shield = initial_shield - shield_damage
+    expected_health = initial_health - health_damage
+
+    # Verify shield absorption
+    if hasattr(char, 'shield'):
+        assert char.shield == expected_shield, f"Shield should be {expected_shield}, got {char.shield}"
     assert char.health == expected_health, f"Health should be {expected_health}, got {char.health}"
 
 
@@ -637,6 +708,167 @@ def test_projectile_movement(projectile_class: Type):
     assert abs(projectile.location[0] - expected_x) < 0.01, f"Projectile should be at {expected_x}, got {projectile.location[0]}"
 
 
+def test_character_input_keybinds(character_class: Type):
+    """Test that get_input_data uses the BASE schema: movement + positional shoot/secondary."""
+    import pygame
+    
+    mouse_pos = [100.0, 200.0]
+    mouse_buttons = [False, False, False]  # Left, Middle, Right
+
+    # No keys, no mouse
+    held_keys = set()
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    
+    if "mouse_pos" not in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: 'mouse_pos' missing from input_data.\n"
+            "Possible cause: Character.get_input_data was overridden and no longer includes "
+            "'mouse_pos'.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
+    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    
+    if "movement" not in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: 'movement' missing from input_data.\n"
+            "Possible cause: Character.get_input_data is still using the GAME schema "
+            "with 'move' / 'jump' instead of BASE 'movement'.\n"
+            "Expected BASE schema: 'movement', optional 'shoot'/'secondary_fire' as positions.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
+    assert input_data["movement"] == [0, 0], "No movement when no keys pressed (BASE schema uses 'movement', not 'move')"
+    
+    if "shoot" in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: unexpected 'shoot' key when no mouse button pressed.\n"
+            "Possible cause: Client or Character.get_input_data is sending boolean 'shoot' flags "
+            "instead of only including 'shoot' when mouse is pressed.\n"
+            f"input_data['shoot'] value: {input_data['shoot']!r}"
+        )
+    assert "shoot" not in input_data, "shoot should not exist when left mouse not pressed (BASE schema)"
+    
+    if "secondary_fire" in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: unexpected 'secondary_fire' key when no mouse button pressed.\n"
+            "Possible cause: Client or Character.get_input_data is sending boolean 'secondary_fire' flags "
+            "instead of only including it when right mouse is pressed.\n"
+            f"input_data['secondary_fire'] value: {input_data['secondary_fire']!r}"
+        )
+    assert "secondary_fire" not in input_data, "secondary_fire should not exist when right mouse not pressed"
+    
+    if "drop_weapon" in input_data:
+        print(
+            "DEBUG test_character_input_keybinds: unexpected 'drop_weapon' when Q not held.\n"
+            "Possible cause: key-mapping logic changed or stale input state.\n"
+            f"input_data['drop_weapon'] value: {input_data['drop_weapon']!r}"
+        )
+    assert "drop_weapon" not in input_data, "drop_weapon should not exist when Q not held"
+    
+    # Movement keys
+    held_keys = {pygame.K_a}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data["movement"][0] == -1, "Should move left when A is pressed"
+    
+    held_keys = {pygame.K_d}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data["movement"][0] == 1, "Should move right when D is pressed"
+    
+    held_keys = {pygame.K_w}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data["movement"][1] == 1, "Should move up when W is pressed"
+    
+    held_keys = {pygame.K_s}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data["movement"][1] == -1, "Should move down when S is pressed"
+    
+    # Arrow keys (alternative keybinds)
+    held_keys = {pygame.K_LEFT}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data["movement"][0] == -1, "Should move left when LEFT arrow is pressed"
+    
+    held_keys = {pygame.K_RIGHT}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data["movement"][0] == 1, "Should move right when RIGHT arrow is pressed"
+    
+    # Drop weapon (Q)
+    held_keys = {pygame.K_q}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data.get("drop_weapon") is True, "Should set drop_weapon when Q is held"
+    
+    # Multiple keys simultaneously
+    held_keys = {pygame.K_d, pygame.K_w}
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    assert input_data["movement"] == [1, 1], "Should combine movement directions"
+
+
+def test_character_input_mouse_capture(character_class: Type):
+    """Test that mouse buttons map to positional shoot/secondary_fire (BASE schema)."""
+    held_keys = set()
+    mouse_pos = [500.0, 300.0]
+
+    # Left click -> shoot carries mouse_pos
+    mouse_buttons = [True, False, False]
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    if "mouse_pos" not in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when left click pressed.\n"
+            "Possible cause: Character.get_input_data override removed 'mouse_pos' from the schema.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
+    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    if input_data.get("shoot") != mouse_pos:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'shoot' value does not match mouse_pos on left click.\n"
+            "Possible causes:\n"
+            "  - Character.get_input_data is still using boolean 'shoot' flags (GAME schema).\n"
+            "  - Client is transforming input and not passing raw mouse_pos through.\n"
+            f"input_data.get('shoot'): {input_data.get('shoot')!r}, expected: {mouse_pos!r}"
+        )
+    assert input_data.get("shoot") == mouse_pos, "shoot should equal mouse_pos when left mouse is pressed (BASE schema)"
+
+    # Right click -> secondary_fire carries mouse_pos
+    mouse_buttons = [False, False, True]
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    if "mouse_pos" not in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when right click pressed.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
+    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    if input_data.get("secondary_fire") != mouse_pos:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'secondary_fire' value does not match mouse_pos on right click.\n"
+            "Possible causes:\n"
+            "  - Character.get_input_data is using boolean 'secondary_fire' flags.\n"
+            "  - Mouse button mapping changed.\n"
+            f"input_data.get('secondary_fire'): {input_data.get('secondary_fire')!r}, expected: {mouse_pos!r}"
+        )
+    assert input_data.get("secondary_fire") == mouse_pos, "secondary_fire should equal mouse_pos when right mouse is pressed"
+
+    # No click -> neither key present, but mouse_pos still present
+    mouse_buttons = [False, False, False]
+    input_data = character_class.get_input_data(held_keys, mouse_buttons, mouse_pos)
+    if "mouse_pos" not in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: 'mouse_pos' missing when no mouse buttons pressed.\n"
+            f"Got keys: {list(input_data.keys())}"
+        )
+    assert input_data["mouse_pos"] == mouse_pos, "mouse_pos should always be present"
+    if "shoot" in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: unexpected 'shoot' key when no mouse button pressed.\n"
+            "Possible cause: boolean 'shoot' state being sent every frame instead of only when pressed.\n"
+            f"input_data['shoot'] value: {input_data['shoot']!r}"
+        )
+    assert "shoot" not in input_data, "shoot should not exist when not clicking"
+    if "secondary_fire" in input_data:
+        print(
+            "DEBUG test_character_input_mouse_capture: unexpected 'secondary_fire' key when no mouse button pressed.\n"
+            f"input_data['secondary_fire'] value: {input_data['secondary_fire']!r}"
+        )
+    assert "secondary_fire" not in input_data, "secondary_fire should not exist when not clicking"
+
+
 # =============================================================================
 # MAIN TEST EXECUTION FUNCTIONS
 # =============================================================================
@@ -657,6 +889,8 @@ def get_base_test_functions() -> List[tuple]:
         (test_character_take_damage, "character_class", "Character class to test"),
         (test_character_death_and_respawn, "character_class", "Character class to test"),
         (test_character_elimination, "character_class", "Character class to test"),
+        (test_character_input_keybinds, "character_class", "Character input keybinds (set format)"),
+        (test_character_input_mouse_capture, "character_class", "Character mouse position capture"),
         (test_platform_creation, "platform_class", "Platform class to test"),
         (test_weapon_creation, "weapon_class", "Weapon class to test"),
         (test_weapon_shooting, "weapon_class", "Weapon class to test"),
@@ -689,9 +923,15 @@ def run_all_tests(
     Returns:
         TestSuite with all test results
     """
+    # DISABLED: clear_python_cache() causes thread safety issues and freezes
+    # The cache clearing was causing deadlocks when running from background threads
+    clear_python_cache()
+
+    time.sleep(1)
+
     runner = TestRunner()
     runner.setup_pygame_headless()
-    
+
     combined_suite = TestSuite()
     
     # If no classes provided, try to import from GameFolder
@@ -702,7 +942,7 @@ def run_all_tests(
         except ImportError:
             if verbose:
                 print("Warning: Could not import Character from GameFolder")
-    
+
     if platform_class is None:
         try:
             from GameFolder.platforms.GAME_platform import Platform
@@ -710,7 +950,7 @@ def run_all_tests(
         except ImportError:
             if verbose:
                 print("Warning: Could not import Platform from GameFolder")
-    
+
     if weapon_class is None:
         try:
             from GameFolder.weapons.GAME_weapon import Weapon
@@ -718,7 +958,7 @@ def run_all_tests(
         except ImportError:
             if verbose:
                 print("Warning: Could not import Weapon from GameFolder")
-    
+
     if projectile_class is None:
         try:
             from GameFolder.projectiles.GAME_projectile import Projectile
@@ -762,6 +1002,17 @@ def run_all_tests(
             # Run test with the required class
             result = runner.run_test_with_args(test_func, [required_class], "BASE_tests.py")
         
+        # Log individual test result to visual logger
+        if hasattr(action_logger, 'log_test_result'):
+            action_logger.log_test_result({
+                'test_name': result.test_name,
+                'status': 'passed' if result.passed else 'failed',
+                'source_file': result.source_file,
+                'error_msg': result.error_msg,
+                'traceback': result.error_traceback,
+                'duration': result.duration
+            })
+
         combined_suite.add_result(result)
         if result.passed:
             passed += 1
@@ -780,14 +1031,52 @@ def run_all_tests(
         discovered = runner.discover_tests_in_directory(tests_dir)
         
         if discovered:
-            for file_path, test_functions in discovered.items():
+            for file_path, test_data in discovered.items():
                 file_name = os.path.basename(file_path)
+                
+                # Check if this is an import error marker
+                if isinstance(test_data, dict) and test_data.get('_import_error'):
+                    # Create a synthetic test result for the import failure
+                    import_error_result = TestResult(
+                        test_name=f"Import Error: {file_name}",
+                        passed=False,
+                        duration=0.0,
+                        error_msg=test_data['error_msg'],
+                        error_traceback=test_data['error_traceback'],
+                        source_file=file_name
+                    )
+                    # Log to action_logger for consistency
+                    if hasattr(action_logger, 'log_test_result'):
+                        action_logger.log_test_result({
+                            'test_name': import_error_result.test_name,
+                            'status': 'failed',
+                            'source_file': import_error_result.source_file,
+                            'error_msg': import_error_result.error_msg,
+                            'traceback': import_error_result.error_traceback,
+                            'duration': import_error_result.duration
+                        })
+                    combined_suite.add_result(import_error_result)
+                    if verbose:
+                        print(f"\n✗ Failed to import {file_name}: {test_data['error_msg']}")
+                    continue
+                
+                # Normal test discovery path
+                test_functions = test_data
                 if verbose:
                     print(f"\nFound {len(test_functions)} tests in {file_name}")
                 
                 # Custom tests don't take arguments
                 custom_suite = runner.run_tests(test_functions, file_name)
                 for result in custom_suite.results:
+                    if hasattr(action_logger, 'log_test_result'):
+                        action_logger.log_test_result({
+                            'test_name': result.test_name,
+                            'status': 'passed' if result.passed else 'failed',
+                            'source_file': result.source_file,
+                            'error_msg': result.error_msg,
+                            'traceback': result.error_traceback,
+                            'duration': result.duration
+                        })
                     combined_suite.add_result(result)
                 
                 if verbose:
@@ -810,7 +1099,7 @@ def run_all_tests(
 # =============================================================================
 
 if __name__ == "__main__":
-    print("\n🧪 GenGame Test Framework")
+    print("\n🧪 Core Conflict Test Framework")
     print("=" * 70)
     
     results = run_all_tests(verbose=True)

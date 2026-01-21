@@ -45,7 +45,7 @@ def test_storm_cloud_movement():
 
 def test_storm_cloud_damage_and_slow():
     """Verify StormCloud deals damage and slows characters in the Arena."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     # Cloud at (200, 400). It's raining.
     cloud = StormCloud(200, 400, [200, 400], "attacker")
     cloud.is_raining = True
@@ -54,8 +54,10 @@ def test_storm_cloud_damage_and_slow():
     # Character under the cloud (World-Y 300 is below 400)
     char = Character("Victim", "Desc", "", [210, 300])
     char.id = "victim"
+    # Deplete shields first so we can test health damage
+    char.shield = 0
     arena.characters.append(char)
-    
+
     # Pre-checks
     assert char.speed_multiplier == 1.0
     initial_health = char.health

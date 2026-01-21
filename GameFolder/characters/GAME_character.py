@@ -1,95 +1,68 @@
 from BASE_components.BASE_character import BaseCharacter
 import pygame
+import time
 
 class Character(BaseCharacter):
+    """
+    GAME implementation of Character.
+    Inherits improved movement and flight from BaseCharacter.
+    """
     def __init__(self, name: str, description: str, image: str, location: [float, float], width: float = 50, height: float = 50):
         super().__init__(name, description, image, location, width, height)
-        # EXAMPLE: Increase base speed for this specific character class
         self.speed = 6.0
-        self.color = (255, 255, 0) # Yellow color
-        
-        # No initial weapon - must pick up from the ground!
-        
-        # Flight Mechanic
-        self.max_flight_time = 3.0
-        self.flight_time_remaining = self.max_flight_time
-        self.needs_recharge = False
-        self.is_currently_flying = False
-        self.physics_inverted = False
-        self.last_target = [0, 0]
+        self.color = (255, 255, 0) # Yellow
 
-    def shoot(self, target_pos: [float, float]):
-        if not self.is_alive or not self.weapon:
-            return None
+        # Shield system
+        self.shield = 50.0  # Current shield amount
+        self.max_shield = 50.0  # Maximum shield capacity
+        self.shield_regen_rate = 1.0  # Shield points per second
+        self.last_damage_time = 0  # Track when we last took damage
 
-        self.last_target = target_pos
+        self.last_arena_height = 900  # to avoid hardcoding in collision logic
 
-        # Center of character
-        start_x = self.location[0] + (self.width * self.scale_ratio) / 2
-        start_y = self.location[1] + (self.height * self.scale_ratio) / 2
+    def __setstate__(self, state):
+        """Override to ensure shield properties are properly initialized from network data"""
+        super().__setstate__(state)
 
-        return self.weapon.shoot(start_x, start_y, target_pos[0], target_pos[1], self.id)
+        # Ensure shield properties exist (for backward compatibility)
+        if not hasattr(self, 'shield'):
+            self.shield = 50.0
+        if not hasattr(self, 'max_shield'):
+            self.max_shield = 50.0
+        if not hasattr(self, 'shield_regen_rate'):
+            self.shield_regen_rate = 1.0
+        if not hasattr(self, 'last_damage_time'):
+            self.last_damage_time = 0
 
-    def secondary_fire(self, target_pos: [float, float]):
-        if not self.is_alive or not self.weapon:
-            return None
-        self.last_target = target_pos
-        start_x = self.location[0] + (self.width * self.scale_ratio) / 2
-        start_y = self.location[1] + (self.height * self.scale_ratio) / 2
-        return self.weapon.secondary_fire(start_x, start_y, target_pos[0], target_pos[1], self.id)
-
-    def special_fire(self, target_pos: [float, float], is_holding: bool):
-        if not self.is_alive or not self.weapon:
-            return None
-        self.last_target = target_pos
-        start_x = self.location[0] + (self.width * self.scale_ratio) / 2
-        start_y = self.location[1] + (self.height * self.scale_ratio) / 2
-        return self.weapon.special_fire(start_x, start_y, target_pos[0], target_pos[1], self.id, is_holding)
-
-    def move(self, direction: [float, float], platforms: list = None):
-        if self.physics_inverted:
-            direction[0] *= -1
-            direction[1] *= -1
-
-        # Determine if we want to fly
-        # If in air and moving vertically, attempt to fly
-        if not self.on_ground and abs(direction[1]) > 0 and self.flight_time_remaining > 0 and not self.needs_recharge:
-            self.can_fly = True
-            self.is_currently_flying = True
-        else:
-            self.can_fly = False
-            self.is_currently_flying = False
-            
-        super().move(direction, platforms)
-
-    def update(self, delta_time: float, platforms=None, arena_height=600):
-        self.physics_inverted = False
-        # Recharge logic
-        if self.on_ground:
-            self.flight_time_remaining = min(self.max_flight_time, self.flight_time_remaining + delta_time * 1.5)
-            if self.flight_time_remaining >= self.max_flight_time:
-                self.needs_recharge = False
-        
-        # Fuel consumption
-        if self.is_currently_flying and not self.on_ground:
-            self.flight_time_remaining -= delta_time
-            if self.flight_time_remaining <= 0:
-                self.flight_time_remaining = 0
-                self.needs_recharge = True
-                self.can_fly = False
-                self.is_currently_flying = False
-
-        super().update(delta_time, platforms, arena_height)
-
-        if not self.is_alive:
+    def take_damage(self, amount: float):
+        """Override to implement shield system - shields take damage first"""
+        if not self.is_alive or amount <= 0 or self.is_invulnerable:
             return
 
-        # Gradually recover multipliers
-        if self.speed_multiplier < 1.0:
-            self.speed_multiplier = min(1.0, self.speed_multiplier + 0.5 * delta_time)
+        self.last_damage_time = time.time()
 
-        if self.jump_height_multiplier < 1.0:
-            self.jump_height_multiplier = min(1.0, self.jump_height_multiplier + 0.5 * delta_time)
+        # Shields take damage first
+        if self.shield > 0:
+            shield_damage = min(self.shield, amount)
+            self.shield -= shield_damage
+            amount -= shield_damage
+
+        # Remaining damage goes to health
+        if amount > 0:
+            super().take_damage(amount)
+
+    def update(self, delta_time: float, platforms: list = None, arena_height: float = 900, arena_width: float = 1400):
+        """Override to add shield regeneration"""
+        self.last_arena_height = arena_height
+
+        # Call parent update first
+        super().update(delta_time, platforms, arena_height, arena_width)
+
+        # Shield regeneration (only if alive and not recently damaged)
+        current_time = time.time()
+        if self.is_alive and current_time - self.last_damage_time > 1.0:  # 1 second delay after damage
+            if self.shield < self.max_shield:
+                self.shield = min(self.max_shield, self.shield + self.shield_regen_rate * delta_time)
 
     def draw(self, screen: pygame.Surface, arena_height: float):
         if not self.is_alive:
@@ -99,7 +72,7 @@ class Character(BaseCharacter):
         py_y = arena_height - self.location[1] - (self.height * self.scale_ratio)
         py_rect = pygame.Rect(self.location[0], py_y, self.width * self.scale_ratio, self.height * self.scale_ratio)
 
-        # Draw with custom color instead of base green
+        # Visual feedback for flight
         draw_color = self.color
         if self.is_currently_flying:
             # Blue tint for flying
@@ -107,14 +80,141 @@ class Character(BaseCharacter):
         
         pygame.draw.rect(screen, draw_color, py_rect)
 
-        # Draw health bar
-        health_bar_width = self.width * self.scale_ratio
-        health_ratio = self.health / self.max_health
-        pygame.draw.rect(screen, (255, 0, 0), (self.location[0], py_y - 10, health_bar_width, 5))
-        pygame.draw.rect(screen, (0, 255, 0), (self.location[0], py_y - 10, health_bar_width * health_ratio, 5))
+        # UI bars
+        bar_width = self.width * self.scale_ratio
 
-        # Draw flight bar
+        # Shield bar (top, cyan)
+        if self.shield > 0:
+            shield_ratio = self.shield / self.max_shield
+            pygame.draw.rect(screen, (50, 50, 50), (self.location[0], py_y - 18, bar_width, 4))  # Background
+            pygame.draw.rect(screen, (0, 255, 255), (self.location[0], py_y - 18, bar_width * shield_ratio, 4))  # Shield
+
+        # Health bar (middle, green/red)
+        health_ratio = self.health / self.max_health
+        pygame.draw.rect(screen, (255, 0, 0), (self.location[0], py_y - 12, bar_width, 5))  # Background
+        pygame.draw.rect(screen, (0, 255, 0), (self.location[0], py_y - 12, bar_width * health_ratio, 5))  # Health
+
+        # Flight bar (bottom, blue/gray)
         flight_ratio = self.flight_time_remaining / self.max_flight_time
         bar_color = (0, 191, 255) if not self.needs_recharge else (100, 100, 100)
-        pygame.draw.rect(screen, (40, 40, 40), (self.location[0], py_y - 16, health_bar_width, 4))
-        pygame.draw.rect(screen, bar_color, (self.location[0], py_y - 16, health_bar_width * flight_ratio, 4))
+        pygame.draw.rect(screen, (40, 40, 40), (self.location[0], py_y - 6, bar_width, 3))  # Background
+        pygame.draw.rect(screen, bar_color, (self.location[0], py_y - 6, bar_width * flight_ratio, 3))  # Flight
+
+    def apply_gravity(self, arena_height: float = 600, platforms: list = None, arena_width: float = 800):
+        """
+        Override to remove floor boundary - allow falling out of arena.
+        """
+        if not self.is_alive:
+            return
+
+        # Don't apply gravity if actively flying
+        if self.is_currently_flying:
+            return
+
+        # Update position based on vertical velocity
+        self.location[1] += self.vertical_velocity
+        # Apply gravity to velocity
+        self.vertical_velocity -= self.gravity * self.gravity_multiplier
+
+        # NO FLOOR BOUNDARY - players can fall out!
+        # Only check platforms for landing
+        self.on_ground = False
+
+        # Check platforms
+        if platforms and self.vertical_velocity <= 0:
+            char_rect = self.get_rect()
+            # Feet position in screen coordinates
+            py_feet_y = arena_height - self.location[1]
+
+            for plat in platforms:
+                # Don't allow dropping through floor-like platforms (wide platforms)
+                is_floor = (plat.rect.width > arena_width * 0.6)
+                if self.is_dropping and not is_floor:
+                    continue  # Skip collision with this platform if dropping through non-floor platforms
+
+                # Check if character is falling towards platform
+                # Character feet should be at or slightly below platform top
+                feet_at_platform_level = abs(py_feet_y - plat.rect.top) < 20  # Balanced tolerance
+
+                # Horizontal overlap check
+                char_left = self.location[0]
+                char_right = self.location[0] + char_rect.width
+                horizontal_overlap = char_right > plat.rect.left and char_left < plat.rect.right
+
+                if feet_at_platform_level and horizontal_overlap:
+                    # Land on platform
+                    self.location[1] = arena_height - plat.rect.top
+                    self.vertical_velocity = 0
+                    self.on_ground = True
+                    self.hover_time = 0
+                    break
+
+    def move(self, direction: [float, float], platforms: list = None):
+        """
+        Override to remove floor boundary in flight logic and add platform collision.
+        """
+        if not self.can_move or not self.is_alive:
+            return
+
+        # Apply status effects like inverted physics
+        actual_dir = [direction[0], direction[1]]
+        if self.physics_inverted:
+            actual_dir[0] *= -1
+            actual_dir[1] *= -1
+
+        # Update movement flags
+        self.is_moving_up = (actual_dir[1] > 0)
+
+        # Dropping logic: can only drop through platforms when actively pressing down
+        self.is_dropping = (actual_dir[1] < -0.5)
+
+        # Handle horizontal movement with platform collision
+        if actual_dir[0] != 0 and platforms:
+            new_x = self.location[0] + actual_dir[0] * self.speed * self.speed_multiplier
+
+            # Create character rect in pygame coordinates for collision detection
+            # Assume arena height of 900 (matches setup_battle_arena)
+            arena_height = 900
+            char_width = self.width * self.scale_ratio
+            char_height = self.height * self.scale_ratio
+            py_char_y = arena_height - self.location[1] - char_height  # Convert to pygame y-down
+
+            # Test rectangle at new position
+            test_rect = pygame.Rect(new_x, py_char_y, char_width, char_height)
+
+            # Check horizontal collision with platforms
+            collision = False
+            for plat in platforms:
+                if test_rect.colliderect(plat.rect):
+                    collision = True
+                    break
+
+            # Only move horizontally if no collision
+            if not collision:
+                self.location[0] = new_x
+        elif actual_dir[0] != 0:
+            # No platforms to check, allow free movement
+            self.location[0] += actual_dir[0] * self.speed * self.speed_multiplier
+
+        # Integrated flight logic
+        # Allow flight when airborne, falling (or at peak), and have flight energy
+        if not self.on_ground and self.vertical_velocity <= 0 and self.flight_time_remaining > 0 and not self.needs_recharge and self.is_moving_up:
+            self.can_fly = True
+            self.is_currently_flying = True
+        else:
+            self.can_fly = False # Reset if not meeting conditions
+            self.is_currently_flying = False
+
+        if actual_dir[1] > 0:
+            if self.on_ground:
+                if self.can_jump:
+                    self.jump()
+            elif self.can_fly:
+                self.location[1] += actual_dir[1] * self.speed * self.speed_multiplier
+                self.vertical_velocity = 0
+        elif actual_dir[1] < 0:
+            if self.can_fly:
+                self.location[1] += actual_dir[1] * self.speed * self.speed_multiplier
+                self.vertical_velocity = 0
+
+                # NO FLOOR BOUNDARY CHECK - allow falling through bottom

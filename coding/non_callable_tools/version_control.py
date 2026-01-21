@@ -2,6 +2,7 @@ import os
 import re
 import json
 import ast
+import time
 import glob
 import difflib
 from typing import Tuple, List, Dict, Optional
@@ -38,35 +39,49 @@ class VersionControl:
         self.action_logger_instance = action_logger_instance
         self.security_backup_handler = BackupHandler(path_to_security_backup)
     
-    def save_to_extension_file(self, file_path: str, name_of_backup: str = None):
-        if self.action_logger_instance is None:
-            print("ERROR: Action logger instance is not provided")
+    def save_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups"):
+        """
+        Saves a patch by comparing the current GameFolder against a base backup.
+        This is the source of truth for all patches in the system.
+        """
+        if not name_of_backup:
+            print("ERROR: Cannot save patch. No name_of_backup provided.")
             return False
-        changes = []
-        metadata = []
-        for path in self.action_logger_instance.file_changes:
-            original = self.action_logger_instance.file_snapshots.get(path, "")
-            final = self.action_logger_instance.file_changes.get(path, "")
-            if original != final:
-                changes.append({
-                    "path": path,
-                    "diff": self.action_logger_instance.get_diff(path)
-                    })
-                metadata.append({
-                    "path": path,
-                    "original": original,
-                    "final": final
-                })
+
+        base_folder = os.path.join(base_backups_root, name_of_backup)
+        if not os.path.exists(base_folder):
+            print(f"ERROR: Base backup folder not found: {base_folder}")
+            print("The system requires a valid base backup to generate a reliable patch.")
+            return False
+
+        if not os.path.isdir(base_folder):
+            print(f"ERROR: Base backup path is not a directory: {base_folder}")
+            return False
+
+        print(f"Generating patch by comparing GameFolder against {base_folder}...")
+
+        try:
+            changes, metadata = self.create_patch_from_folders(base_folder, "GameFolder", name_of_backup)
+        except Exception as e:
+            print(f"ERROR: Failed to create patch from folders: {e}")
+            return False
+
         if len(changes) > 0:
-            if name_of_backup is None or name_of_backup == "":
-                name_of_backup = "GameFolder"
-            with open(file_path, 'w') as f:
-                json.dump({"name_of_backup": name_of_backup, "changes": changes}, f)
-            with open(file_path.replace('.json', '_metadata.json'), 'w') as f:
-                json.dump({"name_of_backup": name_of_backup, "metadata": metadata}, f)
-            return True
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump({"name_of_backup": name_of_backup, "changes": changes}, f, indent=2, ensure_ascii=False)
+
+                metadata_path = file_path.replace('.json', '_metadata.json')
+                with open(metadata_path, 'w', encoding='utf-8') as f:
+                    json.dump({"name_of_backup": name_of_backup, "metadata": metadata}, f, indent=2, ensure_ascii=False)
+
+                print(f"Successfully saved {len(changes)} changes to {file_path}")
+                return True
+            except Exception as e:
+                print(f"ERROR: Failed to write patch files: {e}")
+                return False
         else:
-            print("No changes to save")
+            print("No changes found relative to the base backup.")
             return False
 
     def load_from_extension_file(self, file_path: str):
@@ -89,7 +104,7 @@ class VersionControl:
         else:
             return False, result
 
-    def apply_patches(self, file_containing_patches: str):
+    def apply_patches(self, file_containing_patches: str, keep_changes_on_failure: bool = False):
         success_count = 0
         any_fixed = False
         name_of_backup, changes, metadata = self.load_from_extension_file(file_containing_patches)
@@ -99,36 +114,67 @@ class VersionControl:
         for change in changes:
             file_path = change["path"]
             print(f"Applying patch to {file_path}...")
-            # check if it exists
-            if not os.path.exists(file_path):
-                print(f"File {file_path} does not exist, creating")
-                with open(file_path, 'w') as f:
-                    f.write('')
-            
             diff = change["diff"]
+            
             if diff:
+                # Check if this is a file creation diff (@@ -0,0 +1,N @@)
+                if '@@ -0,0' in diff:
+                    # Extract content from file creation diff
+                    lines = diff.split('\n')
+                    content_lines = []
+                    in_content = False
+                    for line in lines:
+                        if line.startswith('@@ -0,0'):
+                            in_content = True
+                            continue
+                        if in_content:
+                            if not line.startswith('---') and not line.startswith('+++') and not line.startswith('@@'):
+                                # Handle both standard diff format (+prefix) and simplified format (no prefix)
+                                if line.startswith('+'):
+                                    content_lines.append(line[1:])
+                                else:
+                                    content_lines.append(line)
+                    content = '\n'.join(content_lines)
+                    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                    with open(file_path, 'w') as f:
+                        f.write(content)
+                    print(f"    ✓ Created new file")
+                    success_count += 1
+                    continue
+                
+                # For normal diffs, ensure file exists
+                if not os.path.exists(file_path):
+                    print(f"File {file_path} does not exist, creating")
+                    with open(file_path, 'w') as f:
+                        f.write('')
+                
                 success, result = self.valid_apply(file_path, diff)
                 if success:
                     print(f"    ✓ Applied successfully")
                     success_count += 1
                 else:
-                    print(f"    ✗ Failed Default Patching: {result}, repairing...")
-                    repaired_diff = self.repair_smashed_patch(file_path, result, change["diff"])
-                    if repaired_diff != change["diff"]:
-                        print(f"    ✅ Repair successful. Updating patches.json and retrying...")
-                        change["diff"] = repaired_diff
-                        any_fixed = True
-                        # Retry immediately with the fixed diff
-                        success, result = self.valid_apply(file_path, repaired_diff)    
-                        if success:
-                            print(f"    ✓ Applied successfully")
-                            success_count += 1
+                    if keep_changes_on_failure:
+                        # Keep failures as-is without attempting repair
+                        errors[file_path] = result
+                        print(f"    ✗ Failed (keeping original file): {result}")
+                    else:
+                        print(f"    ✗ Failed Default Patching: {result}, repairing...")
+                        repaired_diff = self.repair_smashed_patch(file_path, result, change["diff"])
+                        if repaired_diff != change["diff"]:
+                            print(f"    [success] Repair successful. Updating patches.json and retrying...")
+                            change["diff"] = repaired_diff
+                            any_fixed = True
+                            # Retry immediately with the fixed diff
+                            success, result = self.valid_apply(file_path, repaired_diff)
+                            if success:
+                                print(f"    ✓ Applied successfully")
+                                success_count += 1
+                            else:
+                                errors[file_path] = result
+                                print(f"    ✗ Failed Repaired Patching: {result}")
                         else:
                             errors[file_path] = result
-                            print(f"    ✗ Failed Repaired Patching: {result}")
-                    else:
-                        errors[file_path] = result
-                        print(f"    ✗ Failed Acquiring Repaired Patch: {result}")
+                            print(f"    ✗ Failed Acquiring Repaired Patch: {result}")
 
         if any_fixed:
             print(f"Saving fixed patches to {file_containing_patches}...")
@@ -137,7 +183,7 @@ class VersionControl:
 
         return success_count == len(changes), success_count, len(changes), errors
 
-    def merge_all_changes(self, needs_rebase: bool = False, path_to_BASE_backup: str = None, file_containing_patches: str = None):
+    def apply_all_changes(self, needs_rebase: bool = False, path_to_BASE_backup: str = None, file_containing_patches: str = None, skip_warnings: bool = False):
         if file_containing_patches is None:
             print("ERROR: File containing patches is not provided")
             return False, "File containing patches is not provided"
@@ -161,7 +207,9 @@ class VersionControl:
                     return False, "No base backup found, cannot rebase"
                 base_backup_handler.restore_backup(name_of_backup, target_path="GameFolder")
                 print("Restored to base code")
-                input("Press Enter to continue...")
+                time.sleep(1)
+                if not skip_warnings:
+                    input("Press Enter to continue...")
             else:
                 print("ERROR:No base backup provided but needs rebase, cannot rebase")
                 return False, "No base backup provided but needs rebase, cannot rebase"
@@ -175,12 +223,19 @@ class VersionControl:
         print(f"Applied {count}/{total_changes} changes successfully")
 
         if not success:
-            print("Failed to apply all changes, restoring to temporary backup")
+            print("Failed to apply all changes")
+            if not skip_warnings:
+                answer = input("An error occured, do you want to ask a model to fix the patch? Y/N: ").lower().strip()
+                if answer == "y":
+                    print("Attempting fix with model")
+                    raise("Not implemented yet")
+
+            print("Restoring to temporary backup")
             self.security_backup_handler.restore_backup("GameFolder", target_path="GameFolder")
             print("Restored, removing temporary backup")
             self.security_backup_handler.delete_entire_backup_folder()
             return False, errors
-
+            
             
         print("All changes applied successfully")
         print("Removing temporary backup")
@@ -438,6 +493,169 @@ class VersionControl:
 
     # =========================================================================
     # HELPERS
+    def create_patch_from_folders(self, base_folder_path: str, current_folder_path: str, backup_name: str) -> Tuple[List[Dict], List[Dict]]:
+        """
+        Compares two folders and returns changes and metadata.
+
+        Args:
+            base_folder_path: Path to the base folder (e.g., __game_backups/2026..._GameFolder)
+            current_folder_path: Path to the current folder (e.g., GameFolder)
+            backup_name: Name of the backup for the patch header
+
+        Returns:
+            Tuple of (changes, metadata)
+        """
+        changes = []
+        metadata = []
+
+        # Validate input paths
+        if not os.path.exists(base_folder_path):
+            raise ValueError(f"Base folder does not exist: {base_folder_path}")
+        if not os.path.exists(current_folder_path):
+            raise ValueError(f"Current folder does not exist: {current_folder_path}")
+        if not os.path.isdir(base_folder_path):
+            raise ValueError(f"Base path is not a directory: {base_folder_path}")
+        if not os.path.isdir(current_folder_path):
+            raise ValueError(f"Current path is not a directory: {current_folder_path}")
+        
+        # Get all files in both folders to detect additions/deletions/modifications
+        def get_files_recursive(folder):
+            file_list = []
+            folder_abs = os.path.abspath(folder)
+            for root, _, files in os.walk(folder):
+                # Skip system/cache directories
+                if "__pycache__" in root or ".git" in root or ".bak" in root or "node_modules" in root:
+                    continue
+
+                for f in files:
+                    # Skip compiled Python files and other binary formats
+                    if f.endswith(('.pyc', '.pyo', '.pyd', '.so', '.dll', '.exe', '.bin')):
+                        continue
+                    # Skip common binary/media files
+                    if f.endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.svg',
+                                   '.mp3', '.wav', '.mp4', '.avi', '.mov', '.zip', '.tar.gz',
+                                   '.pdf', '.doc', '.docx', '.xls', '.xlsx')):
+                        continue
+                    # Skip temporary and hidden files
+                    if f.startswith('.') or f.startswith('~$') or f.endswith('~'):
+                        continue
+
+                    full_path = os.path.join(root, f)
+
+                    # Skip if file is not readable or is a special file
+                    try:
+                        if not os.path.isfile(full_path) or os.path.islink(full_path):
+                            continue
+                        # Skip very large files (>10MB) to avoid memory issues
+                        if os.path.getsize(full_path) > 10 * 1024 * 1024:
+                            print(f"Skipping large file: {full_path}")
+                            continue
+                    except (OSError, IOError):
+                        continue
+
+                    # Calculate relative path manually to avoid os.relpath issues
+                    full_path_abs = os.path.abspath(full_path)
+                    try:
+                        rel_path = os.path.relpath(full_path_abs, folder_abs)
+                    except (ValueError, AttributeError):
+                        # Fallback: manually calculate relative path
+                        rel_path = full_path_abs
+                        if rel_path.startswith(folder_abs + os.sep):
+                            rel_path = rel_path[len(folder_abs + os.sep):]
+                        elif rel_path == folder_abs:
+                            rel_path = ""
+
+                    # Normalize to forward slashes for cross-platform patch compatibility
+                    rel_path = rel_path.replace("\\", "/")
+                    file_list.append(rel_path)
+            return set(file_list)
+
+        print(f"Scanning files in base folder: {base_folder_path}")
+        base_files = get_files_recursive(base_folder_path)
+        print(f"Found {len(base_files)} files in base folder")
+
+        print(f"Scanning files in current folder: {current_folder_path}")
+        current_files = get_files_recursive(current_folder_path)
+        print(f"Found {len(current_files)} files in current folder")
+
+        all_files = sorted(list(base_files | current_files))
+        total_files = len(all_files)
+
+        print(f"Comparing {total_files} total files...")
+
+        if total_files > 1000:
+            print(f"Warning: Comparing {total_files} files. This may take a while.")
+
+        processed_count = 0
+        max_files_to_process = 5000  # Prevent runaway operations
+
+        for rel_path in all_files:
+            processed_count += 1
+
+            # Progress reporting every 100 files
+            if processed_count % 100 == 0:
+                print(f"Processed {processed_count}/{total_files} files...")
+
+            # Safety limit
+            if processed_count > max_files_to_process:
+                print(f"Warning: Reached maximum file limit ({max_files_to_process}). Stopping comparison.")
+                break
+            base_file = os.path.join(base_folder_path, rel_path)
+            current_file = os.path.join(current_folder_path, rel_path)
+
+            base_content = ""
+            current_content = ""
+
+            try:
+                # Safely read base file content
+                base_content = ""
+                if rel_path in base_files:
+                    base_result = open_file(base_file)
+                    if base_result is None:
+                        continue  # Skip binary files
+                    base_content = base_result
+            except Exception as e:
+                print(f"Warning: Could not read base file {base_file}: {e}")
+                continue
+
+            try:
+                # Safely read current file content
+                current_content = ""
+                if rel_path in current_files:
+                    current_result = open_file(current_file)
+                    if current_result is None:
+                        continue  # Skip binary files
+                    current_content = current_result
+            except Exception as e:
+                print(f"Warning: Could not read current file {current_file}: {e}")
+                continue
+
+            # Only create diff if contents are actually different
+            if base_content != current_content:
+                # We prefix with "GameFolder/" to match existing patch conventions
+                patch_path = os.path.join("GameFolder", rel_path)
+
+                try:
+                    diff = self._generate_unified_diff(base_content, current_content, patch_path)
+
+                    if diff and diff.strip():  # Make sure we have actual diff content
+                        changes.append({
+                            "path": patch_path,
+                            "diff": diff
+                        })
+                        # Truncate metadata for very large files to avoid memory issues
+                        metadata.append({
+                            "path": patch_path,
+                            "original": base_content[:10000] + "..." if len(base_content) > 10000 else base_content,
+                            "final": current_content[:10000] + "..." if len(current_content) > 10000 else current_content
+                        })
+                except Exception as e:
+                    print(f"Warning: Could not generate diff for {patch_path}: {e}")
+                    continue
+
+        print(f"Comparison complete. Found {len(changes)} changed files.")
+        return changes, metadata
+
     def repair_smashed_patch(self, file_path: str, error_msg: str, original_diff: str) -> str:
         """
         Analyzes a failed patch error, detects smashed lines, and repairs the diff.

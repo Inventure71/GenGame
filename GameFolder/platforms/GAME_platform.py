@@ -6,16 +6,20 @@ class Platform(BasePlatform):
     def __init__(self, x: float, y: float, width: float, height: float, color=(50, 200, 50)):
         # EXAMPLE: Change default color to a nice Green
         super().__init__(x, y, width, height, color)
+        # Override network identity to use GameFolder class
+        self._set_network_identity("GameFolder.platforms.GAME_platform", "Platform")
         self.float_x = float(x)
         self.float_y = float(y)
         self.original_x = float(x)
         self.original_y = float(y)
         self.being_pulled = False
 
-    def draw(self, screen: pygame.Surface):
+    def draw(self, screen: pygame.Surface, arena_height: float = None):
         # EXAMPLE: Add a small border to the platform
+        # Draw the filled rect first
+        super().draw(screen, arena_height)
+        # Then draw border on top
         pygame.draw.rect(screen, (0, 100, 0), self.rect, 2)
-        super().draw(screen)
 
     def move(self, dx: float, dy: float):
         self.float_x += dx

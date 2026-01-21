@@ -110,7 +110,7 @@ def test_black_hole_duration():
 
 def test_black_hole_gravity_pull():
     """Verify Arena logic pulls characters towards the black hole."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     char = Character("Victim", "Desc", "", [100, 100])
     arena.characters.append(char)
     
@@ -129,25 +129,27 @@ def test_black_hole_gravity_pull():
 
 def test_black_hole_damage():
     """Verify black hole deals damage when close."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     # Spawn character directly on top of black hole
     char = Character("Victim", "Desc", "", [200, 100])
     char.health = 100
+    # Deplete shields first so we can test health damage
+    char.shield = 0
     arena.characters.append(char)
-    
+
     proj = BlackHoleProjectile(200, 100, 200, 100, "attacker")
     proj.is_stationary = True
     arena.projectiles.append(proj)
-    
+
     # Run collision logic
     delta = 0.5
     arena.handle_collisions(delta)
-    
+
     assert char.health < 100, "Character should take damage when inside the black hole"
 
 def test_lootpool_registration():
     """Verify BlackHoleGun is in the lootpool."""
-    arena = Arena()
+    arena = Arena(headless=True)
     assert "BlackHoleGun" in arena.lootpool, "BlackHoleGun was not registered in the lootpool"
     
     gun_class = arena.lootpool["BlackHoleGun"]

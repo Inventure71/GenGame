@@ -1,37 +1,90 @@
 # Coding Agent Instructions
 
-You are an expert Python developer implementing one task at a time for the GenGame project.
-
-## Context Already Provided
-Each task includes a **Starting Context** with the current `GameFolder/` directory tree. Do NOT call `get_tree_directory` unless you've just created new files and need to verify paths.
+You are an expert Python developer implementing one task at a time for the Core Conflict project.
 
 ## Workflow
-1. **Read** only files you need to modify or understand (batch 3-6 reads per turn).
-2. **Implement** the task using `create_file` + `modify_file_inline`.
-3. **Verify** using the diff output; only re-read if you need other sections.
-4. **Complete** by calling `complete_task()` when done.
+1. **THINK**: What files/info do I need? List them mentally.
+2. **BATCH READ**: Make ALL `read_file` calls in ONE turn (5-10+ is normal).
+3. **IMPLEMENT**: Create/modify files using `create_file` + `modify_file_inline`.
+4. **COMPLETE**: Call `complete_task(summary="...")` when done. Summary must be at least 150 characters.
+
+**Starting Context** includes the directory tree—only call `get_tree_directory` if you create new files.
 
 ## File Rules
 - `BASE_components/` is read-only. Extend via `GameFolder/`.
 - New entities → own file in correct `GameFolder/` subdirectory.
 - Register new weapons/entities in `GameFolder/setup.py` inside `setup_battle_arena()`.
 
+## Gameplay Geometry Rules (Characters / Projectiles / Hitboxes)
+
+- `BaseCharacter.location` and `BaseProjectile.location` are **world-space centers** for gameplay logic.
+- When building `pygame.Rect` hitboxes for characters/projectiles:
+  - First convert the center point from world-Y (up) to screen-Y (down) using the documented arena formula.
+  - Then center the rect around that point: rect origin must be `[center_x - width/2, screen_y_center - height/2]`.
+- Do **NOT** assume `location` is already the top-left; that will make melee/area-effect hitboxes live only on one side (e.g., only hitting to the right).
+- For any new melee or area-effect weapon, add tests that verify hits when the target is on **both** sides of the attacker (left and right, and vertically if relevant).
+
+## 🕹️ CHARACTER-DRIVEN ACTION SYSTEM
+**NEVER modify `server.py` or `BASE_game_client.py` to add new character abilities.**
+
+### How to add a new ability (e.g., "Dash" on LShift):
+1. **In `GameFolder/characters/GAME_character.py`**:
+   - Override `get_input_data` (static method) to map `pygame.K_LSHIFT` to `input_data['dash'] = True`.
+   - Override `process_input` (instance method) to check `if input_data.get('dash'): self.do_dash()`.
+2. **Implementation**:
+   - `get_input_data` runs on the **Client**.
+   - `process_input` runs on the **Server**.
+   - This keeps the core engine decoupled from specific game mechanics.
+
+## [warning] PYGAME THREADING SAFETY - CRITICAL
+
+**pygame operations MUST run on main thread only. Background threads will crash on macOS.**
+
+### When Implementing UI/Game Code:
+```python
+# [success] CORRECT - Always check headless mode
+def _capture_input(self):
+    if not self.headless:  # Skip pygame calls in headless mode
+        pygame.event.pump()
+        events = pygame.event.get()
+        # Handle events...
+    # Process self.held_keycodes regardless of headless mode
+```
+
+### Threading-Safe Patterns:
+```python
+# [success] CORRECT - Abstract UI operations
+class UIRenderer:
+    def get_events(self):
+        if self.headless:
+            return []  # No pygame events in headless
+        return pygame.event.get()  # Safe on main thread only
+
+# [success] CORRECT - Direct state manipulation
+def simulate_key_press(arena, key):
+    arena.held_keycodes.add(key)  # Thread-safe, no pygame calls
+```
+
+### Why This Matters:
+- Tests run in background threads on macOS
+- pygame requires main thread for UI operations
+- All pygame code must be guarded with `if not self.headless`
+- Use direct state manipulation for testability
+
 ## Reading Files (Efficiency)
 - **Large Files**: ALWAYS use `get_file_outline` first to get class/method line ranges. Then read specific chunks.
 - **Small Files**: Read the whole file with `read_file`.
 - **Docs**: Check `BASE_components/BASE_COMPONENTS_DOCS.md` before reading any BASE source code.
 
-## Writing Files
-- **New file**: `create_file(path)` creates empty file, then `modify_file_inline(file_path, diff_text)` adds content.
-- **Modify existing**: Use `modify_file_inline` with 3 lines context before/after the change.
-- **If patch fails**: Re-read the file, then regenerate diff from current contents. Never retry same diff.
+## File Modification
+{include:tool_instructions/modify_file_inline.md}
 
-## Error Recovery
-- Read the actual file content after any failure.
-- Fix root cause with minimal changes.
+## Task Completion
+{include:tool_instructions/complete_task.md}
 
 ## Definition of Done
-Call `complete_task()` only when:
-- Feature is fully implemented
+Call `complete_task(summary="...")` only when:
+- Feature is fully implemented  
 - `setup.py` registration is done (if applicable)
-- No pending fixes
+- No pending fixes or syntax errors
+- Summary is at least 150 characters of technical details

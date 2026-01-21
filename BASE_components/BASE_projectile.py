@@ -1,8 +1,13 @@
 import pygame
 import math
+from BASE_files.BASE_network import NetworkObject
 
-class BaseProjectile:
+class BaseProjectile(NetworkObject):
     def __init__(self, x: float, y: float, direction: [float, float], speed: float, damage: float, owner_id: str, width: float = 10, height: float = 10):
+        # Initialize network capabilities first
+        super().__init__()
+        # Network identity is automatically set by NetworkObject.__init__
+
         self.location = [x, y] # [x, y] in world coordinates (y-up)
         self.direction = direction # Normalized vector [x, y]
         self.speed = speed
@@ -12,6 +17,37 @@ class BaseProjectile:
         self.height = height
         self.active = True
         self.color = (255, 255, 0) # Yellow
+        self.is_persistent = False # If True, Arena won't remove it on hit
+        self.skip_collision_damage = False # If True, Arena won't deal damage in handle_collisions
+
+        # Initialize graphics (can be called later for headless mode)
+        self.init_graphics()
+
+    def init_graphics(self):
+        """
+        Initialize graphics resources.
+        Safe to call multiple times and works even if pygame is not initialized.
+        Thread-safe for testing scenarios.
+        """
+        super().init_graphics()
+
+        # Skip pygame operations if we're in a thread other than the main thread
+        # or if pygame operations might cause issues (like during testing)
+        try:
+            import threading
+            if threading.current_thread() != threading.main_thread():
+                # We're in a background thread, skip pygame operations
+                return
+
+            # Only initialize pygame-dependent graphics if pygame is available
+            # and we're in the main thread
+            pygame.display.get_surface()
+            # If we get here, pygame is initialized, so we can load graphics
+            # For projectiles, we don't have complex graphics to load currently
+            pass
+        except:
+            # Pygame not initialized or no display - skip graphics initialization
+            pass
 
     def update(self, delta_time: float):
         # Scale speed by delta_time (assuming speed is pixels per frame at 60fps)
@@ -25,13 +61,13 @@ class BaseProjectile:
 
     def get_rect(self) -> pygame.Rect:
         return pygame.Rect(self.location[0], self.location[1], self.width, self.height)
+    
 
     def draw(self, screen: pygame.Surface, arena_height: float):
-        if not self.active:
+        if not self.active or not self._graphics_initialized:
             return
-        
+
         # Map y-up to pygame y-down
         py_y = arena_height - self.location[1] - self.height
         py_rect = pygame.Rect(self.location[0], py_y, self.width, self.height)
         pygame.draw.ellipse(screen, self.color, py_rect)
-

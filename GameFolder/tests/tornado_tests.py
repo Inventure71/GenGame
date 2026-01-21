@@ -49,9 +49,7 @@ def test_tornado_projectile_update():
 
 def test_tornado_pull_mechanic():
     """Verify Arena handles Tornado conical pull on characters."""
-    # Initialize pygame for Rect/Color operations if necessary
-    pygame.init()
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     # Place tornado at (400, 0)
     tornado = TornadoProjectile(400, 0, [0, 0], 10.0, "attacker")
     arena.projectiles.append(tornado)
@@ -76,7 +74,7 @@ def test_tornado_pull_mechanic():
 
 def test_tornado_weapon_pull():
     """Verify Tornado pulls weapons."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     tornado = TornadoProjectile(400, 0, [0, 0], 10.0, "attacker")
     arena.projectiles.append(tornado)
     
@@ -93,16 +91,20 @@ def test_tornado_weapon_pull():
 
 def test_tornado_platform_pull():
     """Verify Tornado pulls platforms."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     tornado = TornadoProjectile(400, 0, [0, 0], 10.0, "attacker")
     arena.projectiles.append(tornado)
-    
-    # Create a small platform. 
-    # Screen height = 600. 
+
+    # Add a floor platform at index 0 (since GAME_arena removes the default floor)
+    floor = Platform(0, 600, 800, 20)
+    arena.platforms.insert(0, floor)
+
+    # Create a small platform.
+    # Screen height = 600.
     # Let's place platform at Screen-Y 400. Rect(x, y, w, h)
     # Plat bottom = 450. World-Y bottom = 600 - 450 = 150.
     plat = Platform(420, 400, 50, 50, (255, 0, 0))
-    arena.platforms.append(plat) # Floor is at index 0.
+    arena.platforms.append(plat) # Now at index 1, so it will be processed
     
     initial_rect_x = plat.rect.x
     initial_rect_y = plat.rect.y
@@ -116,5 +118,5 @@ def test_tornado_platform_pull():
 
 def test_tornado_lootpool_registration():
     """Verify that Tornado Launcher is in the lootpool via setup_battle_arena."""
-    arena = setup_battle_arena()
+    arena = setup_battle_arena(headless=True)
     assert "Tornado Launcher" in arena.lootpool, "Tornado Launcher was not registered in the lootpool"

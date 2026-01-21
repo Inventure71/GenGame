@@ -2,8 +2,8 @@ import pygame
 
 class BaseUI:
     """
-    Base UI class for displaying game information.
-    Designed to be easily extended and customized by children.
+    Modern, minimal UI for Core Conflict.
+    Displays player health indicators in the top-right corner.
     """
     
     def __init__(self, screen: pygame.Surface, arena_width: int, arena_height: int):
@@ -11,177 +11,132 @@ class BaseUI:
         self.arena_width = arena_width
         self.arena_height = arena_height
         
-        # Font settings (can be customized by children)
-        self.font_size = 24
-        self.small_font_size = 18
+        # Simple minimal design
+        self.padding = 15
+        self.circle_radius = 35  # Size of health circle
+        self.font_size = 22
+        self.small_font_size = 16
         self.font = pygame.font.Font(None, self.font_size)
         self.small_font = pygame.font.Font(None, self.small_font_size)
         
-        # Colors (can be customized by children)
-        self.text_color = (255, 255, 255)  # White
-        self.bg_color = (0, 0, 0, 128)  # Semi-transparent black
-        self.health_color = (0, 255, 0)  # Green
-        self.health_bg_color = (255, 0, 0)  # Red background
-        self.life_color = (255, 215, 0)  # Gold
-        
-        # Layout settings (can be customized by children)
-        self.padding = 10
-        self.bar_height = 20
-        self.bar_width = 150
-        
-    def draw_character_info(self, character, position: [int, int]):
+    def draw_character_indicator(self, character, player_num: int, position: [int, int]):
         """
-        Draw a single character's info panel.
-        
-        Args:
-            character: The character to display info for
-            position: [x, y] position for the top-left of the info panel
+        Draw a circular health indicator for a character.
+        Color changes based on health percentage.
         """
         x, y = position
         
-        # Draw background panel
-        panel_width = self.bar_width + self.padding * 2
-        panel_height = 100
-        self.draw_panel(x, y, panel_width, panel_height)
+        # Calculate health percentage and color
+        health_pct = max(0, min(1, character.health / character.max_health))
         
-        # Draw character name
-        name_text = self.font.render(character.name, True, self.text_color)
-        self.screen.blit(name_text, (x + self.padding, y + self.padding))
+        # Color gradient: Green -> Yellow -> Red
+        if health_pct > 0.6:
+            color = (int(255 * (1 - (health_pct - 0.6) / 0.4)), 255, 0)
+        elif health_pct > 0.3:
+            color = (255, int(255 * ((health_pct - 0.3) / 0.3)), 0)
+        else:
+            color = (255, 0, 0)
         
-        y_offset = y + self.padding + 30
+        # Draw background and health circle
+        pygame.draw.circle(self.screen, (30, 30, 30), (x, y), self.circle_radius)
+        pygame.draw.circle(self.screen, color, (x, y), self.circle_radius - 2)
+        pygame.draw.circle(self.screen, (0, 0, 0), (x, y), self.circle_radius, 3)
         
-        # Draw health bar
-        self.draw_health_bar(character, x + self.padding, y_offset)
-        y_offset += self.bar_height + 5
+        # Draw player identifier (Name or Number)
+        id_text = self.font.render(str(player_num), True, (255, 255, 255))
+        id_rect = id_text.get_rect(center=(x, y - 8))
+        
+        # Text shadow
+        shadow = self.font.render(str(player_num), True, (0, 0, 0))
+        self.screen.blit(shadow, (id_rect.x + 1, id_rect.y + 1))
+        self.screen.blit(id_text, id_rect)
         
         # Draw lives
-        self.draw_lives(character, x + self.padding, y_offset)
-        y_offset += 25
-        
-        # Draw weapon name
-        weapon_name = character.weapon.name if character.weapon else "No Weapon"
-        weapon_text = self.small_font.render(f"Weapon: {weapon_name}", True, self.text_color)
-        self.screen.blit(weapon_text, (x + self.padding, y_offset))
-        
-    def draw_panel(self, x: int, y: int, width: int, height: int):
-        """
-        Draw a semi-transparent background panel.
-        Can be customized by children for different styling.
-        """
-        panel_surface = pygame.Surface((width, height), pygame.SRCALPHA)
-        pygame.draw.rect(panel_surface, self.bg_color, (0, 0, width, height))
-        pygame.draw.rect(panel_surface, (255, 255, 255, 100), (0, 0, width, height), 2)
-        self.screen.blit(panel_surface, (x, y))
-        
-    def draw_health_bar(self, character, x: int, y: int):
-        """
-        Draw a health bar for a character.
-        Can be customized by children for different styling.
-        """
-        # Background (red)
-        pygame.draw.rect(self.screen, self.health_bg_color, (x, y, self.bar_width, self.bar_height))
-        
-        # Foreground (green) - based on health percentage
-        health_percentage = character.health / character.max_health
-        health_width = int(self.bar_width * health_percentage)
-        pygame.draw.rect(self.screen, self.health_color, (x, y, health_width, self.bar_height))
-        
-        # Border
-        pygame.draw.rect(self.screen, (255, 255, 255), (x, y, self.bar_width, self.bar_height), 2)
-        
-        # Health text
-        health_text = self.small_font.render(f"{int(character.health)}/{int(character.max_health)}", True, self.text_color)
-        text_rect = health_text.get_rect(center=(x + self.bar_width/2, y + self.bar_height/2))
-        self.screen.blit(health_text, text_rect)
-        
-    def draw_lives(self, character, x: int, y: int):
-        """
-        Draw life indicators (hearts/circles) for a character.
-        Can be customized by children for different styling.
-        """
-        life_text = self.small_font.render("Lives:", True, self.text_color)
-        self.screen.blit(life_text, (x, y))
-        
-        # Draw life icons
-        icon_x = x + 50
-        icon_size = 15
-        spacing = 20
+        lives_y = y + 12
+        life_spacing = 10
+        life_radius = 4
+        start_x = x - ((character.MAX_LIVES - 1) * life_spacing) // 2
         
         for i in range(character.MAX_LIVES):
+            life_x = start_x + i * life_spacing
             if i < character.lives:
-                # Filled circle for remaining lives
-                pygame.draw.circle(self.screen, self.life_color, (icon_x + i * spacing, y + 8), icon_size // 2)
+                pygame.draw.circle(self.screen, (255, 255, 255), (life_x, lives_y), life_radius)
             else:
-                # Empty circle for lost lives
-                pygame.draw.circle(self.screen, (100, 100, 100), (icon_x + i * spacing, y + 8), icon_size // 2, 2)
-                
-    def draw_game_state(self, game_over: bool, winner=None):
-        """
-        Draw game over screen or winner announcement.
-        Can be customized by children for different styling.
-        """
-        if not game_over:
-            return
+                pygame.draw.circle(self.screen, (100, 100, 100), (life_x, lives_y), life_radius, 1)
         
-        # Semi-transparent overlay
-        overlay = pygame.Surface((self.arena_width, self.arena_height), pygame.SRCALPHA)
-        pygame.draw.rect(overlay, (0, 0, 0, 180), (0, 0, self.arena_width, self.arena_height))
-        self.screen.blit(overlay, (0, 0))
-        
-        # Game Over text
-        big_font = pygame.font.Font(None, 72)
-        if winner:
-            text = big_font.render(f"{winner.name} WINS!", True, (255, 215, 0))
-        else:
-            text = big_font.render("GAME OVER", True, (255, 0, 0))
-        
-        text_rect = text.get_rect(center=(self.arena_width / 2, self.arena_height / 2))
-        self.screen.blit(text, text_rect)
-        
-        # Instructions
-        instruction_text = self.font.render("Press ESC to quit", True, (255, 255, 255))
-        instruction_rect = instruction_text.get_rect(center=(self.arena_width / 2, self.arena_height / 2 + 60))
-        self.screen.blit(instruction_text, instruction_rect)
-        
-    def draw_respawn_timer(self, character, time_remaining: float):
-        """
-        Draw respawn countdown for a dead character.
-        Can be customized by children.
-        """
-        text = self.font.render(f"{character.name} respawning in {int(time_remaining) + 1}...", True, (255, 255, 0))
-        text_rect = text.get_rect(center=(self.arena_width / 2, 50))
-        self.screen.blit(text, text_rect)
-        
+        # Draw weapon info
+        if character.weapon:
+            weapon_name = character.weapon.name[:10]
+            ammo_display = f"{character.weapon.ammo}/{character.weapon.max_ammo}"
+            weapon_text = self.small_font.render(f"{weapon_name}", True, (255, 255, 255))
+            ammo_text = self.small_font.render(ammo_display, True, (255, 200, 0))
+            
+            # Position weapon name
+            weapon_rect = weapon_text.get_rect(center=(x, y + self.circle_radius + 18))
+            
+            # Position ammo below weapon name
+            ammo_rect = ammo_text.get_rect(center=(x, y + self.circle_radius + 32))
+            
+            # Label background for weapon
+            bg_rect = weapon_rect.inflate(8, 4)
+            bg_surf = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(bg_surf, (0, 0, 0, 180), (0, 0, bg_rect.width, bg_rect.height), border_radius=4)
+            self.screen.blit(bg_surf, bg_rect)
+            self.screen.blit(weapon_text, weapon_rect)
+            
+            # Label background for ammo
+            ammo_bg_rect = ammo_rect.inflate(8, 4)
+            ammo_bg_surf = pygame.Surface((ammo_bg_rect.width, ammo_bg_rect.height), pygame.SRCALPHA)
+            pygame.draw.rect(ammo_bg_surf, (0, 0, 0, 180), (0, 0, ammo_bg_rect.width, ammo_bg_rect.height), border_radius=4)
+            self.screen.blit(ammo_bg_surf, ammo_bg_rect)
+            self.screen.blit(ammo_text, ammo_rect)
+
     def draw(self, characters: list, game_over: bool = False, winner=None, respawn_timers: dict = None):
-        """
-        Main draw method - draws all UI elements.
+        """Main draw loop for the UI."""
+        # Draw player indicators in top-right
+        start_x = self.arena_width - self.circle_radius - self.padding
+        start_y = self.circle_radius + self.padding
+        spacing = self.circle_radius * 3 + 20  # Increased spacing for better separation
         
-        Args:
-            characters: List of characters to display info for
-            game_over: Whether the game is over
-            winner: The winning character (if any)
-            respawn_timers: Dict of {character_id: time_remaining} for respawning characters
-        """
-        # Draw character info panels
         for i, char in enumerate(characters):
             if char.is_eliminated:
-                continue  # Don't show UI for eliminated players
-            
-            # Position panels in top corners
-            if i == 0:
-                position = [self.padding, self.padding]
-            else:
-                panel_width = self.bar_width + self.padding * 2
-                position = [self.arena_width - panel_width - self.padding, self.padding + i * 120]
-            
-            self.draw_character_info(char, position)
+                continue
+            y_pos = start_y + i * spacing
+            self.draw_character_indicator(char, i + 1, [start_x, y_pos])
         
         # Draw respawn timers
         if respawn_timers:
+            y_offset = 60
             for char in characters:
                 if char.id in respawn_timers:
-                    self.draw_respawn_timer(char, respawn_timers[char.id])
+                    time_left = int(respawn_timers[char.id]) + 1
+                    text = self.font.render(f"{char.name} respawning in {time_left}s...", True, (255, 255, 0))
+                    text_rect = text.get_rect(center=(self.arena_width / 2, y_offset))
+                    self.screen.blit(text, text_rect)
+                    y_offset += 30
         
-        # Draw game over screen
-        self.draw_game_state(game_over, winner)
+        if game_over:
+            self.draw_game_over(winner, characters)
 
+    def draw_game_over(self, winner, characters):
+        """Standard game over overlay."""
+        overlay = pygame.Surface((self.arena_width, self.arena_height), pygame.SRCALPHA)
+        pygame.draw.rect(overlay, (0, 0, 0, 200), (0, 0, self.arena_width, self.arena_height))
+        self.screen.blit(overlay, (0, 0))
+        
+        big_font = pygame.font.Font(None, 80)
+        if winner:
+            # Use the character's ID (which is the username) instead of player index
+            winner_name = winner.id if hasattr(winner, 'id') else (winner.name if hasattr(winner, 'name') else "Unknown")
+            text_str = f"{winner_name.upper()} WINS!"
+            text_color = (255, 215, 0)
+        else:
+            text_str = "GAME OVER - DRAW"
+            text_color = (200, 200, 200)
+            
+        text = big_font.render(text_str, True, text_color)
+        text_rect = text.get_rect(center=(self.arena_width / 2, self.arena_height / 2))
+        self.screen.blit(text, text_rect)
+        
+        instr = self.font.render("Press ESC to Exit", True, (255, 255, 255))
+        self.screen.blit(instr, instr.get_rect(center=(self.arena_width / 2, self.arena_height / 2 + 70)))

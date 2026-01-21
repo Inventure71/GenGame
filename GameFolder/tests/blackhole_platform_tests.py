@@ -24,9 +24,7 @@ def test_platform_float_movement():
 
 def test_blackhole_stops_on_platform():
     """Test that a BlackHoleProjectile becomes stationary when hitting a platform."""
-    pygame.display.init()
-    pygame.display.set_mode((800, 600))
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     
     # Add a platform in the middle
     # Note: Arena.platforms[0] is the floor. We add a new one.
@@ -60,10 +58,12 @@ def test_blackhole_stops_on_platform():
 
 def test_blackhole_pulls_floating_platform():
     """Test that a stationary BlackHoleProjectile pulls platforms (not floor)."""
-    pygame.display.init()
-    pygame.display.set_mode((800, 600))
-    arena = Arena(800, 600)
-    
+    arena = Arena(800, 600, headless=True)
+
+    # Add a floor platform at index 0 (since GAME_arena removes the default floor)
+    floor = Platform(0, 600, 800, 20)
+    arena.platforms.insert(0, floor)
+
     # Platform at Screen(400, 300) -> World(400, 300)
     test_plat = Platform(400, 300, 100, 20)
     arena.platforms.append(test_plat)
@@ -86,14 +86,15 @@ def test_blackhole_pulls_floating_platform():
 
 def test_blackhole_ignores_floor():
     """Test that the floor platform (index 0) is not pulled."""
-    pygame.display.init()
-    pygame.display.set_mode((800, 600))
-    arena = Arena(800, 600)
-    
-    floor = arena.platforms[0]
+    arena = Arena(800, 600, headless=True)
+
+    # Add a floor platform since GAME_arena removes the default floor
+    floor = Platform(0, 600, 800, 20)  # Full width floor at bottom
+    arena.platforms.insert(0, floor)  # Insert at index 0 to simulate floor
+
     initial_x = floor.float_x
     initial_y = floor.float_y
-    
+
     # Stationary BH near the floor
     # Floor is usually at bottom of screen.
     bh_x = floor.rect.centerx
@@ -101,17 +102,15 @@ def test_blackhole_ignores_floor():
     proj = BlackHoleProjectile(bh_x, bh_y, bh_x, bh_y, "test_owner")
     proj.is_stationary = True
     arena.projectiles.append(proj)
-    
+
     arena.handle_collisions(0.016)
-    
+
     assert floor.float_x == initial_x, "Floor should not move"
     assert floor.float_y == initial_y, "Floor should not move"
 
 def test_blackhole_pulls_character_integration():
     """Test that characters are still pulled by the black hole."""
-    pygame.display.init()
-    pygame.display.set_mode((800, 600))
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     
     # Character at (100, 100)
     char = Character("Enemy", "Enemy", "", [100, 100])
@@ -141,16 +140,19 @@ def test_blackhole_pulls_character_integration():
 
 def test_blackhole_gun_registration():
     """Verify that BlackHoleGun is registered in the arena."""
-    pygame.display.init()
-    pygame.display.set_mode((800, 600))
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     
     assert "BlackHoleGun" in arena.lootpool, "BlackHoleGun was not registered in the lootpool"
     assert arena.lootpool["BlackHoleGun"] is not None, "BlackHoleGun provider is missing"
 
 def test_platform_return_to_origin():
     """Test that platforms move back to their original position when not being pulled."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
+
+    # Add a floor platform at index 0 (since GAME_arena removes the default floor)
+    floor = Platform(0, 600, 800, 20)
+    arena.platforms.insert(0, floor)
+
     # Platform at (100, 100)
     plat = Platform(100, 100, 50, 20)
     arena.platforms.append(plat)

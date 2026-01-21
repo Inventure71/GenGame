@@ -5,8 +5,8 @@ import time
 import math
 
 class Weapon(BaseWeapon):
-    def __init__(self, name: str = "Basic Gun", damage: float = 10, cooldown: float = 0.5, projectile_speed: float = 20.0, location: [float, float] = None):
-        super().__init__(name, damage, cooldown, projectile_speed, location)
+    def __init__(self, name: str = "Basic Gun", damage: float = 10, cooldown: float = 0.5, projectile_speed: float = 20.0, max_ammo: int = 30, ammo_per_shot: int = 1, location: [float, float] = None):
+        super().__init__(name, damage, cooldown, projectile_speed, max_ammo, ammo_per_shot, location)
         
         # EXAMPLE: Customize weapon appearance - make them bigger and more visible
         self.width = 40  # Bigger than base
@@ -32,6 +32,8 @@ class Weapon(BaseWeapon):
         if not self.can_shoot():
             return None
 
+        # Consume ammo
+        self.ammo -= self.ammo_per_shot
         self.last_shot_time = time.time()
 
         dx = target_x - owner_x
@@ -45,7 +47,7 @@ class Weapon(BaseWeapon):
 
         # Create basic projectile
         projectile = Projectile(owner_x, owner_y, direction, self.projectile_speed, self.damage, owner_id)
-        return [projectile]
+        return projectile
 
     def secondary_fire(self, owner_x: float, owner_y: float, target_x: float, target_y: float, owner_id: str):
         if (time.time() - self.last_secondary_time) < self.cooldown:
@@ -102,12 +104,14 @@ class Weapon(BaseWeapon):
 
 class StormBringer(Weapon):
     def __init__(self, location=None):
-        super().__init__("Storm Bringer", damage=0.2, cooldown=3.0, projectile_speed=12.0, location=location)
+        super().__init__("Storm Bringer", damage=0.2, cooldown=3.0, projectile_speed=12.0, max_ammo=10, ammo_per_shot=1, location=location)
         self.color = (30, 30, 120)  # Dark Blue
 
     def shoot(self, owner_x: float, owner_y: float, target_x: float, target_y: float, owner_id: str):
         if not self.can_shoot():
             return None
 
+        # Consume ammo
+        self.ammo -= self.ammo_per_shot
         self.last_shot_time = time.time()
         return [StormCloud(owner_x, owner_y, [target_x, target_y], owner_id)]

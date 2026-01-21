@@ -79,6 +79,7 @@ class VisualLogger {
             todos: [],
             tests: [],
             testFilterFailures: false,
+            testDeduplicate: true,
             selectedFile: null,
             diffMode: 'split',
             theme: 'dark',
@@ -154,8 +155,10 @@ class VisualLogger {
             detailsTime: document.getElementById('detailsTime'),
             detailsArgs: document.getElementById('detailsArgs'),
             detailsResult: document.getElementById('detailsResult'),
+            detailsResults: document.getElementById('detailsResult'),
             detailsFiles: document.getElementById('detailsFiles'),
             testsFilterToggle: document.getElementById('testsFilterToggle'),
+            testsDeduplicateToggle: document.getElementById('testsDeduplicateToggle'),
             testsClearBtn: document.getElementById('testsClearBtn')
         };
     }
@@ -193,6 +196,15 @@ class VisualLogger {
             this.elements.testsFilterToggle.addEventListener('click', () => {
                 this.state.testFilterFailures = !this.state.testFilterFailures;
                 this.updateTestsFilterButton();
+                this.renderTests();
+            });
+        }
+
+        // Tests deduplicate toggle
+        if (this.elements.testsDeduplicateToggle) {
+            this.elements.testsDeduplicateToggle.addEventListener('click', () => {
+                this.state.testDeduplicate = !this.state.testDeduplicate;
+                this.updateTestsDeduplicateButton();
                 this.renderTests();
             });
         }
@@ -953,7 +965,7 @@ class VisualLogger {
         }
 
         graphDef += '    classDef success fill:#162420,stroke:#00ff9f,stroke-width:2px,color:#e6edf3;\n';
-        graphDef += '    classDef error fill:#2d1a1a,stroke:#ff6b6b,stroke-width:2px,color:#e6edf3;\n';
+        graphDef += '    classDef error fill:#4a1515,stroke:#ff4444,stroke-width:2px,color:#ff4444;\n';
         graphDef += '    classDef thought fill:#1a1a2e,stroke:#6e7681,stroke-width:1px,stroke-dasharray:5 5,color:#8b949e;\n';
         graphDef += '    classDef modelText fill:#0d1117,stroke:#58a6ff,stroke-width:1px,stroke-dasharray:3 3,color:#58a6ff;\n';
         graphDef += '    classDef complete fill:#1a3a1a,stroke:#4ade80,stroke-width:3px,color:#e6edf3;\n';
@@ -1040,9 +1052,15 @@ class VisualLogger {
             
             // Special styling for complete_task
             if (action.name === 'complete_task') {
-                nodeDef = `    ${nodeId}[["✓ ${name}"]]:::complete;\n`;
+                const isFailed = action.success === false || (action.result && String(action.result).trim().startsWith('Error:'));
+                if (isFailed) {
+                    nodeDef = `    ${nodeId}[["✗ ${name}"]]:::error;\n`;
+                } else {
+                    nodeDef = `    ${nodeId}[["✓ ${name}"]]:::complete;\n`;
+                }
             } else {
-                const styleClass = action.success === false ? ':::error' : ':::success';
+                const isFailed = action.success === false || (action.result && String(action.result).trim().startsWith('Error:'));
+                const styleClass = isFailed ? ':::error' : ':::success';
                 nodeDef = `    ${nodeId}["${name}${argsSummary}"]${styleClass};\n`;
             }
             
@@ -1467,6 +1485,12 @@ class VisualLogger {
         btn.textContent = this.state.testFilterFailures ? 'Show all tests' : 'Show failures only';
         btn.classList.toggle('active', this.state.testFilterFailures);
     }
+
+    updateTestsDeduplicateButton() {
+        const btn = this.elements.testsDeduplicateToggle;
+        if (!btn) return;
+        btn.classList.toggle('active', this.state.testDeduplicate);
+    }
     
     updateActionProgress() {
         this.elements.actionProgress.textContent = `Actions: ${this.state.actions.length}`;
@@ -1730,7 +1754,7 @@ class VisualLogger {
         md += '## Action Details\n\n';
         this.state.actions.forEach((action, idx) => {
             md += `### ${idx + 1}. ${action.name}\n\n`;
-            md += `- **Status**: ${action.success === false ? '❌ Failed' : '✅ Success'}\n`;
+            md += `- **Status**: ${action.success === false ? '[error] Failed' : '[success] Success'}\n`;
             md += `- **Time**: ${this.formatTime(action.timestamp)}\n`;
             md += `- **Arguments**:\n\n`;
             md += '```json\n';
@@ -1832,7 +1856,7 @@ class VisualLogger {
         
         this.state.actions.forEach((action, idx) => {
             const time = this.formatTime(action.timestamp);
-            const status = action.success === false ? '❌' : '✅';
+            const status = action.success === false ? '[error]' : '[success]';
             
             md += `### ${time} - ${status} ${action.name}\n\n`;
             
@@ -1877,7 +1901,7 @@ class VisualLogger {
         md += '---\n\n';
         
         this.state.tests.forEach((test) => {
-            const status = test.status === 'failed' ? '❌' : '✅';
+            const status = test.status === 'failed' ? '[error]' : '[success]';
             md += `### ${status} ${test.test_name}\n`;
             md += `**File**: \`${test.source_file}\`\n\n`;
             if (test.status === 'failed') {
@@ -1954,7 +1978,26 @@ class VisualLogger {
         
         container.innerHTML = '';
         
-        const filtered = this.state.tests.filter(t => !this.state.testFilterFailures || t.status === 'failed');
+        let filtered = this.state.tests;
+
+        // Deduplicate if enabled: keep only the last occurrence of each (source_file, test_name)
+        if (this.state.testDeduplicate) {
+            const seen = new Set();
+            // Iterate backwards to find the latest ones
+            const unique = [];
+            for (let i = filtered.length - 1; i >= 0; i--) {
+                const t = filtered[i];
+                const key = `${t.source_file}::${t.test_name}`;
+                if (!seen.has(key)) {
+                    seen.add(key);
+                    unique.unshift(t);
+                }
+            }
+            filtered = unique;
+        }
+
+        // Then filter by failures if needed
+        filtered = filtered.filter(t => !this.state.testFilterFailures || t.status === 'failed');
         
         if (filtered.length === 0) {
             container.innerHTML = `
@@ -1992,7 +2035,7 @@ class VisualLogger {
                             <div class="file-meta">${tests.length} test${tests.length !== 1 ? 's' : ''} • ${failedCount} fail • ${passedCount} pass</div>
                         </div>
                         <div class="file-badges">
-                            <span class="badge ${failedCount ? 'badge-fail' : 'badge-pass'}">${failedCount ? '❌' + failedCount : '✅ All pass'}</span>
+                            <span class="badge ${failedCount ? 'badge-fail' : 'badge-pass'}">${failedCount ? '[error]' + failedCount : '[success] All pass'}</span>
                             <span class="chevron">▾</span>
                         </div>
                     </div>
@@ -2005,7 +2048,7 @@ class VisualLogger {
                             return `
                                 <div class="test-item ${isFailed ? 'failed' : 'passed'}">
                                     <div class="test-item-top">
-                                        <span class="test-icon">${isFailed ? '❌' : '✅'}</span>
+                                        <span class="test-icon">${isFailed ? '[error]' : '[success]'}</span>
                                         <span class="test-name">${this.escapeHtml(test.test_name)}</span>
                                         <span class="test-duration">${duration}</span>
                                     </div>

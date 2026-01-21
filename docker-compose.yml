@@ -1,0 +1,68 @@
+name: cc
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: server
+    ports:
+      - "5555:5555"
+    # Optional: Set CC_PUBLIC_IP (or legacy GENGAME_PUBLIC_IP) if auto-detection doesn't work
+    # environment:
+    #   - CC_PUBLIC_IP=192.168.1.100
+    volumes:
+      - server_patches:/app/__server_patches
+      - game_backups:/app/__game_backups
+      - patches:/app/__patches
+      - config:/app/__config
+    restart: unless-stopped
+    labels:
+      - "com.docker.compose.project=cc"
+      - "com.docker.compose.service=server"
+
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: client
+    environment:
+      - SDL_VIDEODRIVER=x11
+      - DISPLAY=:0
+      - LIBGL_ALWAYS_SOFTWARE=1
+      # Visual Logger configuration (accessible from outside container)
+      - VISUAL_LOGGER_HOST=0.0.0.0
+      - VISUAL_LOGGER_PORT=8765
+    ports:
+      - "6080:6080"  # Web VNC Access
+      - "8765:8765"  # Visual Logger Dashboard
+    volumes:
+      - game_backups:/app/__game_backups
+      - config:/app/__config
+      - patches:/app/__patches
+    profiles: ["client"]
+    command: ["python", "main.py", "--host", "server", "--port", "5555"]
+    labels:
+      - "com.docker.compose.project=cc"
+      - "com.docker.compose.service=client"
+  
+volumes:
+  server_patches:
+    driver: local
+    labels:
+      - "com.docker.compose.project=cc"
+      - "com.docker.compose.service=server"
+  game_backups:
+    driver: local
+    labels:
+      - "com.docker.compose.project=cc"
+      - "com.docker.compose.volume=game_backups"
+  patches:
+    driver: local
+    labels:
+      - "com.docker.compose.project=cc"
+      - "com.docker.compose.volume=patches"
+  config:
+    driver: local
+    labels:
+      - "com.docker.compose.project=cc"
+      - "com.docker.compose.volume=config"

@@ -1,0 +1,52 @@
+FROM python:3.11-slim
+
+# Set environment variables for headless operation
+ENV PYTHONUNBUFFERED=1
+ENV PYGAME_HIDE_SUPPORT_PROMPT=1
+ENV SDL_VIDEODRIVER=dummy 
+
+# Install only essential SDL2 libraries for Pygame logic
+RUN apt-get update && apt-get install -y \
+    libsdl2-2.0-0 \
+    libsdl2-image-2.0-0 \
+    libsdl2-mixer-2.0-0 \
+    libsdl2-ttf-2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy all application files including GameFolder (volume mount can override if needed)
+COPY main.py .
+COPY BASE_files/ ./BASE_files/
+COPY BASE_components/ ./BASE_components/
+COPY coding/ ./coding/
+COPY visual_logger/ ./visual_logger/
+COPY agent.py .
+COPY requirements.txt .
+COPY server.py .
+COPY GameFolder/ ./GameFolder/
+
+# Create necessary directories
+RUN mkdir -p __server_patches __game_backups __patches __config
+
+# Copy and set permissions for the server startup script
+COPY run-server.sh /run-server.sh
+RUN chmod +x /run-server.sh
+
+# Security: Create non-root user (but don't switch yet - script will handle permissions first)
+RUN useradd --create-home --shell /bin/bash gameuser && \
+    chown -R gameuser:gameuser /app
+# Note: We stay as root so run-server.sh can fix volume permissions before switching to gameuser
+
+# Expose the server port
+EXPOSE 5555
+
+# The startup script handles volume permissions and then starts the server as gameuser
+ENTRYPOINT ["/run-server.sh"]
+
+# Start the server listening on all interfaces
+CMD ["python", "server.py", "--host", "0.0.0.0", "--port", "5555"]

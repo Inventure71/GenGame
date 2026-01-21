@@ -13,7 +13,7 @@ from GameFolder.setup import setup_battle_arena
 
 def test_weapon_corner_shooting_mandatory():
     """Test shooting from all four corners of the arena for all new weapons."""
-    arena = setup_battle_arena()
+    arena = setup_battle_arena(headless=True)
     w, h = arena.width, arena.height
     corners = [
         [0, 0],      # Bottom-left
@@ -63,7 +63,7 @@ def test_storm_cloud_boundary_handling():
 
 def test_projectile_shooting_near_platforms():
     """Test shooting from positions adjacent to platform boundaries."""
-    arena = Arena(800, 600)
+    arena = Arena(800, 600, headless=True)
     # Platform rect: (400, 280, 100, 20) -> World y-up top is 320
     plat = Platform(400, 280, 100, 20)
     arena.platforms.append(plat)
@@ -93,7 +93,7 @@ def test_projectile_shooting_near_platforms():
 
 def test_lootpool_registration_all():
     """Verify all new weapons are in the lootpool."""
-    arena = setup_battle_arena()
+    arena = setup_battle_arena(headless=True)
     expected = ["StormBringer"]
     for name in expected:
         assert name in arena.lootpool, f"{name} was not registered in the lootpool"

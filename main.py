@@ -1,41 +1,41 @@
-from GameFolder.setup import setup_battle_arena
+import os
+#os.environ['SDL_VIDEODRIVER'] = 'cocoa'
+import sys
 
-def main():
-    print("="*70)
-    print(" "*20 + "GENGAME - BATTLE ARENA")
-    print("="*70)
-    print("\n🎮 GAME FEATURES:")
-    print("  ✓ Life System: Each player has 3 lives")
-    print("  ✓ Respawn: Players respawn at center-top after death")
-    print("  ✓ Weapon Pickups: Walk over weapons to pick them up!")
-    print("  ✓ UI: Shows health, lives, and current weapon")
-    print("  ✓ Winner: Last player standing wins!")
-    print("\n🎯 CONTROLS:")
-    print("  Arrow Keys / WASD: Move Player 1")
-    print("  Mouse Left-Click: Shoot (if you have a weapon)")
-    print("  Q: Drop current weapon")
-    print("  ESC: Quit game")
-    print("\n💡 TIPS:")
-    print("  - You can only hold 1 weapon at a time")
-    print("  - Press Q to drop your current weapon")
-    print("  - Walk over a weapon to pick it up (only when not holding one)")
-    print("="*70)
-    print("\nStarting game...\n")
-    
-    # Initialize and setup the arena via the child's setup function
-    # This keeps main.py clean and delegates specific setup to the GameFolder
-    arena = setup_battle_arena()
-    
-    print(f"✓ Created {len(arena.characters)} players")
-    print(f"✓ Spawned {len(arena.platforms)} platforms")
-    print(f"✓ Lootpool initialized with: {list(arena.lootpool.keys())}")
-    print("\n💡 Look for weapons on the ground - they'll have their names displayed!")
-    print("   Walk over them to pick them up!\n")
-    print("Let the battle begin! 🎯\n")
-    
-    # Start the game loop
-    arena.run()
+# ONLY set to dummy if not already set by the environment (e.g. Docker sets it to 'x11')
+if "SDL_VIDEODRIVER" not in os.environ:
+    # Default behavior for local headless or tests, but allow Docker to override
+    if "--headless" in sys.argv:
+        os.environ["SDL_VIDEODRIVER"] = "dummy"
+
+# Ensure GameFolder exists and is importable before proceeding
+from BASE_files.BASE_helpers import ensure_gamefolder_exists
+if not ensure_gamefolder_exists():
+    print("Failed to restore GameFolder. Game cannot start.")
+    sys.exit(1)
+
+import random
+import argparse
+from BASE_files.BASE_menu import BaseMenu
+from coding.non_callable_tools.action_logger import action_logger
+
+# TODO: Remember to call client.update() regularly in your main loop to process incoming messages and send outgoing ones.")
+
+
+def run_menu():
+    menu = BaseMenu(action_logger=action_logger)
+    menu.run_menu_loop()
 
 if __name__ == "__main__":
-    main()
+    random.seed(69)
 
+    parser = argparse.ArgumentParser(description='Core Conflict Multiplayer Client')
+    parser.add_argument('--player', default='Player', help='Player name')
+    parser.add_argument('--host', default='127.0.0.1', help='Server host (default: 127.0.0.1)')
+    parser.add_argument('--port', type=int, default=5555, help='Server port (default: 5555)')
+
+    args = parser.parse_args()
+
+    #network_client = NetworkClient(args.host, args.port)
+    #run_client(network_client, player_id=args.player)
+    run_menu()

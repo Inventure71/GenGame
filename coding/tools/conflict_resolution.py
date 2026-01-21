@@ -38,15 +38,16 @@ def _strip_diff_prefix(line: str) -> str:
 
 
 def _is_conflict_start(line: str) -> bool:
-    return _strip_diff_prefix(line).startswith('<<<<<<< ')
-
+    stripped = _strip_diff_prefix(line)
+    return stripped.startswith('<<<<<<< ') or '<<<<<<< ' in stripped
 
 def _is_conflict_separator(line: str) -> bool:
-    return _strip_diff_prefix(line).startswith('=======')
-
+    stripped = _strip_diff_prefix(line)
+    return stripped.startswith('=======') or '=======' in stripped
 
 def _is_conflict_end(line: str) -> bool:
-    return _strip_diff_prefix(line).startswith('>>>>>>> ')
+    stripped = _strip_diff_prefix(line)
+    return stripped.startswith('>>>>>>> ') or '>>>>>>> ' in stripped
 
 
 def _parse_conflicts_from_diff(diff: str) -> List[Dict]:
@@ -118,7 +119,38 @@ def get_all_conflicts(patch_path: str) -> Dict[str, List[Dict]]:
     return result
 
 
-def resolve_conflict(patch_path: str = None, file_path: str = None, 
+# Global tracker for resolutions applied during LLM process
+_resolution_tracker = {}
+
+def get_resolution_tracker():
+    """Get the global resolution tracker."""
+    global _resolution_tracker
+    return _resolution_tracker
+
+def clear_resolution_tracker():
+    """Clear the resolution tracker."""
+    global _resolution_tracker
+    _resolution_tracker = {}
+
+# Global variables for deferred conflict resolution and todo integration
+_defer_application = False
+_pending_resolutions = []
+_todo_list = None
+_conflict_to_todo_map = {}  # conflict_num -> todo_index
+
+def set_conflict_todo_tracking(todo_list, conflict_to_todo_map):
+    """Set up todo list integration for conflict resolution."""
+    global _todo_list, _conflict_to_todo_map
+    _todo_list = todo_list
+    _conflict_to_todo_map = conflict_to_todo_map
+
+def clear_conflict_todo_tracking():
+    """Clear todo tracking."""
+    global _todo_list, _conflict_to_todo_map
+    _todo_list = None
+    _conflict_to_todo_map = {}
+
+def resolve_conflict(patch_path: str = None, file_path: str = None,
                      conflict_num: int = None, resolution: str = None,
                      manual_content: list = None, **kwargs) -> str:
     """
@@ -128,7 +160,7 @@ def resolve_conflict(patch_path: str = None, file_path: str = None,
         patch_path: Path to the merged patch JSON file
         file_path: The file containing the conflict (e.g., 'GameFolder/arenas/GAME_arena.py')
         conflict_num: Which conflict to resolve (1-indexed)
-        resolution: 'a' (use patch A), 'b' (use patch B), 'both' (keep both), 'manual' (custom)
+        resolution: 'a' (use patch A), 'b' (use patch B), 'manual' (custom merge)
         manual_content: Lines of code when resolution is 'manual' (list of strings)
     
     Returns:
@@ -144,55 +176,94 @@ def resolve_conflict(patch_path: str = None, file_path: str = None,
     if missing:
         return f"Error: Missing required arguments: {missing}"
     
-    if resolution not in ('a', 'b', 'both', 'manual'):
-        return f"Error: Invalid resolution '{resolution}'. Must be 'a', 'b', 'both', or 'manual'"
+    if resolution not in ('a', 'b', 'manual'):
+        return f"Error: Invalid resolution '{resolution}'. Must be 'a', 'b', or 'manual'"
     
     if resolution == 'manual' and not manual_content:
         return "Error: manual_content required when resolution is 'manual'"
     
+    global _defer_application, _pending_resolutions
+    if _defer_application:
+        _pending_resolutions.append({
+            'patch_path': patch_path,
+            'file_path': file_path,
+            'conflict_num': conflict_num,
+            'resolution': resolution,
+            'manual_content': manual_content
+        })
+        return f"Collected resolution for conflict #{conflict_num}"
+
     try:
         name, changes = load_patch_file(patch_path)
     except FileNotFoundError:
         return f"Error: Patch file not found: {patch_path}"
     except json.JSONDecodeError as e:
         return f"Error: Invalid JSON in patch file: {e}"
-    
+
     # Find the file with the conflict
     for change in changes:
         if change['path'] != file_path:
             continue
-        
+
         diff = change.get('diff', '')
         conflicts = _parse_conflicts_from_diff(diff)
-        
+
         # Find the target conflict
         target = None
         for c in conflicts:
             if c['conflict_num'] == conflict_num:
                 target = c
                 break
-        
+
         if not target:
             return f"Error: Conflict #{conflict_num} not found in '{file_path}'"
-        
+
         # Build replacement lines
         if resolution == 'a':
             replacement = ['+' + l for l in target['option_a']]
         elif resolution == 'b':
             replacement = ['+' + l for l in target['option_b']]
-        elif resolution == 'both':
-            replacement = ['+' + l for l in target['option_a']]
-            replacement.extend(['+' + l for l in target['option_b']])
         elif resolution == 'manual':
             replacement = ['+' + l for l in (manual_content or [])]
-        
+
         # Replace the conflict block in the diff
         lines = diff.splitlines()
         new_lines = lines[:target['start_line_idx']] + replacement + lines[target['end_line_idx'] + 1:]
         change['diff'] = '\n'.join(new_lines)
-        
+
+        # Track the resolution for caching
+        global _resolution_tracker
+        key = f"{file_path}:{conflict_num}"
+        if resolution == 'manual':
+            _resolution_tracker[key] = {"manual_content": manual_content}
+        else:
+            _resolution_tracker[key] = {"resolution": resolution}
+
         # Save the updated patch
         save_patch_file(patch_path, name, changes)
+
+        if resolution == 'a':
+            resolved_content = '\n'.join(target['option_a'])
+        elif resolution == 'b':
+            resolved_content = '\n'.join(target['option_b'])
+        elif resolution == 'manual':
+            resolved_content = '\n'.join(manual_content or [])
+
+        global _todo_list, _conflict_to_todo_map
+        if _todo_list and conflict_num in _conflict_to_todo_map:
+            todo_index = _conflict_to_todo_map[conflict_num]
+            resolved_description = (
+                f"[RESOLVED] Conflict #{conflict_num}\n"
+                f"Applied resolution: {resolution.upper()}\n"
+                f"Result:\n{resolved_content}"
+            )
+            _todo_list.update_task_by_index(
+                todo_index, 
+                new_title=f"[RESOLVED] Conflict #{conflict_num} resolved",
+                new_description=resolved_description,
+                completed=True
+            )
+
         return f"Successfully resolved conflict #{conflict_num} in '{file_path}' using '{resolution}'"
     
     return f"Error: File '{file_path}' not found in patch"
@@ -236,8 +307,8 @@ def resolve_conflicts_interactive(patch_path: str) -> bool:
                 print(f"  {l}")
             
             while True:
-                ans = input("\nChoose [A], [B], [BOTH], or [M]anual: ").strip().lower()
-                if ans in ('a', 'b', 'both'):
+                ans = input("\nChoose [A], [B], or [M]anual: ").strip().lower()
+                if ans in ('a', 'b'):
                     result = resolve_conflict(patch_path, file_path, conflict['conflict_num'], ans)
                     print(result)
                     break

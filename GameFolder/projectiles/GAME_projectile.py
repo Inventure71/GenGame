@@ -28,7 +28,6 @@ class StormCloud(Projectile):
         self.is_raining = False
         self.rain_duration = 6.0
         self.rain_timer = 0.0
-        self.persistent = True
         self.damage = 0.2
         self.width = 80
         self.height = 40
@@ -43,10 +42,11 @@ class StormCloud(Projectile):
                 self.location[0] = self.target_pos[0]
                 self.location[1] = self.target_pos[1]
                 self.is_raining = True
+                self.is_persistent = True  # Become persistent when raining
             else:
                 self.location[0] += (dx / dist) * move_dist
                 self.location[1] += (dy / dist) * move_dist
-        
+
         if self.is_raining:
             self.rain_timer += delta_time
             if self.rain_timer >= self.rain_duration:

@@ -29,9 +29,25 @@ class ActionLogger:
         self.cumulative_output_tokens = 0
         self.request_count = 0
         
+        # Parallel call monitoring
+        self.parallel_call_stats = {
+            "total_requests": 0,
+            "single_tool_requests": 0,
+            "parallel_tool_requests": 0,
+            "sequential_read_warnings": 0
+        }
+        self.last_request_tool_names = []  # Track tools from previous request
+        
         # Visual Logger configuration
         self.visual_enabled = visual
-        self.visual_uri = "ws://127.0.0.1:8765/ws"
+        # Use environment variables for host/port, default to localhost
+        visual_host = os.getenv("VISUAL_LOGGER_HOST", "127.0.0.1")
+        visual_port = int(os.getenv("VISUAL_LOGGER_PORT", "8765"))
+        self.visual_host = visual_host
+        self.visual_port = visual_port
+        # For WebSocket URI, use localhost if host is 0.0.0.0 (since we're connecting from same container)
+        ws_host = "127.0.0.1" if visual_host == "0.0.0.0" else visual_host
+        self.visual_uri = f"ws://{ws_host}:{visual_port}/ws"
         self.visual_connected = False
         self.visual_queue = queue.Queue()
         self.visual_thread = None
@@ -42,13 +58,13 @@ class ActionLogger:
         # Register cleanup
         atexit.register(self._cleanup)
     
-    def save_changes_to_extension_file(self, file_path: str, name_of_backup: str = None):
+    def save_changes_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups"):
         # import only if not already imported
         if "VersionControl" not in globals():
             from coding.non_callable_tools.version_control import VersionControl
 
         version_control = VersionControl(self)
-        return version_control.save_to_extension_file(file_path, name_of_backup=name_of_backup)
+        return version_control.save_to_extension_file(file_path, name_of_backup=name_of_backup, base_backups_root=base_backups_root)
 
     def set_todo_list(self, todo_list):
         """Set reference to the TodoList for tracking."""
@@ -116,18 +132,20 @@ class ActionLogger:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.settimeout(0.5)
-                if s.connect_ex(("127.0.0.1", 8765)) == 0:
+                # Use localhost for connection check (server might be bound to 0.0.0.0)
+                check_host = "127.0.0.1"
+                if s.connect_ex((check_host, self.visual_port)) == 0:
                     # Server already running
                     return
         except:
             pass
             
-        print("[ActionLogger] Starting Visual Logger server...")
+        print(f"[ActionLogger] Starting Visual Logger server on {self.visual_host}:{self.visual_port}...")
         server_script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "visual_logger", "run_server.py")
         
-        # Start server in background
+        # Start server in background with host/port arguments
         self.visual_server_process = subprocess.Popen(
-            [os.sys.executable, server_script],
+            [os.sys.executable, server_script, "--host", self.visual_host, "--port", str(self.visual_port)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             preexec_fn=os.setsid if os.name != 'nt' else None
@@ -195,19 +213,42 @@ class ActionLogger:
     def log_model_request(self, input_tokens: int, output_tokens: int, tool_calls: list = None, chat_history: list = None):
         """
         Log a model API request with token usage and optional parallel tool calls.
-        
+
         Args:
             input_tokens: Number of input tokens for this request
             output_tokens: Number of output tokens
             tool_calls: List of tool call dicts [{name, args, result, success}, ...] if parallel tools were called
             chat_history: The history that was sent to the model
         """
+        # Ensure tokens are integers (defensive programming)
+        input_tokens = int(input_tokens) if input_tokens is not None else 0
+        output_tokens = int(output_tokens) if output_tokens is not None else 0
+
         self.request_count += 1
         cumulative_before = self.cumulative_input_tokens + self.cumulative_output_tokens
-        
+
         # Update cumulative totals
         self.cumulative_input_tokens += input_tokens
         self.cumulative_output_tokens += output_tokens
+        
+        # Track parallel call statistics
+        self.parallel_call_stats["total_requests"] += 1
+        if tool_calls:
+            if len(tool_calls) == 1:
+                self.parallel_call_stats["single_tool_requests"] += 1
+                # Check if this looks like sequential reading pattern
+                current_tool_names = [tc["name"] for tc in tool_calls]
+                if (self.last_request_tool_names and 
+                    self.last_request_tool_names[0] == "read_file" and 
+                    current_tool_names[0] == "read_file"):
+                    self.parallel_call_stats["sequential_read_warnings"] += 1
+                    print(f"\n[warning]  WARNING: Detected sequential read_file calls. Previous request read {len(self.last_request_tool_names)} file(s), current reads 1 file.")
+                    print(f"    Consider batching file reads into a single request for better efficiency.\n")
+                self.last_request_tool_names = current_tool_names
+            elif len(tool_calls) > 1:
+                self.parallel_call_stats["parallel_tool_requests"] += 1
+                self.last_request_tool_names = [tc["name"] for tc in tool_calls]
+                print(f"✓ Parallel tool usage: {len(tool_calls)} tools called in one request")
         
         request_data = {
             "request_id": self.request_count,
@@ -296,14 +337,16 @@ class ActionLogger:
                 # Handle Gemini-style objects
                 else:
                     entry = {"role": content.role, "parts": []}
-                    for part in content.parts:
-                        if hasattr(part, 'text') and part.text:
-                            # Skip thoughts for brevity
-                            if not getattr(part, 'thought', False):
-                                entry["parts"].append({"type": "text", "text": part.text})
-                        elif hasattr(part, 'function_call') and part.function_call:
-                            fc = part.function_call
-                            entry["parts"].append({"type": "function_call", "name": fc.name, "args": dict(fc.args) if fc.args else {}})
+                    # Check if content has parts
+                    if hasattr(content, 'parts') and content.parts:
+                        for part in content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                # Skip thoughts for brevity
+                                if not getattr(part, 'thought', False):
+                                    entry["parts"].append({"type": "text", "text": part.text})
+                            elif hasattr(part, 'function_call') and part.function_call:
+                                fc = part.function_call
+                                entry["parts"].append({"type": "function_call", "name": fc.name, "args": dict(fc.args) if fc.args else {}})
                     if entry["parts"]:  # Only add non-empty entries
                         serialized.append(entry)
             except Exception:
@@ -377,6 +420,19 @@ class ActionLogger:
         if self.start_time and self.end_time:
             duration = (self.end_time - self.start_time).total_seconds()
             print(f"  Duration: {duration:.1f}s")
+        
+        # Parallel usage statistics
+        stats = self.parallel_call_stats
+        if stats["total_requests"] > 0:
+            print(f"\n  PARALLEL TOOL USAGE:")
+            print("-"*60)
+            print(f"  Total requests: {stats['total_requests']}")
+            print(f"  Single-tool requests: {stats['single_tool_requests']}")
+            print(f"  Parallel-tool requests: {stats['parallel_tool_requests']}")
+            if stats['sequential_read_warnings'] > 0:
+                print(f"  [warning]  Sequential read warnings: {stats['sequential_read_warnings']}")
+            parallel_pct = (stats['parallel_tool_requests'] / stats['total_requests'] * 100) if stats['total_requests'] > 0 else 0
+            print(f"  Parallel efficiency: {parallel_pct:.1f}%")
         
         # Tool calls summary
         print(f"\n  ACTIONS ({len(self.actions)} total):")

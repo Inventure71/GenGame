@@ -12,31 +12,24 @@ def get_full_directory_tree():
     )
     return context
 
+def gather_context_enchancer():
+    """Gathers context for the enchancer phase."""
+    lines = [
+        "## Context given:",
+        "Documentation of BASE game components:",
+        read_file(file_path='BASE_components/BASE_COMPONENTS_DOCS.md'),
+    ]
+    return "\n".join(lines)
+
 def gather_context_planning():
     """Gathers comprehensive context for the planning phase."""
-    #lines_old = [
-    #    "=== STARTING CONTEXT (Already gathered - do NOT re-read these files) ===",
-    #    "",
-    #    get_full_directory_tree(),
-    #    "",
-    #    "## BASE Components Contents (read-only, inherit from these):",
-    #]
-    
-    # Read all BASE_components files
-    #base_components_path = "BASE_components"
-    #for filename in sorted(os.listdir(base_components_path)):
-    #    if filename.endswith('.py') and not filename.startswith('__'):
-    #        filepath = os.path.join(base_components_path, filename)
-    #        lines.append(f"\n### {filename}")
-    #        lines.append(read_file(filepath))
-
     lines = [
         "=== STARTING CONTEXT (Already gathered - do NOT re-read these files) ===",
         "",
         get_full_directory_tree(),
         "",
         "## Documentation of BASE components:",
-        read_file("BASE_components/BASE_COMPONENTS_DOCS.md"),
+        read_file(file_path="BASE_components/BASE_COMPONENTS_DOCS.md"),
     ]
     
     # Read core game files
@@ -48,13 +41,14 @@ def gather_context_planning():
         'GameFolder/weapons/GAME_weapon.py',
     ]:
         lines.append(f"\n### {filepath}")
-        lines.append(read_file(filepath))
+        lines.append(read_file(file_path=filepath))
     
     # Setup configuration
     lines.append("\n## Setup Configuration:")
-    lines.append(read_file('GameFolder/setup.py'))
+    lines.append(read_file(file_path='GameFolder/setup.py'))
     
     lines.append("\n=== END OF STARTING CONTEXT ===")
+    lines.append("\n⚡ REMINDER: Make ALL read_file calls in PARALLEL in ONE turn. Never read sequentially. ⚡")
     
     return "\n".join(lines)
 
@@ -67,7 +61,8 @@ def gather_context_coding():
         f"- GameFolder/: You can read and write files here\n"
         f"- BASE_components/: Read-only, inherit from these classes in GameFolder/\n\n"
         f"Do NOT call get_tree_directory - use the paths above.\n\n"
-        f"=== END OF STARTING CONTEXT ==="
+        f"=== END OF STARTING CONTEXT ===\n\n"
+        f"⚡ REMINDER: Use tools in PARALLEL. If you need multiple files, read ALL of them in ONE response. ⚡"
     )
     return context
 
@@ -77,6 +72,8 @@ def gather_context_testing():
         "=== TESTING CONTEXT ===",
         "",
         get_full_directory_tree(),
+        "",
+        "⚡ CRITICAL REMINDER: Batch ALL file reads in ONE turn (5-10+ parallel calls is expected). Sequential reading is FORBIDDEN. ⚡",
         "",
         "## CRITICAL: Character & Weapon Attributes",
         "Before writing tests, note these BASE_components facts:",
@@ -100,7 +97,7 @@ def gather_context_testing():
         "- Effects ACCUMULATE across loop iterations",
         "",
         "## Testing Guide:",
-        read_file("coding/prompts/GUIDE_Testing.md"),
+        read_file(file_path="coding/prompts/GUIDE_Testing.md"),
         "",
         "=== END OF TESTING CONTEXT ==="
     ]
@@ -109,9 +106,11 @@ def gather_context_testing():
 def gather_context_fix(results: dict) -> str:
     """Gather focused context for fix mode - only error files + directory tree."""
     lines = [
-        "=== FIX MODE CONTEXT ===",
+        "=== FIX CONTEXT ===",
         "",
         get_full_directory_tree(),  # Directory structure
+        "",
+        "⚡ CRITICAL REMINDER: Batch ALL tool calls in ONE turn (read_file, get_file_outline, get_function_source, etc.). 5-20+ parallel calls is expected. Sequential calls are FORBIDDEN. ⚡",
         "",
         "## Files Involved in Errors:",
         gather_context_fixing_errors(results),  # Only error-related files

@@ -1,290 +1,352 @@
-# TESTING SYSTEM
+# TESTING SYSTEM (CONDENSED)
 
-## STRUCTURE
-- Tests in `GameFolder/tests/*.py`
-- Auto-discovered and run by `BASE_tests.py`
-- Functions must start with `test_` and take no parameters
+## 0. ABSOLUTE RULE: VERIFY BEFORE TESTING
 
-## TEST FILE TEMPLATE
-```python
-"""
-Tests for [Feature Name]
-"""
+Before writing **any** test, read the actual implementation.
+You must verify:
 
-from GameFolder.characters.GAME_character import Character
-from GameFolder.weapons.YourWeapon import YourWeapon
-from GameFolder.projectiles.YourProjectile import YourProjectile
+* `__init__` signature (parameters, order, types)
+* Method return types (`shoot()` → object, list, or None)
+* Attribute names (`self.horizontal_velocity` ≠ `vx`)
+* State flags (`is_stationary`, `is_alive`, etc.)
+* Inherited APIs via `BASE_COMPONENTS_DOCS.md`
 
-def test_creation():
-    """Test object creation and properties."""
-    obj = YourClass(...)
-    assert obj.property == expected, "message"
-
-def test_behavior():
-    """Test specific behavior."""
-    obj = YourClass(...)
-    result = obj.method()
-    assert result == expected, "message"
-```
-
-## WEAPON TESTING PATTERNS
-```python
-def test_weapon_creation():
-    gun = YourWeapon()
-    assert gun.name == "Name"
-    assert gun.damage > 0
-    assert not gun.is_equipped
-
-def test_weapon_shooting():
-    gun = YourWeapon()
-    projectiles = gun.shoot(100, 100, 200, 100, "owner")
-    assert isinstance(projectiles, list)
-    assert len(projectiles) == expected_count
-    assert all(p.damage == gun.damage for p in projectiles)
-
-def test_weapon_cooldown():
-    gun = YourWeapon()
-    shot1 = gun.shoot(100, 100, 200, 100, "owner")
-    shot2 = gun.shoot(100, 100, 200, 100, "owner")  # Immediate retry
-    assert shot1 is not None
-    assert shot2 is None  # Blocked by cooldown
-```
-
-## PROJECTILE TESTING PATTERNS
-```python
-def test_projectile_creation():
-    proj = YourProjectile(100, 100, [1, 0], 20.0, 15, "owner")
-    assert proj.location == [100, 100]
-    assert proj.active
-
-def test_projectile_movement():
-    proj = YourProjectile(100, 100, [1, 0], 10.0, 15, "owner")
-    initial_x = proj.location[0]
-    proj.update(1/60)  # One frame
-    assert proj.location[0] > initial_x
-
-def test_projectile_custom_behavior():
-    proj = YourProjectile(100, 100, [1, 0], 20.0, 15, "owner")
-    initial_direction = proj.direction.copy()
-    # Update multiple frames
-    for _ in range(30):
-        proj.update(1/60)
-    # Verify custom behavior (direction change, etc.)
-    assert proj.direction != initial_direction
-```
-
-## CHARACTER INTEGRATION
-```python
-def test_character_weapon_integration():
-    char = Character("Test", "Test", "", [100, 100])
-    weapon = YourWeapon()
-
-    assert char.weapon is None
-    weapon.pickup()
-    char.weapon = weapon
-    assert char.weapon is not None
-
-    result = char.shoot([200, 100])
-    assert result is not None
-```
-
-## RUNNING TESTS
-```bash
-python -m BASE_components.BASE_tests
-```
-
-## RULES
-- ✅ Function names: `test_*`
-- ✅ No parameters
-- ✅ Clear assertion messages
-- ✅ One concept per test
-- ✅ Import actual game classes from `GameFolder/`
-- ❌ No bare `assert` without messages
+**Never assume names or behavior. Always confirm in code.**
 
 ---
 
-## ⚠️ CRITICAL: COMMON TEST PITFALLS
+## 1. TEST DISCOVERY (CRITICAL)
 
-### 1. Character Health Attribute
-The Character class uses `health`, **NOT** `hp`:
-```python
-# ❌ WRONG - will cause AttributeError
-initial_hp = target.hp
-target.hp = 0
+* Tests live in `GameFolder/tests/*.py`
+* Functions **must**:
 
-# ✅ CORRECT
-initial_health = target.health
-target.health = 0
-```
-
-The `is_alive` property checks `health > 0 AND lives > 0`. It's read-only.
-
-### 2. Weapon Cooldown Between Shots
-`weapon.shoot()` returns `None` if cooldown hasn't elapsed:
-```python
-# ❌ WRONG - second shot fails silently
-gun = YourWeapon()
-projs1 = gun.shoot(0, 0, 100, 100, "owner")  # Works
-projs2 = gun.shoot(0, 0, 200, 200, "owner")  # Returns None!
-
-# ✅ CORRECT - use new instance for each test
-def test_shot_1():
-    gun = YourWeapon()
-    projs = gun.shoot(...)
-
-def test_shot_2():
-    gun = YourWeapon()  # Fresh instance, no cooldown
-    projs = gun.shoot(...)
-
-# ✅ OR reset cooldown manually
-gun.last_shot_time = 0
-```
-
-### 3. Floating Point Timing Loops
-Float accumulation causes precision errors:
-```python
-# ❌ WRONG - float errors accumulate
-dt = 0.1
-total_time = 0.0
-while total_time < 1.15:  # charge_duration - 0.05
-    proj.update(dt)
-    total_time += dt  # 0.1 + 0.1 + ... != exact sum!
-
-# ✅ CORRECT - use integer frame counting
-dt = 0.1
-frames_needed = int(1.2 / dt)  # charge_duration / dt
-for i in range(frames_needed):
-    proj.update(dt)
-    if i < frames_needed - 1:
-        assert proj.state == 'CHARGING'
-```
-
-### 4. Cumulative Effects in Arena Loops
-`arena.handle_collisions(dt)` applies ALL effects each call:
-```python
-# ❌ WRONG - recoil applied 15 times!
-for _ in range(15):
-    arena.handle_collisions(0.1)  # Each call applies recoil
-initial_loc = list(char.location)  # Already moved!
-arena.handle_collisions(0.1)
-# Expected 25 units, but char already moved 375 units
-
-# ✅ CORRECT - track state AFTER setup loop, BEFORE test action
-for _ in range(15):
-    arena.handle_collisions(0.1)
-initial_loc = list(char.location)  # Capture AFTER loop
-arena.handle_collisions(0.1)       # Single test action
-expected_recoil = 25.0
-assert abs(char.location[0] - (initial_loc[0] - expected_recoil)) < 0.1
-```
-
-### 5. Character Scale Ratio
-Character dimensions use `scale_ratio` (default 1.0):
-```python
-# ✅ CORRECT - always use scale_ratio
-char_center_x = char.location[0] + (char.width * char.scale_ratio) / 2
-char_center_y = char.location[1] + (char.height * char.scale_ratio) / 2
-```
-
-### 6. Arena Character Management
-Use proper methods, not direct assignment:
-```python
-# ⚠️ RISKY - may skip initialization
-arena.characters = [char1, char2]
-
-# ✅ PREFERRED - uses proper initialization
-arena.add_character(char1)
-arena.add_character(char2)
-```
-
-### 7. pygame.Rect Integer Truncation (CRITICAL!)
-**pygame.Rect only stores integers!** Float positions get truncated, causing collision detection failures.
+  * start with `test_`
+  * take **ZERO parameters**
+* pytest fixtures or parameters → **test is skipped**
 
 ```python
-# ❌ WRONG - relies on exact single-frame collision
-disc = DiscProjectile(200, 201, [0, -1], 100.0, 25.0, "owner")  # Just 1 pixel above platform
-arena.handle_collisions(1/60)  # Moves ~1.67 pixels
-assert disc.bounces == 1  # FAILS! Rect truncation causes touch, not overlap
+# ❌ Skipped
+def test_x(arena): ...
 
-# ✅ CORRECT - run multiple frames until behavior occurs
-disc = DiscProjectile(200, 210, [0, -1], 100.0, 25.0, "owner")  # Start further away
-for _ in range(20):  # Allow enough frames
-    arena.handle_collisions(1/60)
-    if disc.bounces > 0:
-        break
-assert disc.bounces == 1  # PASSES - collision eventually detected
+# ✅ Discovered
+def test_x(): arena = Arena(...)
 ```
 
-**Why this happens**: When converting world coords to screen coords, floats like `380.67` become `380`. If a rect ends at exactly `400` and another starts at `400`, they TOUCH but don't OVERLAP. `colliderect()` returns False for touching rects.
+---
 
-### 8. Test Behaviors, Not Exact Positions
-Position assertions are fragile due to coordinate conversion and truncation. Test the BEHAVIOR instead:
+## 2. MOST COMMON FAILURES (MEMORIZE)
+
+1. Direct state assignment instead of methods
+
+   * ❌ `health = 0` → ✅ `take_damage()` / `die()`
+2. Assumed constructor or return types
+3. Hardcoded config values (arena size, cooldowns)
+4. Reusing stateful objects across tests
+5. Wrong attribute names
+6. **Insufficient damage amounts** - Account for shield + health + defense reduction
+7. **Single-step physics** - Physics methods may need multiple calls (velocity update → position update)
+8. **Missing entity IDs** - Collision detection requires proper owner/victim IDs
+9. **Coordinate system mismatches** - World Y-up vs Screen Y-down conversions
+10. **Incomplete simulation** - Collision/landing may require multiple update cycles
+11. **Type mismatches** - Sets vs dicts, lists vs tuples, wrong input formats
+12. **Input format incompatibilities** - BASE vs GAME format differences (`'movement'` vs `'move'`, boolean vs position)
+
+---
+
+## 3. GENERAL TEST RULES
+
+* One concept per test
+* Clear assertion messages (no bare `assert`)
+* Fresh objects per test
+* Use public APIs, not direct list/flag manipulation
+* Test outcomes, not internal counters
+
+---
+
+## 4. CORE PATTERNS
+
+### Weapons
+
+Verify **all**:
+
+* Projectile spawn
+* Damage dealt
+* Ammo consumption
+* Cooldown enforcement
+* Ammo depletion & pickup
+
+### Projectiles
+
+Verify:
+
+* Movement
+* Damage on hit
+* Deactivation after collision
+
+### Characters
+
+Verify:
+
+* Weapon integration
+* Shield priority (shield → health)
+* Shield regen timing
+* Death blocks abilities
+
+---
+
+## 5. TIME & SIMULATION RULES
+
+* Use integer frame loops, not float accumulation
+* Capture baseline **after setup, before action**
+* Allow multiple frames for collisions/events
+* **Physics methods often require multiple calls** - First call updates state (velocity), second call applies it (position)
+* **Collision detection needs full simulation cycles** - Single `handle_collisions()` may not be enough
+* **Tick-based physics breaks large deltas** - `update_world(delta_time)` splits into fixed-size ticks (1/60s)
+* **Defense applied per tick, not per total delta** - Large deltas get multiple defense reductions
+* **Track damage before state resets** - When resetting entity state for controlled measurement, capture damage first
 
 ```python
-# ❌ WRONG - fragile position assertion
-assert disc.location[1] == pytest.approx(200)  # May fail due to correction logic
-
-# ✅ CORRECT - test the behavior that matters
-assert disc.bounces == 1                        # Bounce happened
-assert disc.direction[1] > 0                    # Direction reversed (going up)
-assert disc.damage > initial_damage             # Stats increased
-assert disc.speed > initial_speed               # Speed boosted
+for _ in range(max_frames):
+    update()
+    if event(): break
 ```
 
-### 9. Collision Testing Best Practices
-For ANY collision-based test (bouncing, damage, pickup):
-
+**Physics Pattern:**
 ```python
-# ✅ PATTERN: Loop until behavior OR max iterations
-def test_projectile_collision():
-    arena = Arena(800, 600)
-    proj = MyProjectile(x, y, direction, speed, damage, "owner")
-    arena.projectiles.append(proj)
-    
-    initial_state = capture_relevant_state(proj)
-    
-    # Run frames until collision OR timeout
-    max_frames = 60  # ~1 second at 60fps
-    for frame in range(max_frames):
-        arena.handle_collisions(1/60)
-        if collision_occurred(proj):  # e.g., proj.bounces > 0, not proj.active, etc.
-            break
-    
-    # Assert on BEHAVIOR, not exact position
-    assert collision_occurred(proj), f"Collision should occur within {max_frames} frames"
-    assert_behavior_changed(proj, initial_state)
+# Single call may only update velocity, not position
+method()  # Updates internal state
+method()  # Applies state change
 ```
 
-### 10. Coordinate System Awareness
-The game uses TWO coordinate systems:
-- **World coords**: Y=0 at bottom, Y increases upward (physics/game logic)
-- **Screen coords**: Y=0 at top, Y increases downward (pygame/rendering)
-
+**Tick-Based Damage Pattern:**
 ```python
-# Converting world to screen for collision checks:
-screen_y = arena.height - world_y - object_height
-
-# ❌ WRONG - mixing coordinate systems
-plat = Platform(100, 200, ...)  # This is SCREEN coords!
-disc_world_y = 200              # This is WORLD coords!
-# These are NOT at the same position!
-
-# ✅ CORRECT - be explicit about coordinate system
-# Platform at screen (100, 400) = world-y top at 600-400 = 200
-plat = Platform(100, 400, 200, 20)  # Screen coords
-disc = DiscProjectile(200, 210, ...)  # World coords, above platform top (200)
+# Large delta_time gets broken into multiple ticks
+# Each tick applies defense separately
+# Total damage = sum of (damage_per_tick - defense) * num_ticks
 ```
 
-### 11. Give Entities Room to Move
-Start entities far enough apart that integer truncation doesn't matter:
+---
 
-```python
-# ❌ WRONG - positions too close, truncation breaks collision
-proj_y = 201   # 1 pixel above platform at 200
-# After 1 frame: 199.33 → screen rect ends at 400
-# Platform rect starts at 400 → TOUCH, no overlap!
+## 6. COORDINATES & PRECISION
 
-# ✅ CORRECT - give 5-10+ pixels margin
-proj_y = 210   # 10 pixels above platform
-# After several frames, will clearly overlap
-```
+* World Y: bottom → up
+* Screen Y: top → down
+* Convert explicitly
+* Leave margins (avoid 1px gaps)
+* **Platform collision**: Character feet position = `arena_height - location[1]`
+* **Projectile collision**: Requires proper owner/victim IDs and rect overlap
+
+---
+
+## 7. NEW FEATURE CHECKLIST
+
+* Character size: `width == height == 30`
+* Invulnerability: active after `respawn()`, expires after 8s
+* Ammo scarcity: interval 12s, amounts [5,10,15], max 2
+* Mirrored ammo spawns
+* Weapons do NOT respawn on death
+
+---
+
+## 8. PYGAME SAFETY
+
+* Always use `Arena(..., headless=True)`
+* No pygame events in tests
+* Never run pygame code in threads
+
+---
+
+## 9. REQUIRED COVERAGE
+
+Per feature:
+
+* Unit tests
+* Integration tests (arena + characters)
+* Registration test (loot pool)
+
+---
+
+## 10. TEST DEBUGGING FLOW
+
+When tests fail:
+
+1. **Read the implementation** - Understand actual behavior, not assumed behavior
+2. **Check damage calculations** - Shield → Health → Defense reduction (per tick for large deltas)
+3. **Verify physics simulation** - May need multiple update cycles
+4. **Confirm entity setup** - IDs, positions, initial states
+5. **Check coordinate conversions** - World vs Screen coordinates
+6. **Validate collision prerequisites** - Overlap, active state, owner IDs
+7. **Account for tick-based physics** - Large `delta_time` values are split into fixed-size ticks
+8. **Track state before resets** - When resetting entity state for measurement, capture values first
+9. **Handle entity death during long simulations** - Entities may die during warmup/initialization; reset them before final measurement
+10. **Deplete shields for health damage visibility** - Set `shield = 0` to test health damage directly
+
+**Systematic Debugging Pattern:**
+1. Read implementation to understand actual behavior
+2. Identify tick-based vs continuous calculations
+3. Calculate expected values accounting for tick splitting and per-tick reductions
+4. If entities die during simulation, reset state before final measurement
+5. Track cumulative values (damage, state) before any resets
+6. Sum pre-reset + post-reset values for total
+
+**Damage Calculation Pattern:**
+- Large delta_time (e.g., 0.1s) → broken into 6 ticks of 0.0167s
+- Each tick: `(damage_per_sec * tick_interval) - defense`
+- Total: `damage_per_tick * num_ticks`
+- When resetting entity state mid-test, track damage before reset and add to post-reset damage
+- Shield depletion pattern: Set `entity.shield = 0` before testing health damage
+
+---
+
+## 11. CRITICAL TYPE & FORMAT COMPATIBILITY TESTS
+
+**⚠️ ALWAYS TEST THESE - They catch production-breaking bugs before deployment**
+
+**Test Environment Requirements:**
+- Arena dimensions: `1400x900` (production dimensions from `server.py:247`)
+- `held_keys`: Python `set()` type (matches `BASE_game_client.py:172`)
+- `mouse_pressed`: Python `list` with 3 booleans `[False, False, False]` (Left, Middle, Right)
+- Coordinate conversion: `world_y = height - screen_y` (matches `BASE_game_client.py:212`)
+- Frame rate: 60 FPS (`delta_time = 0.016`)
+
+### Input Handling Tests
+
+1. **Input Type Compatibility - `get_input_data()`**
+   - Call `Character.get_input_data()` with `held_keys` as a **set** (not dict), matching `BASE_game_client.py:172-219`
+   - Verify it uses `in` operator (`pygame.K_a in held_keys`), not subscript notation (`held_keys[pygame.K_a]`)
+
+2. **Arena Dimensions - Hardcoded Values**
+   - Test with arena `width=1400, height=900` (production dimensions from `server.py:247`)
+   - Verify no hardcoded `900` or `1400` values break when dimensions differ
+   - Test with different arena sizes to catch hardcoded assumptions
+
+3. **Coordinate System Conversion**
+   - Test mouse position conversion using `world_y = height - screen_y` (matches `BASE_game_client.py:212`)
+   - Verify collision detection uses world coordinates, not screen coordinates
+   - Test platform collision with production platform positions from `setup.py:77-90`
+
+4. **Mouse Input Format**
+   - Pass `mouse_pressed` as list `[False, False, False]` (Left, Middle, Right) matching `BASE_game_client.py:173`
+   - Verify `mouse_buttons[0]` is left click, `mouse_buttons[2]` is right click
+   - Test with all combinations of mouse button states
+
+5. **Network State Synchronization**
+   - Test `get_input_data()` when `Character` class is `None` or not loaded yet (matches `BASE_game_client.py:218-222`)
+   - Verify fallback input dict structure matches expected format
+   - Test entity creation from network data (simulate `NetworkObject.create_from_network_data()`)
+
+6. **Multiple Key Press Detection**
+   - Test `get_input_data()` with multiple keys in set simultaneously (e.g., `{pygame.K_d, pygame.K_w, pygame.K_SPACE}`)
+   - Verify all actions are detected correctly, not just the first one
+   - Test diagonal movement combinations
+
+7. **Empty Input State**
+   - Test `get_input_data()` with empty set `set()` and all-false mouse list
+   - Verify returns safe defaults (no movement, no actions) without errors
+   - Test that missing keys don't crash `process_input()`
+
+8. **Arrow Key vs WASD Equivalence**
+   - Test both `pygame.K_a`/`pygame.K_LEFT` and `pygame.K_d`/`pygame.K_RIGHT` produce same movement
+   - Verify arrow keys work identically to WASD
+   - Test all movement key pairs
+
+9. **Input Data Dictionary Structure**
+   - Verify returned dict has keys: `'move'`, `'jump'`, `'shoot'`, `'secondary_fire'`, `'target_pos'`, `'drop_weapon'` (matches `GAME_character.py:81-88`)
+   - Verify `'move'` is `[float, float]`, not `[int, int]`
+   - Test that all expected keys are present
+
+10. **Headless Mode Compatibility**
+    - Test with `headless=True` (server environment)
+    - Verify no pygame display/event calls that would crash in headless mode
+    - Test that all game logic works without display
+
+11. **Attribute Existence After Network Sync**
+    - Test character methods after creating from network data (simulate `NetworkObject.create_from_network_data()`)
+    - Verify `hasattr()` checks for optional attributes like `shield`, `max_shield` before access
+    - Test `__setstate__()` initializes missing attributes with defaults
+
+12. **Platform Collision with Production Arena**
+    - Test character landing on platforms using actual platform positions from `setup.py:77-90` with `1400x900` arena
+    - Verify collision detection works with production platform layout
+    - Test edge cases (platform boundaries, gaps)
+
+13. **World-to-Screen Coordinate Conversion**
+    - Test drawing/rendering uses `screen_y = arena_height - world_y - object_height` formula
+    - Verify characters render at correct screen positions from world coordinates
+    - Test coordinate conversion in both directions
+
+14. **Input Throttling Compatibility**
+    - Test input processing at 60 FPS rate (`0.016` second intervals, matches `BASE_game_client.py:215`)
+    - Verify no errors when called rapidly in succession
+    - Test that throttling doesn't drop critical inputs
+
+15. **Key Release Handling**
+    - Test that keys removed from set (via `held_keys.discard()`) are no longer detected
+    - Verify movement stops when key is released, not just when pressed
+    - Test rapid key press/release sequences
+
+### Format Compatibility Tests
+
+16. **Input Dictionary Key Name Mismatch**
+    - Verify `get_input_data()` returns `'move'` key (GAME format) not `'movement'` (BASE format)
+    - Test that `process_input()` correctly reads `input_data.get('move', [0, 0])` not `input_data.get('movement')`
+    - BASE expects `'movement'`, GAME uses `'move'` - ensure consistency
+
+17. **Shoot/Secondary Fire Value Type Mismatch**
+    - Test that `get_input_data()` returns `'shoot': True/False` (boolean) and `process_input()` expects boolean, not mouse position
+    - BASE format uses `'shoot': mouse_pos` (position), GAME uses `'shoot': True` - verify GAME format is used consistently
+    - Test that `process_input()` handles boolean correctly
+
+18. **Target Position Key Presence**
+    - Verify `get_input_data()` always includes `'target_pos'` key (matches `GAME_character.py:86`)
+    - Test that `process_input()` safely handles missing `'target_pos'` with `input_data.get('target_pos', [0, 0])` default
+    - Verify `target_pos` is always a list `[x, y]`
+
+19. **Shoot Method Return Value Handling**
+    - Test that `shoot()` and `secondary_fire()` return projectiles (single or list) or `None`
+    - Verify `process_input()` correctly adds returned projectiles to arena (BASE handles this automatically, GAME might not)
+    - Test that `None` returns don't crash
+
+20. **Method Override Completeness**
+    - Test that `GAME_character.get_input_data()` and `process_input()` are complete overrides, not partial
+    - Verify all BASE functionality is preserved or explicitly replaced, not accidentally broken
+    - Test inheritance chain works correctly
+
+21. **Network Serialization Attribute Preservation**
+    - Test that custom attributes (like `shield`, `max_shield`) are preserved through `__getstate__()`/`__setstate__()` network serialization
+    - Verify `__setstate__()` initializes missing attributes with defaults (matches `GAME_character.py:23-35`)
+    - Test round-trip serialization (serialize → deserialize → verify state)
+
+22. **Default Parameter Values in Overrides**
+    - Test `update()` method with different `arena_height`/`arena_width` values, not just defaults
+    - Verify `update(delta_time, platforms, arena_height=900, arena_width=1400)` doesn't break when called with different dimensions
+    - Defaults might hide bugs - always test with explicit values
+
+23. **List vs Tuple Type Consistency**
+    - Test that coordinate lists `[x, y]` are consistently lists, not tuples
+    - Verify `location`, `target_pos`, `move` direction are all lists (mutable), not tuples (immutable)
+    - Affects network sync and mutation - tuples can't be modified
+
+24. **Boolean vs Position Value Confusion**
+    - Test that boolean flags (`'jump'`, `'shoot'`, `'drop_weapon'`) are actual booleans, not truthy positions
+    - Verify `if input_data.get('shoot'):` works correctly when `'shoot'` is `True`, not `[100, 200]`
+    - Position values are truthy but wrong type
+
+25. **Mouse Button Index Bounds**
+    - Test `mouse_pressed` list access with indices 0, 1, 2 (Left, Middle, Right)
+    - Verify `mouse_buttons[0]` and `mouse_buttons[2]` don't crash when list has fewer than 3 elements
+    - Should always be `[False, False, False]` but test defensive coding
+
+**Critical Format Differences:**
+
+**BASE_character format:**
+- `'movement': [x, y]`
+- `'shoot': [mouse_x, mouse_y]` (position)
+- `'secondary_fire': [mouse_x, mouse_y]` (position)
+
+**GAME_character format (current):**
+- `'move': [x, y]`
+- `'shoot': True/False` (boolean)
+- `'target_pos': [mouse_x, mouse_y]` (separate key)
+
+⚠️ **These format mismatches can cause silent failures if network code or BASE methods expect the BASE format. Always test both formats.**
