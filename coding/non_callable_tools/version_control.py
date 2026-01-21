@@ -205,7 +205,10 @@ class VersionControl:
                     print("Available backups: ", available_backups)
                     print("Name of backup to find: ", name_of_backup)
                     return False, "No base backup found, cannot rebase"
-                base_backup_handler.restore_backup(name_of_backup, target_path="GameFolder")
+                success, _ = base_backup_handler.restore_backup(name_of_backup, target_path="GameFolder")
+                if success is None:
+                    print(f"[error] Failed to restore to base code: {name_of_backup}")
+                    return False, "Failed to restore to base code"
                 print("Restored to base code")
                 time.sleep(1)
                 if not skip_warnings:
@@ -231,7 +234,10 @@ class VersionControl:
                     raise("Not implemented yet")
 
             print("Restoring to temporary backup")
-            self.security_backup_handler.restore_backup("GameFolder", target_path="GameFolder")
+            success, _ = self.security_backup_handler.restore_backup("GameFolder", target_path="GameFolder")
+            if success is None:
+                print(f"[error] Failed to restore to temporary backup: {name_of_backup}")
+                return False, errors
             print("Restored, removing temporary backup")
             self.security_backup_handler.delete_entire_backup_folder()
             return False, errors
@@ -709,9 +715,12 @@ class VersionControl:
         expected_structure = {
             "arenas/GAME_arena.py": "exists",
             "characters/GAME_character.py": "exists", 
-            "platforms/GAME_platform.py": "exists",
-            "projectiles/GAME_projectile.py": "exists",
-            "weapons/GAME_weapon.py": "exists",
+            "effects/GAME_effects.py": "exists",
+            "pickups/GAME_pickups.py": "exists",
+            "world/GAME_world_objects.py": "exists",
+            "abilities/ability_loader.py": "exists",
+            "abilities/primary/__init__.py": "exists",
+            "abilities/passive/__init__.py": "exists",
             "ui/GAME_ui.py": "exists",
             "setup.py": "exists"
         }

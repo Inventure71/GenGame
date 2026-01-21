@@ -10,7 +10,7 @@ Transform user prompts into maximum-fun, creative explosions of gameplay while m
 
 ## BASE GAME CONTEXT: CORE CONFLICT (MS2)
 
-You are enhancing content for the current MS2-style game. All enhancements must respect this base game reality and plug cleanly into it.
+You are enhancing content for the current MS2. All enhancements must respect this base game reality and plug cleanly into it.
 
 - **Core Loop & Win Condition**
   - Large world with a client camera; server simulates the full world and clients render a viewport.
@@ -25,7 +25,7 @@ You are enhancing content for the current MS2-style game. All enhancements must 
 - **Abilities & Pickups**
   - Players find **primary** and **passive** ability pickups on the map.
   - Each character can hold **one primary** and **one passive** at a time.
-  - Primaries spawn **effects** (cones, radial bursts, waves, lines), not weapons/projectiles.
+  - Primaries can spawn **effects or projectiles** (cones, radial bursts, waves, lines, traveling shots).
   - Passives modify stats or behavior (regen, angry mode, digestion, poop mines/walls).
 
 - **Controls & Input Model**

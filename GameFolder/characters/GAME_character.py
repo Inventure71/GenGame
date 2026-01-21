@@ -2,7 +2,7 @@ import math
 import random
 import pygame
 from BASE_components.BASE_character import BaseCharacter
-from GameFolder.abilities import PRIMARY_BY_NAME, PASSIVE_BY_NAME
+from GameFolder.abilities.ability_loader import get_primary_abilities, get_passive_abilities
 from GameFolder.effects.GAME_effects import ObstacleEffect
 
 
@@ -260,7 +260,7 @@ class Character(BaseCharacter):
             return
         self.last_primary_use = arena.current_time
         self.available_primary_abilities -= 1
-        self.primary_ability(arena, mouse_pos)
+        self.primary_ability(self, arena, mouse_pos)
 
     def set_primary_ability(self, ability_name: str):
         if ability_name is None:
@@ -270,13 +270,17 @@ class Character(BaseCharacter):
             self.available_primary_abilities = 0
             return
 
-        ability_def = PRIMARY_BY_NAME.get(ability_name)
-        if not ability_def:
+        ability_def = None
+        for ability in get_primary_abilities():
+            if ability["name"] == ability_name:
+                ability_def = ability
+                break
+        if ability_def is None:
             return
-        self.primary_ability = ability_def.activate
-        self.primary_ability_name = ability_def.name
-        self.primary_description = ability_def.description
-        self.max_primary_abilities = ability_def.max_charges
+        self.primary_ability = ability_def["activate"]
+        self.primary_ability_name = ability_def["name"]
+        self.primary_description = ability_def["description"]
+        self.max_primary_abilities = ability_def["max_charges"]
         self.available_primary_abilities = self.max_primary_abilities
 
     def set_passive_ability(self, ability_name: str):
@@ -291,12 +295,16 @@ class Character(BaseCharacter):
         if not ability_name:
             return
 
-        ability_def = PASSIVE_BY_NAME.get(ability_name)
-        if not ability_def:
+        ability_def = None
+        for ability in get_passive_abilities():
+            if ability["name"] == ability_name:
+                ability_def = ability
+                break
+        if ability_def is None:
             return
-        self.passive_ability_name = ability_def.name
-        self.passive_description = ability_def.description
-        ability_def.apply(self)
+        self.passive_ability_name = ability_def["name"]
+        self.passive_description = ability_def["description"]
+        ability_def["apply"](self)
 
     def changed_size(self):
         self.max_health = self.base_max_health + self.size // 3

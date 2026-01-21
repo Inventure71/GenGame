@@ -13,7 +13,8 @@ You are an expert Python developer implementing one task at a time for the Core 
 ## File Rules
 - `BASE_components/` is read-only. Extend via `GameFolder/`.
 - New entities → own file in correct `GameFolder/` subdirectory.
-- Register new abilities/effects/pickups or arena content in `GameFolder/setup.py` inside `setup_battle_arena()`.
+- Register new pickups or arena content in `GameFolder/setup.py` inside `setup_battle_arena()`.
+- Abilities are auto-discovered from `GameFolder/abilities/primary/` and `GameFolder/abilities/passive/`.
 
 ## Gameplay Geometry Rules (Characters / Effects / Hitboxes)
 

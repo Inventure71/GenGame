@@ -364,7 +364,10 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
         try:
             from coding.non_callable_tools.backup_handling import BackupHandler
             base_backup_handler = BackupHandler("__game_backups")
-            base_backup_handler.restore_backup(base_backup, target_path="GameFolder")
+            success, _ = base_backup_handler.restore_backup(base_backup, target_path="GameFolder")
+            if success is None:
+                print(f"[error] Failed to restore to base game state: {base_backup}")
+                raise Exception("Failed to restore to base game state")
             print(f"[success] Successfully restored to base game state: {base_backup}")
         except Exception as e:
             print(f"[error] Failed to restore to base game state: {e}")
@@ -788,6 +791,9 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
     elif start_from_base and needs_rebase:
         # Rebase to a specific backup
         backup_path, backup_name = handler.restore_backup(start_from_base, target_path="GameFolder")
+        if backup_name is None:
+            print(f"[error] Failed to restore to base game state: {start_from_base}")
+            raise Exception("Failed to restore to base game state")
         print("Restored backup from: ", backup_path)
     
     else:

@@ -1,9 +1,18 @@
 import pygame
 from BASE_files.BASE_network import NetworkObject
-from GameFolder.abilities import PRIMARY_ABILITIES, PASSIVE_ABILITIES, PRIMARY_BY_NAME, PASSIVE_BY_NAME
+from GameFolder.abilities.ability_loader import get_primary_abilities, get_passive_abilities
 
-PRIMARY_ABILITY_NAMES = [ability.name for ability in PRIMARY_ABILITIES]
-PASSIVE_ABILITY_NAMES = [ability.name for ability in PASSIVE_ABILITIES]
+
+def _get_primary_names():
+    return [ability["name"] for ability in get_primary_abilities()]
+
+
+def _get_passive_names():
+    return [ability["name"] for ability in get_passive_abilities()]
+
+
+PRIMARY_ABILITY_NAMES = _get_primary_names()
+PASSIVE_ABILITY_NAMES = _get_passive_names()
 
 
 class AbilityPickup(NetworkObject):
@@ -27,13 +36,20 @@ class AbilityPickup(NetworkObject):
         self.init_graphics()
 
     def _lookup_description(self) -> str:
+        ability_def = None
         if self.ability_type == "primary":
-            ability_def = PRIMARY_BY_NAME.get(self.ability_name)
+            for ability in get_primary_abilities():
+                if ability["name"] == self.ability_name:
+                    ability_def = ability
+                    break
         else:
-            ability_def = PASSIVE_BY_NAME.get(self.ability_name)
+            for ability in get_passive_abilities():
+                if ability["name"] == self.ability_name:
+                    ability_def = ability
+                    break
         if not ability_def:
             raise ValueError(f"AbilityPickup missing description for '{self.ability_name}' ({self.ability_type})")
-        return ability_def.description
+        return ability_def["description"]
 
     def init_graphics(self):
         super().init_graphics()

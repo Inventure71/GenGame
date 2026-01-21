@@ -13,8 +13,7 @@ from dotenv import load_dotenv
 
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
 SECRET_OFFSET = 717171 
-# Remote play domain (CC-branded). Update DNS accordingly.
-REMOTE_DOMAIN = "cc.inventure71.duckdns.org"
+REMOTE_DOMAIN = "gengame.inventure71.duckdns.org"
 
 def base_encode(n: int) -> str:
     if n == 0: return ALPHABET[0]
@@ -311,7 +310,10 @@ def ensure_gamefolder_exists():
 
             print(f"Restoring from backup: {default_backup}")
             print(f"Target path: {game_folder}")
-            handler.restore_backup(default_backup, target_path=game_folder)
+            success, _ = handler.restore_backup(default_backup, target_path=game_folder)
+            if success is None:
+                print(f"[error] Failed to restore GameFolder from backup: {default_backup}")
+                return False
             print("GameFolder restored successfully.")
             
             # Validate the restored GameFolder

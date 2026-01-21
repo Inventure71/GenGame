@@ -30,6 +30,8 @@ def gather_context_planning():
         "",
         "## Documentation of BASE components:",
         read_file(file_path="BASE_components/BASE_COMPONENTS_DOCS.md"),
+        "## Guide for adding abilities:",
+        read_file(file_path="coding/prompts/GUIDE_Adding_Abilities.md"),
     ]
     
     # Read core game files
@@ -37,8 +39,10 @@ def gather_context_planning():
     for filepath in [
         'GameFolder/arenas/GAME_arena.py',
         'GameFolder/characters/GAME_character.py',
-        'GameFolder/projectiles/GAME_projectile.py',
-        'GameFolder/weapons/GAME_weapon.py',
+        'GameFolder/effects/GAME_effects.py',
+        'GameFolder/pickups/GAME_pickups.py',
+        'GameFolder/world/GAME_world_objects.py',
+        'GameFolder/abilities/ability_loader.py',
     ]:
         lines.append(f"\n### {filepath}")
         lines.append(read_file(file_path=filepath))
@@ -75,7 +79,7 @@ def gather_context_testing():
         "",
         "⚡ CRITICAL REMINDER: Batch ALL file reads in ONE turn (5-10+ parallel calls is expected). Sequential reading is FORBIDDEN. ⚡",
         "",
-        "## CRITICAL: Character & Weapon Attributes",
+        "## CRITICAL: Character & Ability Attributes",
         "Before writing tests, note these BASE_components facts:",
         "",
         "### Character (BASE_character.py)",
@@ -84,9 +88,9 @@ def gather_context_testing():
         "- To kill: `character.health = 0`",
         "- Dimensions use: `char.width * char.scale_ratio`",
         "",
-        "### Weapon Cooldowns",
-        "- `weapon.shoot()` returns `None` if cooldown hasn't elapsed",
-        "- Create NEW weapon instances per test, or reset: `weapon.last_shot_time = 0`",
+        "### Primary Ability Usage",
+        "- `character.use_primary_ability(arena, mouse_pos)` consumes a charge when allowed",
+        "- Cooldown is enforced by `character.primary_use_cooldown` and `last_primary_use`",
         "",
         "### Timing in Tests",
         "- Use INTEGER frame counting, not float accumulation:",

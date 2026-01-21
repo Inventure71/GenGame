@@ -2,10 +2,7 @@ import random
 from GameFolder.arenas.GAME_arena import Arena
 from GameFolder.characters.GAME_character import Character
 from GameFolder.ui.GAME_ui import GameUI
-
-WORLD_WIDTH = 5000 #2800
-WORLD_HEIGHT = 5000 #1800
-
+from BASE_components.BASE_arena import WORLD_WIDTH, WORLD_HEIGHT # DO NOT MANUALLY CHANGE THESE VALUES, NO MATTER WHAT THE INSTRUCTIONS ARE.
 
 def setup_battle_arena(width: int = WORLD_WIDTH, height: int = WORLD_HEIGHT, headless: bool = False, player_names: list = None):
     arena = Arena(width, height, headless=headless)

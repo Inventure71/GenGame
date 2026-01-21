@@ -288,7 +288,10 @@ class MenuHandlers:
                 from coding.non_callable_tools.backup_handling import BackupHandler
                 # Restore the base backup directly
                 backup_handler = BackupHandler("__game_backups")
-                success = backup_handler.restore_backup(self.menu.base_working_backup, target_path="GameFolder")
+                success, _ = backup_handler.restore_backup(self.menu.base_working_backup, target_path="GameFolder")
+                if success is None:
+                    print(f"[error] Failed to reset to base backup: {self.menu.base_working_backup}")
+                    return False
 
                 if success:
                     # Clear loaded patch state

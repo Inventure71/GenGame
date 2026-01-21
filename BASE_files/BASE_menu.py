@@ -663,19 +663,27 @@ class BaseMenu:
         handler = BackupHandler("__game_backups")
 
         # Ensure we have an initial base backup if none is set
-        if self.base_working_backup is None:
-            print("Creating initial safety backup...")
-            try:
-                _, self.base_working_backup = handler.create_backup("GameFolder")
-                print(f"Initial backup created: {self.base_working_backup}")
-                self.handlers.on_settings_save_click()
+        while True:
+            if self.base_working_backup is None:
+                print("Creating initial safety backup...")
+                try:
+                    _, self.base_working_backup = handler.create_backup("GameFolder")
+                    print(f"Initial backup created: {self.base_working_backup}")
+                    self.handlers.on_settings_save_click()
+                    return True
 
-            except Exception as e:
-                print(f"Warning: Failed to create initial backup: {e}")
-        else:
-            print(f"Restoring from backup: {self.base_working_backup}")
-            _, self.base_working_backup = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
-            print(f"Backup restored: {self.base_working_backup}")
+                except Exception as e:
+                    print(f"Warning: Failed to create initial backup: {e}")
+                    return False
+            else:
+                print(f"Restoring from backup: {self.base_working_backup}")
+                _, self.base_working_backup = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
+                if self.base_working_backup is not None:
+                    print(f"Backup restored: {self.base_working_backup}")
+                    return True
+                else:
+                    print("Warning: Failed to restore backup, creating a new one because we are at startup.")
+                    continue
     
     def start_game(self):
         """Start the game."""

@@ -40,7 +40,7 @@ TOOL_DEFINITIONS = {
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "The directory path to list (e.g., 'GameFolder/weapons')"
+                    "description": "The directory path to list (e.g., 'GameFolder/abilities')"
                 }
             },
             "required": ["path"]
@@ -97,7 +97,7 @@ TOOL_DEFINITIONS = {
             "properties": {
                 "file_path": {
                     "type": "string",
-                    "description": "The path to the file to modify (e.g., 'GameFolder/weapons/GAME_weapon.py')"
+                    "description": "The path to the file to modify (e.g., 'GameFolder/abilities/primary/milk_splash.py')"
                 },
                 "diff_text": {
                     "type": "string",
