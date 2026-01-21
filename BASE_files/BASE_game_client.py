@@ -144,12 +144,17 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 print(f"Failed to reload game classes for game start: {e}")
 
         def on_game_state_received(game_state):
-            entity_manager.update_from_server(game_state)
+            try:
+                entity_manager.update_from_server(game_state)
+            except Exception as e:
+                print(f"[warning] Failed to apply game state: {e}")
+                network_client.request_full_state()
+                return
 
             # Set local player if not already set and we have character assignment
             if entity_manager.local_player_id is None and assigned_character:
                 # Find character by assigned name/id (games may use either field)
-                for char_data in game_state.get('characters', []):
+                for char_data in game_state.get('characters', []) or []:
                     if char_data.get('name') == assigned_character or char_data.get('id') == assigned_character:
                         entity_manager.set_local_player(char_data.get('network_id'))
                         # Initialize prediction with server position
@@ -160,7 +165,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
             nonlocal game_over, winner
             game_over = game_state.get('game_over', False)
-            winner = game_state.get('winner', None)
+            winner = game_state.get('winner_id', game_state.get('winner', None))
 
         def on_disconnected():
             print("Disconnected from server")
@@ -277,7 +282,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             # Draw UI
             if Character and ui:
                 characters = entity_manager.get_entities_by_type(Character)
-                ui.draw(characters, game_over, winner, {}, local_player_id=entity_manager.local_player_id)
+                network_stats = network_client.get_packet_stats() if network_client else None
+                ui.draw(characters, game_over, winner, {}, local_player_id=entity_manager.local_player_id, network_stats=network_stats)
 
             pygame.display.flip()
 

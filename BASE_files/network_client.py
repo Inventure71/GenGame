@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 import pickle
+import zlib
 import os
 import sys
 import importlib
@@ -14,6 +15,11 @@ from typing import Dict, List, Optional, Callable, Any
 from collections import deque
 import select
 from datetime import datetime
+
+try:
+    import msgpack
+except ImportError:
+    msgpack = None
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -67,6 +73,23 @@ class NetworkClient:
         self.file_sync_complete = False  # Track if file sync has completed
         self.file_sync_requested = False  # Track if we've requested sync
 
+        # Capability advertisement for optimized state sync
+        self.capabilities = {
+            'protocol_version': 1,
+            'supports_delta': True,
+            'supports_compression': True,
+            'supports_msgpack': msgpack is not None,
+            'supports_static_cache': True,
+        }
+
+        # Packet statistics tracking
+        self.packet_stats = {
+            'total_received': 0,
+            'total_sent': 0,
+            'received_timestamps': deque(maxlen=100),  # Keep last 100 timestamps for rolling window
+            'sent_timestamps': deque(maxlen=100),
+        }
+
     def connect(self, player_id: str) -> bool:
         """Connect to the server."""
         try:
@@ -88,6 +111,7 @@ class NetworkClient:
             print(f"Connected to server at {self.host}:{self.port} as {player_id}")
 
             # Send player name to server
+            self._send_capabilities()
             self._send_player_name(player_id)
 
             return True
@@ -143,6 +167,14 @@ class NetworkClient:
         }
         self.outgoing_queue.append(message)
 
+    def _send_capabilities(self):
+        """Advertise client protocol capabilities to the server."""
+        message = {
+            'type': 'capabilities',
+            'capabilities': self.capabilities,
+        }
+        self.outgoing_queue.append(message)
+
     def request_file_sync(self):
         """Request file synchronization from server."""
         if not self.connected:
@@ -160,6 +192,15 @@ class NetworkClient:
 
         message = {
             'type': 'request_start_game'
+        }
+        self.outgoing_queue.append(message)
+
+    def request_full_state(self):
+        """Request a full game state sync from the server."""
+        if not self.connected:
+            return
+        message = {
+            'type': 'request_full_state'
         }
         self.outgoing_queue.append(message)
     
@@ -185,29 +226,44 @@ class NetworkClient:
         
         # Mark as ready ONCE after all files sent
         self.mark_patches_ready()
+
+    def _queue_chunked_file(
+        self,
+        file_path: str,
+        message_factory: Callable[[int, int, bytes], dict],
+        on_chunk: Optional[Callable[[int, int, bytes], None]] = None,
+        chunk_size: int = 64 * 1024,
+        file_size: Optional[int] = None,
+    ) -> int:
+        """Queue a file for transfer in chunks and return total_chunks."""
+        if file_size is None:
+            file_size = os.path.getsize(file_path)
+        total_chunks = (file_size + chunk_size - 1) // chunk_size
+
+        with open(file_path, 'rb') as f:
+            for chunk_num in range(total_chunks):
+                chunk_data = f.read(chunk_size)
+                message = message_factory(chunk_num, total_chunks, chunk_data)
+                self.outgoing_queue.append(message)
+                if on_chunk:
+                    on_chunk(chunk_num, total_chunks, chunk_data)
+
+        return total_chunks
     
     def _send_patch_file(self, file_path: str, patch_name: str):
         """Send a patch file to server in chunks."""
         try:
-            file_size = os.path.getsize(file_path)
-            chunk_size = 64 * 1024  # 64KB chunks
-            total_chunks = (file_size + chunk_size - 1) // chunk_size
-            
-            with open(file_path, 'rb') as f:
-                for chunk_num in range(total_chunks):
-                    chunk_data = f.read(chunk_size)
-                    
-                    message = {
-                        'type': 'patch_chunk',
-                        'patch_name': patch_name,
-                        'chunk_num': chunk_num,
-                        'total_chunks': total_chunks,
-                        'data': chunk_data,
-                        'player_id': self.player_id
-                    }
-                    
-                    self.outgoing_queue.append(message)
-            
+            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
+                return {
+                    'type': 'patch_chunk',
+                    'patch_name': patch_name,
+                    'chunk_num': chunk_num,
+                    'total_chunks': total_chunks,
+                    'data': chunk_data,
+                    'player_id': self.player_id
+                }
+
+            total_chunks = self._queue_chunked_file(file_path, message_factory)
             print(f"Sent patch file: {patch_name} ({total_chunks} chunks)")
             
         except Exception as e:
@@ -280,34 +336,24 @@ class NetworkClient:
                 print(f"File not found: {file_path}")
                 return False
 
-            file_size = os.path.getsize(file_path)
             file_name = os.path.basename(file_path)
             target_path = target_path or file_name
+            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
+                return {
+                    'type': 'file_chunk',
+                    'file_path': target_path,
+                    'chunk_num': chunk_num,
+                    'total_chunks': total_chunks,
+                    'data': chunk_data,
+                    'player_id': self.player_id
+                }
 
-            # Read file in chunks to avoid memory issues
-            chunk_size = 64 * 1024  # 64KB chunks
-            total_chunks = (file_size + chunk_size - 1) // chunk_size
+            def on_chunk(chunk_num: int, total_chunks: int, _chunk_data: bytes) -> None:
+                if self.on_file_transfer_progress:
+                    progress = (chunk_num + 1) / total_chunks
+                    self.on_file_transfer_progress(target_path, progress, 'sending')
 
-            with open(file_path, 'rb') as f:
-                for chunk_num in range(total_chunks):
-                    chunk_data = f.read(chunk_size)
-
-                    message = {
-                        'type': 'file_chunk',
-                        'file_path': target_path,
-                        'chunk_num': chunk_num,
-                        'total_chunks': total_chunks,
-                        'data': chunk_data,
-                        'player_id': self.player_id
-                    }
-
-                    self.outgoing_queue.append(message)
-
-                    # Call progress callback if available
-                    if self.on_file_transfer_progress:
-                        progress = (chunk_num + 1) / total_chunks
-                        self.on_file_transfer_progress(target_path, progress, 'sending')
-
+            self._queue_chunked_file(file_path, message_factory, on_chunk=on_chunk)
             return True
 
         except Exception as e:
@@ -348,6 +394,15 @@ class NetworkClient:
                 return None
         return data
 
+    def _maybe_request_file_sync(self, reason: str) -> bool:
+        """Request file sync if we're missing it and haven't asked yet."""
+        if self.file_sync_complete or self.file_sync_requested:
+            return False
+        print(f"{reason} - requesting file sync for recovery")
+        self.file_sync_requested = True
+        self.request_file_sync()
+        return True
+
     def _receive_loop(self):
         """Background thread for receiving messages."""
         while self.running and self.connected:
@@ -375,10 +430,7 @@ class NetworkClient:
                             # If this is game_state and file sync hasn't completed, skip it
                             if message.get('type') == 'game_state' and not self.file_sync_complete:
                                 print("[warning] Received game_state before file sync complete - skipping")
-                                # Request file sync if we haven't already
-                                if not self.file_sync_requested:
-                                    self.file_sync_requested = True
-                                    self.request_file_sync()
+                                self._maybe_request_file_sync("Received game_state before file sync complete")
                                 continue
                             
                             self.incoming_queue.append(message)
@@ -387,11 +439,7 @@ class NetworkClient:
                             print(f"Failed to unpickle message: {type(pickle_error).__name__} (data length: {len(data)} bytes)")
                             
                             # If file sync hasn't completed, try requesting it as recovery
-                            if not self.file_sync_complete and not self.file_sync_requested:
-                                print("Unpickle error - requesting file sync for recovery")
-                                self.file_sync_requested = True
-                                self.request_file_sync()
-                                # Don't disconnect immediately - wait for file sync
+                            if self._maybe_request_file_sync("Unpickle error"):
                                 continue
                             
                             self.disconnect()
@@ -408,10 +456,7 @@ class NetworkClient:
                 # Handle UTF-8 decode errors specifically
                 print(f"Receive error: UnicodeDecodeError at position {decode_error.start}")
                 # Try recovery if file sync hasn't completed
-                if not self.file_sync_complete and not self.file_sync_requested:
-                    print("UnicodeDecodeError - requesting file sync for recovery")
-                    self.file_sync_requested = True
-                    self.request_file_sync()
+                if self._maybe_request_file_sync("UnicodeDecodeError"):
                     continue
                 self.disconnect()
                 break
@@ -453,6 +498,13 @@ class NetworkClient:
                 data = pickle.dumps(message, protocol=4)
                 length_bytes = len(data).to_bytes(4, byteorder='big')
                 self._send_data_safe(length_bytes + data)
+                
+                # Track sent packet (count input messages)
+                if msg_type == 'input':
+                    current_time = time.time()
+                    self.packet_stats['sent_timestamps'].append(current_time)
+                    self.packet_stats['total_sent'] += 1
+                
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                 print(f"[{timestamp}] [success] DEBUG CLIENT: Successfully sent message type '{msg_type}'")
             except Exception as e:
@@ -466,6 +518,31 @@ class NetworkClient:
         while self.incoming_queue:
             message = self.incoming_queue.popleft()
             self._handle_message(message)
+
+    def _decode_game_state_payload(self, message: dict) -> Optional[dict]:
+        payload = message.get('payload')
+        if payload is None:
+            return None
+
+        data = payload
+        if message.get('compressed'):
+            try:
+                data = zlib.decompress(payload)
+            except Exception as e:
+                print(f"[error] Failed to decompress game state payload: {e}")
+                return None
+
+        serialization = message.get('serialization', 'pickle')
+        try:
+            if serialization == 'msgpack':
+                if msgpack is None:
+                    print("[error] Msgpack payload received but msgpack is unavailable")
+                    return None
+                return msgpack.unpackb(data, raw=False, strict_map_key=False)
+            return pickle.loads(data)
+        except Exception as e:
+            print(f"[error] Failed to decode game state payload ({serialization}): {e}")
+            return None
 
     def _handle_message(self, message: dict):
         """Handle a received message."""
@@ -489,8 +566,24 @@ class NetworkClient:
             if self.on_game_start:
                 self.on_game_start()
         elif msg_type == 'game_state':
+            # Track received packet - only count game_state messages
+            current_time = time.time()
+            self.packet_stats['received_timestamps'].append(current_time)
+            self.packet_stats['total_received'] += 1
+            
+            game_state = message
+            if 'payload' in message:
+                decoded = self._decode_game_state_payload(message)
+                if decoded is None:
+                    print("[warning] Game state decode failed - requesting full state")
+                    self.request_full_state()
+                    return
+                decoded['_message_type'] = message.get('message_type', 1)
+                game_state = decoded
+            else:
+                game_state['_message_type'] = message.get('message_type', 1)
             if self.on_game_state_received:
-                self.on_game_state_received(message)
+                self.on_game_state_received(game_state)
         elif msg_type == 'character_assignment':
             if self.on_character_assigned:
                 self.on_character_assigned(message)
@@ -595,26 +688,30 @@ class NetworkClient:
 
             print(f"📦 BACKUP SEND: Compressed '{backup_name}' to {file_size} bytes, will send in {total_chunks} chunks")
 
-            # Read and send in chunks
-            with open(temp_path, 'rb') as f:
-                for chunk_num in range(total_chunks):
-                    chunk_data = f.read(chunk_size)
+            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
+                return {
+                    'type': 'file_chunk',
+                    'backup_name': backup_name,
+                    'chunk_num': chunk_num,
+                    'total_chunks': total_chunks,
+                    'data': chunk_data,
+                    'is_backup': True
+                }
 
-                    chunk_message = {
-                        'type': 'file_chunk',
-                        'backup_name': backup_name,
-                        'chunk_num': chunk_num,
-                        'total_chunks': total_chunks,  # Now included in EVERY chunk
-                        'data': chunk_data,
-                        'is_backup': True
-                    }
+            def on_chunk(chunk_num: int, total_chunks: int, chunk_data: bytes) -> None:
+                progress = (chunk_num + 1) / total_chunks * 100
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 📤 BACKUP SEND: Queued chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' - data size: {len(chunk_data)} bytes")
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
 
-                    self.outgoing_queue.append(chunk_message)
-                    progress = (chunk_num + 1) / total_chunks * 100
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] 📤 BACKUP SEND: Queued chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' - data size: {len(chunk_data)} bytes")
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
+            self._queue_chunked_file(
+                temp_path,
+                message_factory,
+                on_chunk=on_chunk,
+                chunk_size=chunk_size,
+                file_size=file_size,
+            )
 
             print(f"[success] BACKUP SEND: Successfully queued all {total_chunks} chunks for backup '{backup_name}' to server")
 
@@ -656,6 +753,17 @@ class NetworkClient:
         if transfer['received_chunks'] == total_chunks:
             self._assemble_file(file_path)
 
+    def _queue_file_ack(self, file_path: str, success: bool, error: Optional[str] = None):
+        message = {
+            'type': 'file_ack',
+            'file_path': file_path,
+            'player_id': self.player_id,
+            'success': success
+        }
+        if error:
+            message['error'] = error
+        self.outgoing_queue.append(message)
+
     def _assemble_file(self, file_path: str):
         """Assemble received chunks into a complete file."""
         transfer = self.file_transfers[file_path]
@@ -673,13 +781,7 @@ class NetworkClient:
                         raise ValueError(f"Missing chunk {chunk_num} for file {file_path}")
 
             # Send acknowledgment to server
-            message = {
-                'type': 'file_ack',
-                'file_path': file_path,
-                'player_id': self.player_id,
-                'success': True
-            }
-            self.outgoing_queue.append(message)
+            self._queue_file_ack(file_path, True)
 
             # Call completion callback
             if self.on_file_received:
@@ -691,14 +793,7 @@ class NetworkClient:
             print(f"Failed to assemble file {file_path}: {e}")
 
             # Send failure acknowledgment
-            message = {
-                'type': 'file_ack',
-                'file_path': file_path,
-                'player_id': self.player_id,
-                'success': False,
-                'error': str(e)
-            }
-            self.outgoing_queue.append(message)
+            self._queue_file_ack(file_path, False, str(e))
 
             # Call completion callback with failure
             if self.on_file_received:
@@ -763,6 +858,26 @@ class NetworkClient:
         if error_message:
             print(f"  Error: {error_message}")
 
+    def get_packet_stats(self) -> dict:
+        """Get current packet statistics using rolling 1-second window."""
+        current_time = time.time()
+        one_second_ago = current_time - 1.0
+        
+        # Count packets received in the last second (only game_state messages)
+        received_last_second = sum(1 for ts in self.packet_stats['received_timestamps'] 
+                                   if ts >= one_second_ago)
+        
+        # Count packets sent in the last second (only input messages)
+        sent_last_second = sum(1 for ts in self.packet_stats['sent_timestamps'] 
+                              if ts >= one_second_ago)
+        
+        return {
+            'received_last_second': received_last_second,
+            'total_received': self.packet_stats['total_received'],
+            'total_sent': self.packet_stats['total_sent'],
+            'packets_lost': max(0, self.packet_stats['total_sent'] - self.packet_stats['total_received'])
+        }
+
 
 class ClientPrediction:
     """
@@ -808,6 +923,8 @@ class EntityManager:
         self.entities: Dict[str, Any] = {}  # network_id -> entity instance
         self.platforms: Dict[str, Any] = {}  # network_id -> platform instance
         self.local_player_id = None
+        self.class_registry: Dict[int, Dict[str, str]] = {}
+        self.entity_class_map: Dict[str, int] = {}
 
         # Interpolation buffers for smooth movement
         self.interpolation_buffers: Dict[str, deque] = {}
@@ -825,6 +942,11 @@ class EntityManager:
         Update entities from server game state.
         Creates new entities, updates existing ones, and removes missing ones.
         """
+        message_type = game_state.get('_message_type', game_state.get('message_type', 1))
+        class_registry = game_state.get('class_registry')
+        if class_registry:
+            self.class_registry = class_registry
+
         server_entities = {
             'characters': game_state.get('characters', []),
             'projectiles': game_state.get('projectiles', []),
@@ -833,17 +955,30 @@ class EntityManager:
             'platforms': game_state.get('platforms', [])
         }
 
-        # Track which entities exist in the server snapshot
-        current_entity_ids = set()
+        removed_entities = game_state.get('removed_entities', [])
+        if message_type == 0 and removed_entities:
+            for network_id in removed_entities:
+                if network_id in self.platforms:
+                    self._remove_platform(network_id)
+                if network_id in self.entities:
+                    self._remove_entity(network_id)
+                if network_id in self.entity_class_map:
+                    del self.entity_class_map[network_id]
 
-        # Process each entity type
-        for entity_type, entities in server_entities.items():
-            for entity_data in entities:
-                network_id = entity_data.get('network_id')
-                if network_id:
+        # Full state replaces everything.
+        if message_type == 1:
+            current_entity_ids = set()
+            for entity_type, entities in server_entities.items():
+                entities = entities or []
+                for entity_data in entities:
+                    network_id = entity_data.get('network_id')
+                    if not network_id:
+                        continue
                     current_entity_ids.add(network_id)
+                    class_id = entity_data.get('class_id')
+                    if class_id is not None:
+                        self.entity_class_map[network_id] = class_id
 
-                    # Update or create entity
                     if entity_type == 'platforms':
                         if network_id in self.platforms:
                             self._update_platform(network_id, entity_data)
@@ -855,33 +990,82 @@ class EntityManager:
                         else:
                             self._create_entity(network_id, entity_data)
 
-        # Remove entities that no longer exist on server
-        entities_to_remove = []
-        for network_id in self.entities:
-            if network_id not in current_entity_ids:
-                entities_to_remove.append(network_id)
+            entities_to_remove = []
+            for network_id in self.entities:
+                if network_id not in current_entity_ids:
+                    entities_to_remove.append(network_id)
 
-        platforms_to_remove = []
-        for network_id in self.platforms:
-            if network_id not in current_entity_ids:
-                platforms_to_remove.append(network_id)
+            platforms_to_remove = []
+            for network_id in self.platforms:
+                if network_id not in current_entity_ids:
+                    platforms_to_remove.append(network_id)
 
-        for network_id in entities_to_remove:
-            self._remove_entity(network_id)
+            for network_id in entities_to_remove:
+                self._remove_entity(network_id)
+                if network_id in self.entity_class_map:
+                    del self.entity_class_map[network_id]
 
-        for network_id in platforms_to_remove:
-            self._remove_platform(network_id)
+            for network_id in platforms_to_remove:
+                self._remove_platform(network_id)
+                if network_id in self.entity_class_map:
+                    del self.entity_class_map[network_id]
+            return
+
+        # Delta updates only apply changes; skip missing entity lists.
+        for entity_type, entities in server_entities.items():
+            if entities is None:
+                continue
+            for entity_data in entities:
+                network_id = entity_data.get('network_id')
+                if not network_id:
+                    continue
+                class_id = entity_data.get('class_id')
+                if class_id is not None:
+                    self.entity_class_map[network_id] = class_id
+
+                if entity_type == 'platforms':
+                    if network_id in self.platforms:
+                        self._update_platform(network_id, entity_data)
+                    else:
+                        if not self._create_platform(network_id, entity_data):
+                            raise ValueError("Missing metadata for platform creation")
+                else:
+                    if network_id in self.entities:
+                        self._update_entity(network_id, entity_data)
+                    else:
+                        if not self._create_entity(network_id, entity_data):
+                            raise ValueError("Missing metadata for entity creation")
+
+    def _resolve_entity_metadata(self, entity_data: dict) -> dict:
+        if entity_data.get('module_path') and entity_data.get('class_name'):
+            return entity_data
+        class_id = entity_data.get('class_id') or self.entity_class_map.get(entity_data.get('network_id'))
+        if class_id and class_id in self.class_registry:
+            resolved = dict(entity_data)
+            meta = self.class_registry[class_id]
+            resolved.setdefault('module_path', meta.get('module_path'))
+            resolved.setdefault('class_name', meta.get('class_name'))
+            resolved['class_id'] = class_id
+            return resolved
+        return entity_data
 
     def _create_entity(self, network_id: str, entity_data: dict):
         """Create a new entity from network data."""
         try:
             # Use the NetworkObject factory method to create the entity
-            entity = NetworkObject.create_from_network_data(entity_data)
+            resolved = self._resolve_entity_metadata(entity_data)
+            if not resolved.get('module_path') or not resolved.get('class_name'):
+                return False
+
+            entity = NetworkObject.create_from_network_data(resolved)
 
             if entity:
                 # Initialize graphics for the new entity
                 entity.init_graphics()
                 self.entities[network_id] = entity
+                class_id = resolved.get('class_id')
+                if class_id is not None:
+                    self.entity_class_map[network_id] = class_id
 
                 # Initialize interpolation buffer
                 self.interpolation_buffers[network_id] = deque(maxlen=self.max_buffer_size)
@@ -889,11 +1073,12 @@ class EntityManager:
 
             else:
                 # Entity type not handled
-                pass
+                return False
 
         except Exception as e:
             # Skip entities that fail to create
-            pass
+            return False
+        return True
 
     def _update_entity(self, network_id: str, entity_data: dict):
         """Update an existing entity with new data."""
@@ -971,25 +1156,35 @@ class EntityManager:
             del self.entities[network_id]
             if network_id in self.interpolation_buffers:
                 del self.interpolation_buffers[network_id]
+        if network_id in self.entity_class_map:
+            del self.entity_class_map[network_id]
 
     def _create_platform(self, network_id: str, platform_data: dict):
         """Create a new platform from network data."""
         try:
             # Use the NetworkObject factory method to create the platform
-            platform = NetworkObject.create_from_network_data(platform_data)
+            resolved = self._resolve_entity_metadata(platform_data)
+            if not resolved.get('module_path') or not resolved.get('class_name'):
+                return False
+
+            platform = NetworkObject.create_from_network_data(resolved)
 
             if platform:
                 # Initialize graphics for the new platform
                 platform.init_graphics()
                 self.platforms[network_id] = platform
+                class_id = resolved.get('class_id')
+                if class_id is not None:
+                    self.entity_class_map[network_id] = class_id
 
             else:
                 # Platform creation failed
-                pass
+                return False
 
         except Exception as e:
             # Skip platforms that fail to create
-            pass
+            return False
+        return True
 
     def _update_platform(self, network_id: str, platform_data: dict):
         """Update an existing platform with new data."""
@@ -1016,6 +1211,8 @@ class EntityManager:
         """Remove a platform that no longer exists."""
         if network_id in self.platforms:
             del self.platforms[network_id]
+        if network_id in self.entity_class_map:
+            del self.entity_class_map[network_id]
 
 
     def get_entities_by_type(self, entity_type: type) -> List[Any]:
@@ -1031,6 +1228,8 @@ class EntityManager:
         self.entities.clear()
         self.platforms.clear()
         self.interpolation_buffers.clear()
+        self.class_registry.clear()
+        self.entity_class_map.clear()
 
     def draw_all(self, screen, arena_height: float, camera=None):
         """Draw all entities and platforms."""

@@ -154,7 +154,7 @@ def modify_file_inline(file_path: str = None, diff_text: str = None, **kwargs) -
             return result
 
         # --- 3. Sanitize Input ---
-        clean_diff = diff_text.replace("\xa0", " ")
+        clean_diff = _normalize_unicode_whitespace(diff_text)
 
         # --- 3.5. Special handling for empty/nearly-empty files with "create from scratch" diffs ---
         original_lines = original_content.splitlines()
@@ -579,12 +579,13 @@ def _apply_unified_diff_safe(original_content: str, diff_text: str) -> Tuple[str
 
 
 def _extract_hunk_anchors(ops: List[str], max_anchors: int = 3) -> List[str]:
+    """Extract anchor lines from hunk operations, with Unicode whitespace normalization."""
     anchors: List[str] = []
     for op in ops:
         if not op:
             continue
         if op[0] in (" ", "-"):
-            anchors.append(op[1:].strip())
+            anchors.append(_normalize_unicode_whitespace(op[1:]).strip())
         if len(anchors) >= max_anchors:
             break
     return anchors
@@ -599,7 +600,7 @@ def _diagnose_hunk_location(
 ) -> List[Dict[str, Any]]:
     """
     Returns best candidate start locations for a hunk when exact relocation fails.
-    A candidate score is the fraction of anchors matched consecutively at that position.
+    Uses Unicode whitespace normalization for robust matching.
     """
     if not anchors:
         return []
@@ -614,11 +615,11 @@ def _diagnose_hunk_location(
         for a in anchors:
             if j >= len(original_lines):
                 break
-            if original_lines[j].strip() == a:
+            if _fuzzy_match(original_lines[j], a):
                 matched += 1
-                j += 1
             else:
                 break
+            j += 1
         if matched > 0:
             score = matched / max(1, len(anchors))
             snippet = _get_context_snippet(original_lines, i0, context_size=4)
@@ -650,16 +651,17 @@ def _find_nearby_line_occurrences(
     max_hits: int = 5,
 ) -> List[int]:
     """
-    Finds nearby line numbers where a stripped line equals the needle.
-    Used to hint where context moved.
+    Finds nearby line numbers where a normalized line equals the normalized needle.
+    Uses Unicode whitespace normalization for robust matching.
     """
     if not needle:
         return []
     start_idx = max(0, center_idx - window)
     end_idx = min(len(lines), center_idx + window + 1)
     hits: List[int] = []
+    normalized_needle = _normalize_unicode_whitespace(needle).strip()
     for i in range(start_idx, end_idx):
-        if lines[i].strip() == needle:
+        if _fuzzy_match(lines[i], normalized_needle):
             hits.append(i + 1)
             if len(hits) >= max_hits:
                 break
@@ -676,7 +678,7 @@ def _locate_hunk_start(original_lines: List[str], old_start: int, ops: List[str]
         if not op:
             continue
         if op[0] in (" ", "-"):
-            anchors.append(op[1:].strip())
+            anchors.append(_normalize_unicode_whitespace(op[1:]).strip())
         if len(anchors) >= 3:
             break
 
@@ -692,7 +694,7 @@ def _locate_hunk_start(original_lines: List[str], old_start: int, ops: List[str]
         for a in anchors:
             if j >= len(original_lines):
                 return False
-            if original_lines[j].strip() != a:
+            if not _fuzzy_match(original_lines[j], a):
                 return False
             j += 1
         return True
@@ -756,8 +758,38 @@ def _desmash_content(content: str) -> List[str]:
         return [content]
 
 
+def _normalize_unicode_whitespace(text: str) -> str:
+    """
+    Normalize Unicode whitespace variants (non-breaking spaces, etc.) to regular spaces.
+    Only normalizes Unicode whitespace variants, NOT regular spaces/tabs/newlines.
+    Used for matching purposes to handle encoding variations.
+    """
+    if not text:
+        return ""
+    return (
+        text.replace("\xa0", " ")
+        .replace("\u00A0", " ")
+        .replace("\u2000", " ")
+        .replace("\u2001", " ")
+        .replace("\u2002", " ")
+        .replace("\u2003", " ")
+        .replace("\u2004", " ")
+        .replace("\u2005", " ")
+        .replace("\u2006", " ")
+        .replace("\u2007", " ")
+        .replace("\u2008", " ")
+        .replace("\u2009", " ")
+        .replace("\u200A", " ")
+        .replace("\u200B", "")
+        .replace("\u202F", " ")
+        .replace("\u205F", " ")
+        .replace("\u3000", " ")
+    )
+
+
 def _fuzzy_match(line_a: str, line_b: str) -> bool:
-    return line_a.strip() == line_b.strip()
+    """Compare two lines with Unicode whitespace normalization."""
+    return _normalize_unicode_whitespace(line_a).strip() == _normalize_unicode_whitespace(line_b).strip()
 
 
 def _get_context_snippet(lines: List[str], center_line_idx: int, context_size: int = 5) -> str:

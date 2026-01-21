@@ -36,6 +36,10 @@ class Arena(BaseArena):
         self.max_primary_pickups = 4
         self.max_passive_pickups = 4
 
+        self.num_blocking_obstacles = 100
+        self.num_slowing_obstacles = 50
+        self.num_grass_fields = 30
+
         self._spawn_world()
         self._spawn_initial_pickups()
 
@@ -45,8 +49,7 @@ class Arena(BaseArena):
             self.ui = None
 
     def _spawn_world(self):
-        random.seed(42)
-        for _ in range(8):
+        for _ in range(self.num_blocking_obstacles):
             size = random.randint(50, 120)
             cx = random.randint(size, self.width - size)
             cy = random.randint(size, self.height - size)
@@ -54,7 +57,7 @@ class Arena(BaseArena):
             self.obstacles.append(obstacle)
             self.platforms.append(obstacle)
 
-        for _ in range(6):
+        for _ in range(self.num_slowing_obstacles):
             size = random.randint(60, 140)
             cx = random.randint(size, self.width - size)
             cy = random.randint(size, self.height - size)
@@ -62,7 +65,7 @@ class Arena(BaseArena):
             self.obstacles.append(obstacle)
             self.platforms.append(obstacle)
 
-        for _ in range(10):
+        for _ in range(self.num_grass_fields):
             radius = random.randint(20, 60)
             cx = random.randint(radius, self.width - radius)
             cy = random.randint(radius, self.height - radius)
@@ -191,20 +194,6 @@ class Arena(BaseArena):
                     self._push_out_of_rect(cow, poop_rect)
 
     def _apply_effects(self, cow):
-        """
-        Apply damage and effects from arena effects to a cow.
-        
-        IMPORTANT: All collision detection accounts for cow size/radius.
-        Cows are treated as circles with radius cow.size/2, not point objects.
-        This ensures abilities hit correctly even when the cow's center is slightly
-        outside the effect area, as long as part of the cow's body overlaps.
-        
-        Collision methods used:
-        - RadialEffect: _circle_intersects_circle()
-        - ConeEffect: _circle_intersects_triangle()
-        - LineEffect: _circle_intersects_line()
-        - WaveProjectileEffect: rect.colliderect()
-        """
         for effect in self.effects:
             if isinstance(effect, ObstacleEffect):
                 continue
