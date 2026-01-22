@@ -542,6 +542,8 @@ class BaseMenu:
             if result:
                 print("-----    SUCCESS    -----")
                 print("All changes applied successfully")
+                from BASE_files.BASE_menu_helpers import reload_game_code
+                reload_game_code()
                 self.client.send_patch_applied(success=True)
             else:
                 print("-----    FAILED    -----")

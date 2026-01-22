@@ -28,6 +28,22 @@ Each task must be **self-contained** (coding agent only sees current task). Incl
 - Coordinate context (World-Y vs Screen-Y) when physics/positions are involved
 - For melee or area-effect logic, explicitly call out how hitboxes are anchored: tasks must ensure hitboxes are centered on the character/effect **center point** (not top-left), and must include tests that verify hits on both left and right sides of the attacker where applicable.
 
+## Effect Serialization Requirements
+When planning tasks that create new effects:
+- **MUST** specify that effects store `owner_id` (string) instead of character objects
+- **MUST** specify that effects look up entities in `update(delta_time, arena=None)` when needed
+- **MUST** specify storing derived values (like `cow_size`) if needed for drawing
+- **MUST** reference existing effects (`PyroShell`, `RadialEffect`, etc.) as examples
+
+Example task specification:
+```
+Task: "Create FireballEffect that follows the owner"
+- Store owner_id (string), not cow object
+- In update(), look up cow from arena.characters using owner_id
+- Store cow.size as self.cow_size if needed for draw()
+- Follow pattern from PyroShell for arena parameter handling
+```
+
 ## Game Perspective (Hard Constraint)
 Core Conflict is a **top-down (overhead) 2D** game.
 - All gameplay, effects, AoE shapes, hitboxes, and projectiles exist on the 2D plane (world X/Y).

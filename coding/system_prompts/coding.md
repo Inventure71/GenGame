@@ -36,6 +36,33 @@ The arena's `_apply_effects()` method uses circle-based collision detection:
 
 **Never use point-based collision checks** (e.g., checking if `cow.location` is inside an area). Always use the arena's built-in collision detection which properly accounts for cow size. This ensures abilities hit correctly even when the cow's center is slightly outside the effect area.
 
+## Network Serialization Rules (CRITICAL)
+
+**All effects inherit from `NetworkObject` and are serialized for network transmission.**
+
+### Effect Serialization Constraints
+- **NEVER** store `Character` or `Arena` objects in effects
+- **ALWAYS** store `owner_id` (string) instead of character references
+- **ALWAYS** store primitive data (strings, numbers, lists, dicts)
+- **ALWAYS** look up entities by ID in `update()` when `arena` is passed as parameter
+- **ALWAYS** store derived values (like `cow_size`) if needed for `draw()` method
+
+### Pattern for Effects Needing Entity Access
+```python
+class MyEffect(TimedEffect):
+    def __init__(self, cow, arena, ...):
+        self.owner_id = cow.id  # ✅ Store ID
+        self.cow_size = cow.size  # ✅ Store if needed for drawing
+        # ❌ self.cow = cow  # NEVER do this
+    
+    def update(self, delta_time: float, arena=None) -> bool:
+        if arena:
+            cow = next((c for c in arena.characters if c.id == self.owner_id), None)
+            # Use cow here...
+```
+
+**Reference**: See existing effects like `PyroShell`, `RadialEffect`, `ConeEffect` for correct patterns. See `GUIDE_Adding_Abilities.md` for detailed examples.
+
 ## 🕹️ CHARACTER-DRIVEN ACTION SYSTEM
 **NEVER modify `server.py` or `BASE_game_client.py` to add new character abilities.**
 

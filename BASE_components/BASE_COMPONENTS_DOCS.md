@@ -91,6 +91,13 @@ Low‑level effect primitives. No gameplay shapes or damage logic exist here.
 - `BaseEffect`: network‑serializable object with `location`, `update`, `draw`
 - `TimedEffect`: base effect with lifetime tracking
 
+### Network Serialization
+All effects inherit from `NetworkObject` (via `BaseEffect`). When implementing effects:
+- **Store only primitive data**: strings, numbers, lists, dicts
+- **Store `owner_id` (string)**, not character objects
+- **Look up entities in `update()`** when `arena` parameter is provided
+- See `GUIDE_Adding_Abilities.md` for detailed serialization patterns
+
 All concrete effects (cones, shockwaves, walls, etc.) should live in `GameFolder/effects/` in one class per file (for example `coneeffect.py`, `radialeffect.py`, `lineeffect.py`, `waveprojectileeffect.py`, `obstacleeffect.py`, `zoneindicator.py`).
 
 ---

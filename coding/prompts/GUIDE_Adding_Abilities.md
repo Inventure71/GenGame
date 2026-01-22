@@ -106,3 +106,68 @@ When you create effects, the arena automatically handles collision detection:
 **Why this matters**: Cows have a size (`cow.size`), so collision detection uses `cow.size / 2` as the radius. This means effects will hit even when the cow's center is slightly outside the effect area, as long as part of the cow's body overlaps.
 
 **Common mistake**: Don't implement your own point-based collision checks - the arena handles this automatically. Just create the effect with the right parameters (location, radius, angle, length, width, etc.).
+
+## Network Serialization Requirements (CRITICAL)
+
+**All effects are network-serializable and sent from server to client.** When creating effects, you MUST follow these rules:
+
+### ❌ NEVER Store Complex Objects
+- **DO NOT** store `Character` objects (e.g., `self.cow = cow`)
+- **DO NOT** store `Arena` objects (e.g., `self.arena = arena`)
+- **DO NOT** store any non-serializable objects
+
+### ✅ DO Store Primitive Data Only
+- Store `owner_id` (string) instead of the character object: `self.owner_id = cow.id`
+- Store derived values if needed for drawing: `self.cow_size = cow.size`
+- Store primitive types: strings, numbers, lists, tuples, dicts
+
+### ✅ DO Look Up Objects When Needed
+- In `update(delta_time, arena=None)`, look up the character by `owner_id`:
+  ```python
+  def update(self, delta_time: float, arena=None) -> bool:
+      if arena is None:
+          return True  # Can't update without arena
+      
+      cow = None
+      for char in arena.characters:
+          if char.id == self.owner_id:
+              cow = char
+              break
+      
+      if cow is None:
+          return True  # Owner not found, expire effect
+      
+      # Use cow here...
+  ```
+
+### Example: Correct Pattern
+```python
+class MyEffect(TimedEffect):
+    def __init__(self, cow, arena, mouse_pos):
+        super().__init__(list(cow.location), 1.0)
+        self.owner_id = cow.id  # ✅ Store ID, not object
+        self.cow_size = cow.size  # ✅ Store size if needed for drawing
+        self.mouse_pos = mouse_pos  # ✅ Primitive data
+        
+        # ❌ DON'T: self.cow = cow
+        # ❌ DON'T: self.arena = arena
+    
+    def update(self, delta_time: float, arena=None) -> bool:
+        # Look up cow when needed
+        if arena:
+            cow = next((c for c in arena.characters if c.id == self.owner_id), None)
+            if cow:
+                self.location[0] = cow.location[0]
+                # ... use cow ...
+        return super().update(delta_time)
+    
+    def draw(self, screen, arena_height, camera=None):
+        # Use stored cow_size, not self.cow.size
+        radius = self.cow_size / 2
+        # ... draw ...
+```
+
+### Why This Matters
+When effects are serialized via `__getstate__()` and sent over the network, complex objects cannot be properly reconstructed on the client. The client will receive strings or broken references instead of objects, causing `AttributeError` crashes like `'str' object has no attribute 'size'`.
+
+**Reference**: See `PyroShell`, `PyroBurst`, `RadialEffect`, `ConeEffect` for examples of correct patterns.

@@ -74,9 +74,9 @@ class Arena(BaseArena):
             self.platforms.append(grass)
 
     def _spawn_initial_pickups(self):
-        for _ in range(3):
+        for _ in range(30):
             self._spawn_ability_pickup("primary")
-        for _ in range(3):
+        for _ in range(30):
             self._spawn_ability_pickup("passive")
 
     def _spawn_ability_pickup(self, ability_type: str):

@@ -1,6 +1,6 @@
 import pygame
 from BASE_files.BASE_network import NetworkObject
-from GameFolder.abilities.ability_loader import get_primary_abilities, get_passive_abilities
+from GameFolder.abilities.ability_loader import get_primary_abilities, get_passive_abilities, reload_abilities
 
 
 def _get_primary_names():
@@ -13,6 +13,13 @@ def _get_passive_names():
 
 PRIMARY_ABILITY_NAMES = _get_primary_names()
 PASSIVE_ABILITY_NAMES = _get_passive_names()
+
+def reload_ability_names():
+    """Reload abilities and update the name constants."""
+    global PRIMARY_ABILITY_NAMES, PASSIVE_ABILITY_NAMES
+    reload_abilities()
+    PRIMARY_ABILITY_NAMES = _get_primary_names()
+    PASSIVE_ABILITY_NAMES = _get_passive_names()
 
 
 class AbilityPickup(NetworkObject):

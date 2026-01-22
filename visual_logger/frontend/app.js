@@ -87,7 +87,8 @@ class VisualLogger {
             graphZoom: 1,
             graphPan: { x: 0, y: 0 },
             isPanning: false,
-            showLineTokens: true  // Toggle for per-line token display
+            showLineTokens: true,
+            flowLimit: 50
         };
         
         this.elements = {};
@@ -246,6 +247,17 @@ class VisualLogger {
             toggleLineTokens.addEventListener('click', () => {
                 this.state.showLineTokens = !this.state.showLineTokens;
                 toggleLineTokens.classList.toggle('active', this.state.showLineTokens);
+                this.updateFlowGraph();
+                this.updateFlowGraph();
+            });
+        }
+
+        // Flow limit selector
+        const flowLimitSelect = document.getElementById('flowLimitSelect');
+        if (flowLimitSelect) {
+            flowLimitSelect.addEventListener('change', (e) => {
+                const val = e.target.value;
+                this.state.flowLimit = val === 'all' ? Infinity : parseInt(val, 10);
                 this.updateFlowGraph();
             });
         }
@@ -811,10 +823,20 @@ class VisualLogger {
     
     async renderSimpleFlow() {
         // Simple event-based flow visualization
-        const events = this.state.events;
-        console.log('renderSimpleFlow called with', events.length, 'events:', events.map(e => e.type));
-        if (events.length === 0) return;
+        const allEvents = this.state.events;
+        console.log('renderSimpleFlow called with', allEvents.length, 'events');
+        if (allEvents.length === 0) return;
         
+        // Apply limit if set
+        let events = allEvents;
+        if (this.state.flowLimit && this.state.flowLimit !== Infinity && allEvents.length > this.state.flowLimit) {
+            events = allEvents.slice(-this.state.flowLimit);
+        }
+        
+        // Adjust indices for correct data retrieval since we're slicing
+        // The indices must map back to the original full array for interactions
+        const startIndex = allEvents.length - events.length;
+
         const graphContainer = document.getElementById('mermaidGraph');
         if (!graphContainer) return;
         
@@ -896,9 +918,10 @@ class VisualLogger {
         let prevNodeIds = [];
         let processedGroups = new Set();
         
-        for (let idx = 0; idx < events.length; idx++) {
-            const event = events[idx];
-            const nodeId = `node${idx}`;
+        for (let i = 0; i < events.length; i++) {
+            const event = events[i];
+            const originalIdx = startIndex + i; // Map to global index
+            const nodeId = `node${originalIdx}`;
             
             // Skip model_request events in the visual flow (they're metadata)
             if (event.type === 'model_request') {
@@ -906,8 +929,8 @@ class VisualLogger {
             }
             
             // Check if this is part of a parallel group
-            if (parallelGroups.has(idx)) {
-                const groupId = parallelGroups.get(idx);
+            if (parallelGroups.has(originalIdx)) {
+                const groupId = parallelGroups.get(originalIdx);
                 
                 // Only process each group once (when we hit its first member)
                 if (processedGroups.has(groupId)) {
@@ -921,13 +944,18 @@ class VisualLogger {
                     if (gId === groupId) groupIndices.push(eIdx);
                 }
                 
+                // Filter group indices to only those in our current view window
+                const visibleGroupIndices = groupIndices.filter(gIdx => gIdx >= startIndex);
+                
+                if (visibleGroupIndices.length === 0) continue;
+
                 // Generate subgraph for parallel tools
                 graphDef += `    subgraph parallel_${groupId} [" "]\n`;
                 graphDef += `    direction LR\n`;
                 
                 const groupNodeIds = [];
-                groupIndices.forEach(gIdx => {
-                    const gEvent = events[gIdx];
+                visibleGroupIndices.forEach(gIdx => {
+                    const gEvent = allEvents[gIdx];
                     const gNodeId = `node${gIdx}`;
                     graphDef += this.generateNodeDef(gEvent, gIdx);
                     groupNodeIds.push(gNodeId);
@@ -950,10 +978,10 @@ class VisualLogger {
                 prevNodeIds = groupNodeIds;
             } else {
                 // Regular single node
-                graphDef += this.generateNodeDef(event, idx);
+                graphDef += this.generateNodeDef(event, originalIdx);
                 
                 // Get token info for edge label
-                const edgeTokenInfo = tokenMap.get(idx);
+                const edgeTokenInfo = tokenMap.get(originalIdx);
                 const edgeTokenLabel = (this.state.showLineTokens && edgeTokenInfo) ? `|${edgeTokenInfo.input.toLocaleString()}t|` : '';
                 
                 prevNodeIds.forEach(prevId => {

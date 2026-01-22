@@ -23,6 +23,12 @@ def _load_abilities(package_name: str) -> List[dict]:
         abilities.append(ability)
     return abilities
 
+def reload_abilities():
+    """Clear the ability cache to force reload on next access."""
+    global _cached_primary, _cached_passive
+    _cached_primary = None
+    _cached_passive = None
+
 
 def get_primary_abilities() -> List[dict]:
     global _cached_primary

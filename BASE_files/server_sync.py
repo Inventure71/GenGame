@@ -746,6 +746,7 @@ class ServerSyncManager:
             )
             self.server.arena = None
             reloaded_setup = reload_game_code()
+            
             if reloaded_setup:
                 from GameFolder.setup import setup_battle_arena
                 print("[success] Server GameFolder modules deep reloaded with merged patches")
@@ -780,7 +781,8 @@ class ServerSyncManager:
             with open(patch_path, 'r', encoding='utf-8') as f:
                 patch_data = json.load(f)
 
-            normalized_seed = random.randint(0, 2**31 - 1)
+            normalized_seed =  int(datetime.now().timestamp())
+
 
             any_modified = False
             for change in patch_data.get("changes", []):

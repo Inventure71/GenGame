@@ -174,15 +174,20 @@ def reload_game_code() -> types.ModuleType:
                  print(f"DEBUG: Before reload, GameFolder.setup.Character ID: {id(GameFolder.setup.Character)}")
         except: pass
 
-    # 2. Reload all dependencies first
+        # 2. Reload all dependencies first (but skip arena - we'll reload it after ability names are updated)
+    arena_module = None
     for name, module in game_modules:
         if name == 'GameFolder.setup':
+            continue
+        if name == 'GameFolder.arenas.GAME_arena':
+            # Save arena module to reload later, after ability names are updated
+            arena_module = module
             continue
         try:
             importlib.reload(module)
         except Exception as e:
             print(f"[error] Failed to reload {name}: {e}")
-            traceback.print_exc() 
+            traceback.print_exc()
    
     import os
     game_folder_path = os.path.join(os.path.dirname(__file__), '..', 'GameFolder')
@@ -200,8 +205,27 @@ def reload_game_code() -> types.ModuleType:
                             print(f"[info] Imported new module: {module_name}")
                         except Exception as e:
                             print(f"[warning] Failed to import new module {module_name}: {e}")
+    
+    # 3. Reload ability names BEFORE reloading arena
+    # This ensures PRIMARY_ABILITY_NAMES and PASSIVE_ABILITY_NAMES are fresh
+    try:
+        from GameFolder.pickups.GAME_pickups import reload_ability_names
+        reload_ability_names()
+        print("[success] Ability names reloaded")
+    except Exception as e:
+        print(f"[error] Failed to reload ability names: {e}")
+        traceback.print_exc()
+    
+    # 4. NOW reload arena so it imports the fresh PRIMARY_ABILITY_NAMES
+    if arena_module:
+        try:
+            importlib.reload(arena_module)
+            print("[success] Arena module reloaded with updated ability names")
+        except Exception as e:
+            print(f"[error] Failed to reload arena module: {e}")
+            traceback.print_exc()
             
-    # 3. Explicitly reload the entry point (setup.py) last
+    # 5. Explicitly reload the entry point (setup.py) last
     # STRATEGY CHANGE: Use del + import to force fresh namespace population from reloaded dependencies
     try:
         if 'GameFolder.setup' in sys.modules:
