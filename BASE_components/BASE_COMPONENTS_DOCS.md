@@ -94,6 +94,7 @@ Immutable game loop and safe‑zone management. Override in GameFolder for gamep
 - `self.safe_zone`: `SafeZone` instance
 - `self.enable_safe_zone`: If True, applies safe‑zone damage
 - `self.current_time`: Elapsed game time
+- `self.tick_accumulator` / `self.tick_interval`: Fixed timestep accumulator and interval (internal)
 - `self.safe_damage_times`: Dict tracking last damage time per character
 - `self.safe_damage_interval`: Damage interval (default 1.0s)
 - `self.game_over` / `self.winner`: Game state
@@ -224,7 +225,12 @@ World-to-screen camera for large arenas. Keeps all server logic in absolute worl
 ### Purpose
 Minimal UI hook. GameFolder should implement real UI rendering.
 
+### Key Attributes
+- `self.screen`: Pygame surface for drawing
+- `self.arena_width` / `self.arena_height`: Arena dimensions
+
 ### Key Methods
+- `__init__(screen, arena_width, arena_height)`: Initialize UI with screen and dimensions
 - `draw(characters, game_over, winner, respawn_timers, local_player_id, network_stats)`
   - Hook for UI rendering (default no-op)
 
