@@ -42,6 +42,7 @@
 
 ## ⚖️ Gameplay Standards (60 FPS)
 ### Character Scale & Collision
+- **No Starting Abilities**: Players always start with NO active (primary) abilities and NO passive abilities. All abilities must be acquired manually via weapon pickups in the arena. Never initialize characters with abilities in `setup.py` or anywhere else.
 - **Default Size**: 30x30 pixels.
 - **Scaling**: Larger cows are slower and smaller cows are faster; keep collision tests centered on world coordinates.
 
