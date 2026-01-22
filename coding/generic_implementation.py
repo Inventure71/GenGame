@@ -163,11 +163,12 @@ class GenericHandler:
             return f"{main_message}\n{append_warning_str}" # we only append the warning if it is the last item
         return main_message
 
-    def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None, auto_nudge: int = 2) -> str:
+    def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None, auto_nudge: int = 2, auto_truncate_history: int = 0) -> str:
         """
         Generalized ask_model that works with any provider through BaseHandler interface.
         The common logic is here, provider-specific details are handled by the client.
         NOTE: To disable auto nudging, set auto_nudge to -1.
+        NOTE: To disable auto truncation of history, set auto_truncate_history to 0.
         """
         turns = 0
         max_turns = 30  # Safety cutoff
