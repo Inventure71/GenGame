@@ -50,6 +50,10 @@ def test_x(): arena = Arena(...)
 10. **Incomplete simulation** - Collision/landing may require multiple update cycles
 11. **Type mismatches** - Sets vs dicts, lists vs tuples, wrong input formats
 12. **Input format incompatibilities** - Missing `mouse_pos` or raw input passthrough keys
+13. **Execution order mismatch** - Placing entities before obstacle resolution moves characters
+    - **Symptom**: Test places effect/pickup at character location, but no collision detected
+    - **Cause**: `_resolve_obstacle_collisions()` moves character BEFORE effect/pickup checks
+    - **Fix**: Call `handle_collisions()` first, capture final location, then place entities
 
 ---
 
@@ -130,6 +134,83 @@ method()  # Applies state change
   - `LineEffect`: `_circle_intersects_line()` (cow circle vs line segment)
   - `WaveProjectileEffect`: `rect.colliderect()` (rectangle collision)
   - When testing, verify hits work when cow's center is near but not inside the effect area
+
+---
+
+## 6.5 EXECUTION ORDER & STATE MUTATIONS (CRITICAL)
+
+**When testing collisions, effects, or pickups, execution order matters.**
+
+### The Problem
+
+`handle_collisions()` processes collisions in a specific order:
+1. `_resolve_obstacle_collisions(cow)` - **MOVES** character if overlapping obstacles
+2. `_resolve_poops(cow)` - May move character
+3. `_apply_effects(cow)` - Checks collisions (character may have moved!)
+4. Pickup checks - Happen after obstacle resolution
+
+If you place an effect/pickup at the character's initial location, but the character gets moved by obstacle resolution, the collision won't be detected.
+
+### The Solution
+
+**Pattern 1: For collision/effect tests**
+```python
+# Step 1: Setup character
+arena = Arena(400, 300, headless=True)
+char = Character("TestCow", "Test", "", [200.0, 150.0])
+arena.add_character(char)
+
+# Step 2: Let obstacle resolution happen
+arena.handle_collisions()
+
+# Step 3: Capture final location
+char_final_location = char.location[:]
+
+# Step 4: Place entity at final location
+effect = RadialEffect(char_final_location, radius=60, ...)
+arena.add_effect(effect)
+
+# Step 5: Test actual behavior
+arena.handle_collisions()
+assert char.health < initial_health
+```
+
+**Pattern 2: For pickup tests**
+```python
+# Step 1: Setup character
+arena = Arena(800, 600, headless=True)
+char = Character("TestCow", "Test", "", [0.0, 0.0])
+arena.add_character(char)
+
+# Step 2: Let obstacle resolution happen
+arena.handle_collisions()
+char_final_location = char.location[:]
+
+# Step 3: Place or move pickup to final location
+pickup = next((p for p in arena.weapon_pickups if p.ability_type == "primary"), None)
+if pickup is None:
+    pickup = AbilityPickup(PRIMARY_ABILITY_NAMES[0], "primary", char_final_location[:])
+    arena.weapon_pickups.append(pickup)
+else:
+    pickup.location = char_final_location[:]
+
+# Step 4: Test actual behavior
+arena.handle_collisions()
+assert char.primary_ability_name == pickup.ability_name
+```
+
+### When to Use This Pattern
+
+**ALWAYS use this pattern when:**
+- Testing effect collisions with characters
+- Testing pickup collisions with characters
+- Placing entities at the same location as characters
+- Testing any collision that depends on character position
+
+**You DON'T need this pattern when:**
+- Testing effects that don't depend on character position
+- Testing character-to-character collisions (both move together)
+- Testing standalone entity behavior (no character involved)
 
 ---
 

@@ -75,23 +75,28 @@ Therefore your primary job is **(1) find and fix issues**, and **(2) write a per
 - **If no prints**: Add focused prints using `modify_file_inline`.
 - **Avoid redundant checks** - check once, then modify.
 
-### 0.3 Parallel tool usage is MANDATORY - STOP AND THINK FIRST
+### 0.3 Parallel tool usage is MANDATORY - STOP AND THINK FIRST (SMART SELECTION)
 
 **🚨 CRITICAL: Before making ANY tool calls, you MUST:**
 
 1. **STOP** - Do not make any tool calls yet
-2. **THINK** - Mentally list ALL information you will need:
-   - Which test files are failing? → `read_file` for each
-   - Which implementation files are involved? → `read_file` or `list_functions_in_file` for each
-   - Which BASE classes need checking? → `read_file` or `get_function_source` for each
-   - Which specific functions need source code? → `get_function_source` for each
-   - Which functions need usage searches? → `find_function_usages` for each
-   - Which files need outlines? → `list_functions_in_file` for each
-   - Which similar working code can I compare? → `read_file` for each
-3. **BATCH** - Make ALL reading calls in ONE parallel batch
-4. **VERIFY** - Check that you made 5-20+ calls in that single batch
+2. **READ THE ERROR CONTEXT FIRST** - The starting context already includes:
+   - Error lines from files involved in failures (with 3 lines of context around each error)
+   - Stack traces showing exact file paths and line numbers
+   - Directory tree for navigation
+   - **Start from there** - what information is actually missing?
+3. **THINK** - Mentally list ALL information you will ACTUALLY need (be selective):
+   - **What's in the error context?** - Don't re-read what's already provided
+   - Which specific functions are mentioned in the error? → `get_function_source` for those functions only (NOT entire files)
+   - Which classes are involved? → `list_functions_in_file` to see available methods (NOT entire files)
+   - Which specific sections of code? → `read_file` with `start_line` and `end_line` ranges (NOT entire files)
+   - Which functions are called but not defined? → `find_function_usages` to find definitions
+   - Which BASE classes need checking? → `get_function_source` for specific methods or `read_file` with ranges (NOT entire files)
+   - **Only read "similar working code" if you have a specific hypothesis** - don't read it "just in case"
+4. **BATCH** - Make ALL reading calls in ONE parallel batch
+5. **VERIFY** - Check that you batched all needed calls (typically 2-8 calls, not 20+)
 
-**Typical batch size: 5–20+ calls (no artificial limits).**
+**Typical batch size: 2-8 calls (read only what you actually need, but batch everything you need).**
 
 **✗ FORBIDDEN - Sequential calls (wastes turns):**
 ```
@@ -101,18 +106,40 @@ Turn 3: get_function_source("implementation.py", "method") → wait for result
 ```
 → This wastes 3 turns. Should be 1 turn with all 3 calls.
 
-**✓ CORRECT - Batched calls (efficient):**
+**✗ FORBIDDEN - Reading entire files unnecessarily:**
 ```
+# Error shows line 50 in waveprojectileeffect.py, but you read the entire 500-line file
+read_file("GameFolder/effects/waveprojectileeffect.py")  # BAD - too much
+# Should be:
+get_function_source("GameFolder/effects/waveprojectileeffect.py", "update")  # GOOD - just what you need
+# OR if you need more context:
+read_file("GameFolder/effects/waveprojectileeffect.py", start_line=40, end_line=70)  # GOOD - targeted range
+```
+
+**✓ CORRECT - Smart batched calls (efficient and selective):**
+```
+# Error context shows: error at line 50 in test_file.py calling effect.update()
+# Stack trace shows: waveprojectileeffect.py:45 in update method
+
+Turn 1: ALL of these in parallel (smart selection):
+- get_function_source("GameFolder/effects/waveprojectileeffect.py", "update")  # Just the function, not entire file
+- read_file("GameFolder/tests/test_file.py", start_line=40, end_line=60)  # Just the test function, not entire file
+- list_functions_in_file("GameFolder/effects/waveprojectileeffect.py")  # Outline to see what methods exist
+- get_function_source("BASE_components/BASE_effects.py", "update")  # Just the BASE method, not entire file
+```
+→ All information gathered in 1 turn with minimal, targeted reading.
+
+**✓ CORRECT - When you actually need more:**
+```
+# Complex error involving multiple files and you need to understand the flow
 Turn 1: ALL of these in parallel:
-- read_file("test_file.py")
-- read_file("implementation.py")
-- get_function_source("implementation.py", "method")
-- get_function_source("implementation.py", "update")
-- read_file("BASE_components/BASE_class.py")
-- find_function_usages("method", "GameFolder")
-- read_file("similar_working_test.py")  # Compare with working code
+- get_function_source("file1.py", "function1")
+- get_function_source("file2.py", "function2")
+- read_file("file3.py", start_line=100, end_line=150)  # Specific section
+- find_function_usages("function1", "GameFolder")  # Find all usages
+- list_functions_in_file("file4.py")  # See what's available
 ```
-→ All information gathered in 1 turn.
+→ Still batched, but each call is targeted to what you actually need.
 
 ### 0.4 Minimize test runs
 
@@ -160,16 +187,19 @@ For each failing test cycle:
    - **BASE usage issue?** – misusing or contradicting BASE contract
 
 3. **Anchor in reality:**
-   - Open:
-     - The failing **test file**
-     - The relevant **GameFolder implementation**
-     - The relevant **BASE_* class** or docs
-     - At least one **similar working test/implementation** if available
+   - Use the error context provided (error lines with context are already included)
+   - Use targeted tools to get specific information:
+     - The failing **test function** (use `read_file` with line ranges or `get_function_source`)
+     - The relevant **GameFolder implementation** (use `get_function_source` for specific methods, not entire files)
+     - The relevant **BASE_* class** methods (use `get_function_source` for specific methods, not entire files)
+     - Only read **similar working test/implementation** if you have a specific hypothesis to test
 
 4. **Form explicit hypotheses**, e.g.:
    - "Effect damage cooldown is not enforced because the hit key is unstable."
    - "Test assumes top-left origin while code uses center-based hitboxes."
    - "Test expects 20 damage but effect uses a damage multiplier."
+   - "Test places entities at same location, but `_resolve_obstacle_collisions()` moves character before effect check."
+   - "Test setup doesn't account for execution order - state mutations happen between setup and assertion."
 
 5. **Confirm / reject hypotheses with evidence**, not guesses:
    - Add targeted debug prints (before/after state, return values, coordinates, counts)
@@ -190,6 +220,9 @@ For each failing test, quickly check:
 - [ ] **Cooldown/timer blocking** - `damage_cooldown` or timers prevent action
 - [ ] **Initialization missing** - Required state not set in constructor or setup
 - [ ] **State persistence** - Reusing objects across tests without resetting
+- [ ] **Execution order mismatch** - Test places entities, but collision resolution moves them before checks
+  - Check: Does the method called in test modify state before the assertion?
+  - Fix: Place entities AFTER state mutations, or account for mutations in test setup
 
 **Category C: Test Quality Issues (90% of "bugs" are bad tests)**
 - [ ] **Test forces state manually** - Sets `obj.active = False` instead of using natural methods
@@ -218,6 +251,38 @@ For each failing test, quickly check:
 5. Add debug prints to verify hypothesis
 6. Fix only after evidence confirms hypothesis
 
+### 1.3 Execution Order Analysis
+
+When a test fails with "no collision detected" or "entity not found" despite correct setup:
+
+1. **Trace the execution path:**
+   - Read the method that's called in the test (e.g., `handle_collisions()`)
+   - List ALL methods called in order
+   - For each method, check if it MODIFIES any state variables
+
+2. **Identify state mutations:**
+   - Look for assignments: `obj.location = ...`, `obj.health = ...`, etc.
+   - Check if mutations happen BEFORE the assertion checks
+   - Example: `_resolve_obstacle_collisions(cow)` modifies `cow.location` BEFORE `_apply_effects(cow)` checks collisions
+
+3. **Check test setup vs execution order:**
+   - Test places: `char at [200, 150]`, `effect at [200, 150]`
+   - After `_resolve_obstacle_collisions`: `char at [101.5, 37.0]`
+   - Result: No collision because character moved before effect check
+   - Fix: Place entities AFTER obstacle resolution, not before
+
+4. **Common patterns:**
+   - Collision resolution methods that move entities
+   - Update loops that modify state before checks
+   - Initialization methods that change positions
+
+**How to trace execution order:**
+- Use `get_function_source` to read the method called in the test
+- Read each method it calls in sequence
+- For each method, check for state mutations (assignments to object attributes)
+- Compare test setup state vs state after mutations
+- If state changes between setup and assertion, the test needs to account for it
+
 ---
 
 ## 2) WORKFLOW LOOP
@@ -244,24 +309,44 @@ Before calling any tools:
 - **Focus on** new inspections, new hypotheses, or applying suggested next actions
 - **Build on** confirmed knowledge rather than starting from scratch
 
-### Step 1 – PLAN & BATCH
+### Step 1 – PLAN & BATCH (SMART SELECTION)
 
 Before making ANY tool calls, you MUST mentally list everything you need. Do NOT start calling tools one-by-one.
 
-1. **STOP AND THINK**: 
-   - What test files are failing? List them.
-   - What implementation files are involved? List them.
-   - What BASE classes do I need to check? List them.
-   - What similar working code can I compare? List them.
-   - What specific functions need source code? List them.
-   - What functions need usage searches? List them.
-   - What files need outlines? List them.
-   - **Count your list** - if it's less than 8, you're probably missing something.
+1. **STOP AND READ THE ERROR CONTEXT FIRST**: 
+   - The starting context already includes error lines from failing tests with 3 lines of context
+   - The starting context already includes stack traces with file paths and line numbers
+   - **Start from there** - what information is actually missing?
 
-2. **BATCH READ**: Make ONE parallel batch with ALL reading tools from step 1.
-   - **Minimum 8 calls** - if you have fewer, you're not thinking comprehensively enough
-   - **Typical 10-20+ calls** - this is normal and expected
+2. **THINK - What do you ACTUALLY need?** (be selective):
+   - What specific functions are mentioned in the error? → `get_function_source` for those functions only
+   - What classes are involved? → `list_functions_in_file` to see available methods
+   - What specific sections of code? → `read_file` with line ranges (NOT entire files)
+   - What functions are called but not defined? → `find_function_usages` to find definitions
+   - What BASE methods need checking? → `get_function_source` for specific methods
+   - **Only read additional files if error context is insufficient**
+   - **Count your list** - if it's more than 8 items, you're probably reading too much
+
+3. **BATCH READ**: Make ONE parallel batch with ALL the targeted reading tools needed.
+   - **Typical 2-8 calls** - only read what's directly relevant to the error
    - **ALL calls in ONE turn** - no exceptions
+   - **Use targeted tools** - `get_function_source`, `list_functions_in_file`, `read_file` with ranges
+
+### Step 1.5 – TRACE EXECUTION ORDER (if collision/entity not found)
+
+If test fails with "no collision" or "entity not found":
+
+1. Read the method called in test (e.g., `get_function_source("handle_collisions", "GameFolder/arenas/GAME_arena.py")`)
+2. List all methods it calls in order
+3. For each method, check if it modifies state:
+   - Use `get_function_source` to read each method
+   - Look for assignments: `obj.attribute = ...`
+4. Compare test setup vs post-mutation state:
+   - Test places: `char.location = [200, 150]`
+   - After `_resolve_obstacle_collisions`: `char.location = [101.5, 37.0]`
+   - Effect still at: `[200, 150]`
+   - Result: No collision
+5. Fix: Update test to place entities after mutations, or account for mutations
 
 ### Step 2 – ANALYZE
 
@@ -442,47 +527,69 @@ print(f"worldY={e.y} screenY={arena.height - e.y}")
 
 ---
 
-## 5) TOOLING RULES (READING)
+## 5) TOOLING RULES (SMART READING)
 
 When diagnosing, you may use:
 
-* `read_file`
-* `list_functions_in_file` (returns file outline with classes, methods, signatures, and line numbers)
-* `get_function_source`
-* `find_function_usages`
-* `get_directory` (lists immediate directory contents)
-* `get_tree_directory` (shows full directory tree - already in starting context, only call after creating new files)
+* `get_function_source(file_path, function_name)` - **PREFERRED** - Gets just one function (not entire file)
+* `list_functions_in_file(file_path)` - **PREFERRED** - Gets file outline (classes, methods, signatures)
+* `read_file(file_path, start_line, end_line)` - **USE WITH RANGES** - Read specific sections only
+* `find_function_usages(function_name, directory)` - Find where functions are used/defined
+* `get_directory(path)` - Lists immediate directory contents
+* `get_tree_directory(path)` - Shows full directory tree - already in starting context, only call after creating new files
 
-### Batch rule - MANDATORY
+### Smart Reading Strategy - MANDATORY
+
+**🚨 CRITICAL: Error lines are already provided in starting context. Start there!**
 
 **Before ANY tool calls:**
-1. **STOP** - Do not call any tools yet
-2. **THINK** - Write down (mentally) a complete list of everything you need
-3. **COUNT** - Your list should have 5-20+ items
-4. **BATCH** - Make ALL calls in ONE parallel batch
-5. **VERIFY** - Check that you made all calls in that single batch
+1. **READ THE ERROR CONTEXT** - It already has relevant error lines with context
+2. **IDENTIFY GAPS** - What specific information is missing?
+3. **USE TARGETED TOOLS** - Prefer `get_function_source` and `list_functions_in_file` over `read_file`
+4. **READ LINE RANGES** - If you must use `read_file`, specify `start_line` and `end_line`
+5. **BATCH EVERYTHING** - Make ALL calls in ONE parallel batch (typically 2-8 calls)
 
-**Example of proper thinking and batching:**
+**Example of proper smart reading with batching:**
+
+**ERROR CONTEXT SHOWS:**
+- Error at line 50 in `test_file.py` calling `effect.update(0.016)`
+- Stack trace shows `waveprojectileeffect.py:45` in `update` method
 
 **THINKING PHASE (before any calls):**
-- I need to understand why `test_effect_damage_cooldown` is failing
-- I need: test file, effect implementation, arena collision logic, effect update method source, usages of effect in arena, similar working test
-- That's 7 items minimum → I should batch all 7
+- I need to see the full `update` method implementation → `get_function_source` (not entire file)
+- I need to see the test function around line 50 → `read_file` with range (not entire file)
+- I should check what methods exist in the effect class → `list_functions_in_file`
+- That's 3 items → batch all 3
 
 **BATCHING PHASE (all in one turn):**
-* read_file("GameFolder/tests/mandatory_edge_cases_test.py")
-* list_functions_in_file("GameFolder/effects/waveprojectileeffect.py")
 * get_function_source("GameFolder/effects/waveprojectileeffect.py", "update")
-* get_function_source("GameFolder/arenas/GAME_arena.py", "_apply_effects")
-* find_function_usages("damage_cooldown", "GameFolder")
-* read_file("BASE_components/BASE_effects.py")
-* read_file("GameFolder/tests/basics_tests.py")
+* read_file("GameFolder/tests/test_file.py", start_line=40, end_line=60)
+* list_functions_in_file("GameFolder/effects/waveprojectileeffect.py")
 
-**Result**: All information gathered in 1 turn instead of 7.
+**Result**: All information gathered in 1 turn with minimal, targeted reading.
+
+**✗ BAD - Reading entire files unnecessarily (even if batched):**
+```
+Turn 1: ALL of these in parallel (but reading too much):
+- read_file("GameFolder/effects/waveprojectileeffect.py")  # 500+ lines when you only need 20
+- read_file("GameFolder/tests/test_file.py")  # 200+ lines when you only need 20
+- read_file("BASE_components/BASE_effects.py")  # 1000+ lines when you only need one method
+- read_file("GameFolder/tests/similar_test.py")  # Not even related to error
+```
+→ Batched correctly, but reading way too much.
+
+**✓ GOOD - Targeted reading (batched correctly):**
+```
+Turn 1: ALL of these in parallel:
+- get_function_source("GameFolder/effects/waveprojectileeffect.py", "update")  # Just the function
+- read_file("GameFolder/tests/test_file.py", start_line=40, end_line=60)  # Just the test
+- list_functions_in_file("GameFolder/effects/waveprojectileeffect.py")  # Just the outline
+```
+→ Batched correctly AND reading only what's needed.
 
 After `modify_file_inline`, rely on returned context; re-read only if you need other sections/files.
 
-Starting context includes the directory tree; call `get_tree_directory` only after creating new files.
+Starting context includes the directory tree and error lines; call `get_tree_directory` only after creating new files.
 
 ---
 

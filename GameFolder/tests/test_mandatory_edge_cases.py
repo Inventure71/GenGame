@@ -30,8 +30,14 @@ def test_effect_damage_cooldown():
     arena = Arena(400, 300, headless=True)
     char = Character("TestCow", "Test", "", [200.0, 150.0])
     arena.add_character(char)
-
-    effect = RadialEffect([200.0, 150.0], radius=60, owner_id="enemy", damage=5, damage_cooldown=1.0)
+    
+    # Resolve obstacles first to get the character's final position
+    # (obstacle collisions move the character before effects are applied)
+    arena.handle_collisions()
+    # Now place the effect at the character's actual location
+    char_final_location = char.location[:]
+    
+    effect = RadialEffect(char_final_location, radius=60, owner_id="enemy", damage=5, damage_cooldown=1.0)
     arena.add_effect(effect)
 
     arena.current_time = 1.0

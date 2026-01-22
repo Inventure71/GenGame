@@ -147,7 +147,7 @@ class Arena(BaseArena):
                 if cow_rect.colliderect(pickup_rect):
                     if pickup.ability_type == "primary":
                         if cow.primary_ability_name is None:
-                            cow.set_primary_ability(pickup.ability_name)
+                            cow.set_primary_ability(pickup.ability_name, from_pickup=True)
                         else:
                             continue
                     else:
@@ -220,7 +220,9 @@ class Arena(BaseArena):
             key = (effect.network_id, cow.id)
             last_hit = self.effect_hit_times.get(key, 0.0)
             cooldown = getattr(effect, "damage_cooldown", 0.4)
-            if self.current_time - last_hit < cooldown:
+            # Allow first hit (last_hit == 0.0 means never hit before)
+            # For subsequent hits, check cooldown
+            if last_hit > 0.0 and self.current_time - last_hit < cooldown:
                 continue
 
             damage = getattr(effect, "damage", 0.0)

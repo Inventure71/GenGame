@@ -188,14 +188,14 @@ class Character(BaseCharacter):
 
             if pickup.ability_type == "primary":
                 if self.primary_ability_name is None:
-                    self.set_primary_ability(pickup.ability_name)
+                    self.set_primary_ability(pickup.ability_name, from_pickup=True)
                     pickup.pickup()
                     if pickup in arena.weapon_pickups:
                         arena.weapon_pickups.remove(pickup)
                 else:
                     old = self.primary_ability_name
                     new = pickup.ability_name
-                    self.set_primary_ability(new)
+                    self.set_primary_ability(new, from_pickup=True)
                     pickup.set_ability_name(old)
             else:
                 if self.passive_ability_name is None:
@@ -329,7 +329,15 @@ class Character(BaseCharacter):
         self.available_primary_abilities -= 1
         self.primary_ability(self, arena, mouse_pos)
 
-    def set_primary_ability(self, ability_name: str):
+    def set_primary_ability(self, ability_name: str, from_pickup: bool = False):
+        """
+        Set the primary ability for this character.
+        
+        Args:
+            ability_name: Name of the ability to set
+            from_pickup: If True, weapon starts empty (0 ammo). If False (default),
+                        weapon starts with full ammo. When swapping weapons, ammo is preserved.
+        """
         if ability_name is None:
             self.primary_ability_name = None
             self.primary_ability = None
@@ -344,11 +352,29 @@ class Character(BaseCharacter):
                 break
         if ability_def is None:
             return
+        
+        # Store current ammo if swapping weapons (preserve ammo when switching from pickup)
+        was_swapping = self.primary_ability_name is not None
+        current_ammo = self.available_primary_abilities if was_swapping else 0
+        
         self.primary_ability = ability_def["activate"]
         self.primary_ability_name = ability_def["name"]
         self.primary_description = ability_def["description"]
         self.max_primary_abilities = ability_def["max_charges"]
-        self.available_primary_abilities = self.max_primary_abilities
+        
+        # Set ammo based on context:
+        # - Programmatic/test (from_pickup=False): Always full ammo, even when swapping
+        # - From pickup (from_pickup=True): First pickup starts empty, swapping preserves ammo
+        if from_pickup:
+            if was_swapping:
+                # When swapping between pickups, preserve current ammo (capped at new weapon's max)
+                self.available_primary_abilities = min(current_ammo, self.max_primary_abilities)
+            else:
+                # When picking up a weapon from a pickup for the first time, start with 0 ammo
+                self.available_primary_abilities = 0
+        else:
+            # When setting programmatically (e.g., in tests), always start with full ammo
+            self.available_primary_abilities = self.max_primary_abilities
 
     def set_passive_ability(self, ability_name: str):
         self.passive_ability_name = ability_name

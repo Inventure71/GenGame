@@ -37,6 +37,7 @@
 - **Ghost Bugs**: Put physics/behavior in entities, not Arena manager.
 - **Coordinate Confusion**: Specify Y-up or Y-down for every position calculation.
 - **Hitbox Origin Confusion**: For characters and effects, `location` is a **world-space center point**, not a top-left. When creating `pygame.Rect` or collision boxes, you MUST center them: compute the rect origin as `[center_x - width/2, screen_y_from_center - height/2]` after doing the Y-up → Y-down conversion. Never treat `location` as the rect's top-left unless the class explicitly documents that. Always verify AoE effects can hit targets on both left and right sides (add tests for both directions).
+- **Default Value Ambiguity**: Don't use valid runtime values (like `0.0` for timestamps) to mean "never happened". Use sentinels (`None`, `-1`) or handle the "never happened" case explicitly in conditionals.
 - **Path Guessing**: Use only paths from the provided directory tree or discovered via tools.
 
 ## ⚖️ Gameplay Standards (60 FPS)

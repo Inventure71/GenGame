@@ -81,15 +81,27 @@ def test_primary_ability_spawns_effect():
 
 def test_ability_pickup_assigns_ability():
     """Colliding with an ability pickup should assign it and remove pickup."""
+    from GameFolder.pickups.GAME_pickups import AbilityPickup, PRIMARY_ABILITY_NAMES
+    
     arena = Arena(800, 600, headless=True)
     char = Character("TestCow", "Test", "", [0.0, 0.0])
     arena.add_character(char)
+    
+    # Resolve obstacles first to get the character's final position
+    # (obstacle collisions move the character before pickup checks)
+    arena.handle_collisions()
+    char_final_location = char.location[:]
 
     pickup = next((p for p in arena.weapon_pickups if p.ability_type == "primary"), None)
     if pickup is None:
-        pickup = arena.weapon_pickups[0]
+        # If no pickups were spawned (e.g., all locations blocked), create one manually
+        # Place it at the character's location after obstacle resolution
+        pickup = AbilityPickup(PRIMARY_ABILITY_NAMES[0], "primary", char_final_location[:])
+        arena.weapon_pickups.append(pickup)
+    else:
+        # If a pickup exists, move it to the character's location
+        pickup.location = char_final_location[:]
 
-    char.location = pickup.location[:]
     arena.handle_collisions()
 
     assert pickup not in arena.weapon_pickups
