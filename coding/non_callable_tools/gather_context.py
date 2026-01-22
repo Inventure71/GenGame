@@ -13,6 +13,41 @@ def get_full_directory_tree():
     )
     return context
 
+def gather_all_file_outlines(directory: str = "GameFolder") -> str:
+    """Gathers file outlines for all Python files in a directory, respecting skip rules."""
+    from coding.tools.code_analysis import get_file_outline
+    from coding.tools.security import is_file_allowed
+    from coding.non_callable_tools.helpers import should_skip_item
+    import os
+    
+    outlines = []
+    outlines.append(f"## File Outlines for {directory}/")
+    
+    # Get all Python files
+    for root, dirs, files in os.walk(directory):
+        # Filter directories in-place using should_skip_item
+        dirs[:] = [d for d in dirs if not should_skip_item(d)]
+        
+        for file in files:
+            # Skip non-Python files and files that should be skipped
+            if not file.endswith('.py') or should_skip_item(file):
+                continue
+                
+            file_path = os.path.join(root, file)
+            
+            # Check if file is allowed (security check)
+            if not is_file_allowed(file_path, operation="read"):
+                continue
+            
+            outlines.append(f"\n### {file_path}")
+            try:
+                outline = get_file_outline(file_path)
+                outlines.append(outline)
+            except Exception as e:
+                outlines.append(f"Error getting outline: {e}")
+    
+    return "\n".join(outlines)
+
 def gather_context_enchancer():
     """Gathers context for the enchancer phase."""
     lines = [

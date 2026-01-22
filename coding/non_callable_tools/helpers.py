@@ -24,6 +24,7 @@ SKIP_DIRS = {
     "__server_patches",
     "__TEMP_SECURITY_BACKUP",
     "__config",
+    "assets",
 }
 
 SKIP_FILES_EXACT = {
