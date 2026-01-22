@@ -5,8 +5,8 @@ import traceback
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
 from BASE_components.BASE_camera import BaseCamera
 
-DEFAULT_WIDTH = 1400
-DEFAULT_HEIGHT = 900
+DEFAULT_WIDTH = 1280
+DEFAULT_HEIGHT = 720
 
 def run_client(network_client: NetworkClient, player_id: str = ""):
     print("="*70)
@@ -41,7 +41,11 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         # Disable key repeat for precise game control
         pygame.key.set_repeat()
         width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT  # Viewport dimensions
-        screen = pygame.display.set_mode((width, height))# , pygame.FULLSCREEN)
+        screen = pygame.display.set_mode(
+            (width, height),
+            pygame.FULLSCREEN | pygame.DOUBLEBUF,
+            vsync=1,
+        )
         pygame.display.set_caption(f"Core Conflict Client - {player_id}")
         clock = pygame.time.Clock()
         print("[warning]  IMPORTANT: Click on the game window to enable keyboard input for movement!")

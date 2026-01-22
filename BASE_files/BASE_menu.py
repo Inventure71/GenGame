@@ -55,7 +55,9 @@ class BaseMenu:
 
         print("Creating window...")
         self.screen = pygame.display.set_mode(
-            (DEFAULT_WIDTH, DEFAULT_HEIGHT)# , pygame.FULLSCREEN
+            (DEFAULT_WIDTH, DEFAULT_HEIGHT),
+            pygame.FULLSCREEN | pygame.DOUBLEBUF,
+            vsync=1,
         )
 
         print(f"Video Driver: {pygame.display.get_driver()}")

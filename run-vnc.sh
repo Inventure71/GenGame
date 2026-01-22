@@ -25,25 +25,22 @@ rm -rf /tmp/.X11-unix
 # Suppress ALSA audio errors
 export SDL_AUDIODRIVER=dummy
 
-# 2. Start Xvfb (Virtual Screen)
-echo "📺 Starting Virtual X Server (Xvfb)..."
-Xvfb :0 -screen 0 1400x1000x24 &
+# 2. Start TigerVNC X server (Xvnc)
+echo "📺 Starting TigerVNC X Server (Xvnc)..."
+Xvnc :0 -geometry 1280x720 -depth 24 -rfbport 5900 -SecurityTypes None -localhost no &
 sleep 2
 
 # 3. Start Window Manager (Fluxbox)
 echo "🪟 Starting Window Manager..."
+export DISPLAY=:0
 fluxbox &
 sleep 1
 
-# 3.5. Start clipboard synchronizer
+# 4.5. Start clipboard synchronizer
 echo "📋 Starting Clipboard Synchronizer..."
 autocutsel -fork -selection PRIMARY &
 autocutsel -fork -selection CLIPBOARD &
 sleep 1
-
-# 4. Start x11vnc (clipboard support is enabled by default)
-echo "🔌 Starting VNC Server..."
-x11vnc -display :0 -forever -shared -rfbport 5900 -nopw -bg
 
 # 5. Start noVNC Web Server
 echo "🌐 Starting noVNC Web Server (Port 6080)..."
@@ -51,7 +48,6 @@ echo "🌐 Starting noVNC Web Server (Port 6080)..."
 
 # 6. Start the Game as the non-root user
 echo "🎮 Starting Core Conflict Client..."
-export DISPLAY=:0
 export SDL_VIDEODRIVER=x11
 
 exec su -s /bin/bash -c "$*" gameuser

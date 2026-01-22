@@ -371,6 +371,9 @@ class Arena(BaseArena):
     def render(self):
         if self.headless:
             return
+        # additional safety check: ensure screen exists
+        if self.screen is None:
+            return
         camera = getattr(self, "camera", None)
         self.screen.fill((20, 90, 20))
         for platform in self.platforms:
@@ -384,4 +387,11 @@ class Arena(BaseArena):
             cow.draw(self.screen, self.height, camera=camera)
         if self.ui:
             self.ui.draw(self.characters, self.game_over, self.winner, self.respawn_timer)
-        pygame.display.flip()
+        # safely handle display flip - catch OpenGL context errors
+        try:
+            pygame.display.flip()
+        except pygame.error as e:
+            print(f"Error flipping display: {e}")
+            # silently ignore OpenGL context errors in test/headless environments
+            if "GL context" not in str(e) and "BadAccess" not in str(e):
+                raise  # re-raise if it's a different error

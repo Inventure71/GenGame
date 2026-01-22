@@ -88,7 +88,7 @@ Therefore your primary job is **(1) find and fix issues**, and **(2) write a per
 3. **THINK** - Mentally list ALL information you will ACTUALLY need (be selective):
    - **What's in the error context?** - Don't re-read what's already provided
    - Which specific functions are mentioned in the error? → `get_function_source` for those functions only (NOT entire files)
-   - Which classes are involved? → `list_functions_in_file` to see available methods (NOT entire files)
+   - Which classes are involved? → `get_file_outline` to see available methods (NOT entire files)
    - Which specific sections of code? → `read_file` with `start_line` and `end_line` ranges (NOT entire files)
    - Which functions are called but not defined? → `find_function_usages` to find definitions
    - Which BASE classes need checking? → `get_function_source` for specific methods or `read_file` with ranges (NOT entire files)
@@ -124,7 +124,7 @@ read_file("GameFolder/effects/waveprojectileeffect.py", start_line=40, end_line=
 Turn 1: ALL of these in parallel (smart selection):
 - get_function_source("GameFolder/effects/waveprojectileeffect.py", "update")  # Just the function, not entire file
 - read_file("GameFolder/tests/test_file.py", start_line=40, end_line=60)  # Just the test function, not entire file
-- list_functions_in_file("GameFolder/effects/waveprojectileeffect.py")  # Outline to see what methods exist
+- get_file_outline("GameFolder/effects/waveprojectileeffect.py")  # Outline to see what methods exist
 - get_function_source("BASE_components/BASE_effects.py", "update")  # Just the BASE method, not entire file
 ```
 → All information gathered in 1 turn with minimal, targeted reading.
@@ -137,7 +137,7 @@ Turn 1: ALL of these in parallel:
 - get_function_source("file2.py", "function2")
 - read_file("file3.py", start_line=100, end_line=150)  # Specific section
 - find_function_usages("function1", "GameFolder")  # Find all usages
-- list_functions_in_file("file4.py")  # See what's available
+- get_file_outline("file4.py")  # See what's available
 ```
 → Still batched, but each call is targeted to what you actually need.
 
@@ -320,7 +320,7 @@ Before making ANY tool calls, you MUST mentally list everything you need. Do NOT
 
 2. **THINK - What do you ACTUALLY need?** (be selective):
    - What specific functions are mentioned in the error? → `get_function_source` for those functions only
-   - What classes are involved? → `list_functions_in_file` to see available methods
+   - What classes are involved? → `get_file_outline` to see available methods
    - What specific sections of code? → `read_file` with line ranges (NOT entire files)
    - What functions are called but not defined? → `find_function_usages` to find definitions
    - What BASE methods need checking? → `get_function_source` for specific methods
@@ -330,7 +330,7 @@ Before making ANY tool calls, you MUST mentally list everything you need. Do NOT
 3. **BATCH READ**: Make ONE parallel batch with ALL the targeted reading tools needed.
    - **Typical 2-8 calls** - only read what's directly relevant to the error
    - **ALL calls in ONE turn** - no exceptions
-   - **Use targeted tools** - `get_function_source`, `list_functions_in_file`, `read_file` with ranges
+   - **Use targeted tools** - `get_function_source`, `get_file_outline`, `read_file` with ranges
 
 ### Step 1.5 – TRACE EXECUTION ORDER (if collision/entity not found)
 
@@ -532,7 +532,7 @@ print(f"worldY={e.y} screenY={arena.height - e.y}")
 When diagnosing, you may use:
 
 * `get_function_source(file_path, function_name)` - **PREFERRED** - Gets just one function (not entire file)
-* `list_functions_in_file(file_path)` - **PREFERRED** - Gets file outline (classes, methods, signatures)
+* `get_file_outline(file_path)` - **PREFERRED** - Gets file outline (classes, methods, signatures)
 * `read_file(file_path, start_line, end_line)` - **USE WITH RANGES** - Read specific sections only
 * `find_function_usages(function_name, directory)` - Find where functions are used/defined
 * `get_directory(path)` - Lists immediate directory contents
@@ -545,7 +545,7 @@ When diagnosing, you may use:
 **Before ANY tool calls:**
 1. **READ THE ERROR CONTEXT** - It already has relevant error lines with context
 2. **IDENTIFY GAPS** - What specific information is missing?
-3. **USE TARGETED TOOLS** - Prefer `get_function_source` and `list_functions_in_file` over `read_file`
+3. **USE TARGETED TOOLS** - Prefer `get_function_source` and `get_file_outline` over `read_file`
 4. **READ LINE RANGES** - If you must use `read_file`, specify `start_line` and `end_line`
 5. **BATCH EVERYTHING** - Make ALL calls in ONE parallel batch (typically 2-8 calls)
 
@@ -558,13 +558,13 @@ When diagnosing, you may use:
 **THINKING PHASE (before any calls):**
 - I need to see the full `update` method implementation → `get_function_source` (not entire file)
 - I need to see the test function around line 50 → `read_file` with range (not entire file)
-- I should check what methods exist in the effect class → `list_functions_in_file`
+- I should check what methods exist in the effect class → `get_file_outline`
 - That's 3 items → batch all 3
 
 **BATCHING PHASE (all in one turn):**
 * get_function_source("GameFolder/effects/waveprojectileeffect.py", "update")
 * read_file("GameFolder/tests/test_file.py", start_line=40, end_line=60)
-* list_functions_in_file("GameFolder/effects/waveprojectileeffect.py")
+* get_file_outline("GameFolder/effects/waveprojectileeffect.py")
 
 **Result**: All information gathered in 1 turn with minimal, targeted reading.
 
@@ -583,7 +583,7 @@ Turn 1: ALL of these in parallel (but reading too much):
 Turn 1: ALL of these in parallel:
 - get_function_source("GameFolder/effects/waveprojectileeffect.py", "update")  # Just the function
 - read_file("GameFolder/tests/test_file.py", start_line=40, end_line=60)  # Just the test
-- list_functions_in_file("GameFolder/effects/waveprojectileeffect.py")  # Just the outline
+- get_file_outline("GameFolder/effects/waveprojectileeffect.py")  # Just the outline
 ```
 → Batched correctly AND reading only what's needed.
 

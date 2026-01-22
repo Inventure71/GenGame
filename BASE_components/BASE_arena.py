@@ -21,7 +21,7 @@ class Arena:
 
         if not self.headless:
             pygame.init()
-            self.screen = pygame.display.set_mode((self.width, self.height))# ,pygame.FULLSCREEN)
+            self.screen = pygame.display.set_mode((self.width, self.height),pygame.FULLSCREEN)
             pygame.display.set_caption("Core Arena")
             self.clock = pygame.time.Clock()
         else:
@@ -132,6 +132,9 @@ class Arena:
     def render(self):
         if self.headless:
             return
+        # Additional safety check: ensure screen exists
+        if self.screen is None:
+            return
         camera = getattr(self, "camera", None)
         self.screen.fill((30, 30, 30))
         for platform in self.platforms:
@@ -143,7 +146,12 @@ class Arena:
             pickup.draw(self.screen, self.height, camera=camera)
         for char in self.characters:
             char.draw(self.screen, self.height, camera=camera)
-        pygame.display.flip()
+        try:
+            pygame.display.flip()
+        except pygame.error as e:
+            print(f"Error flipping display: {e}")
+            if "GL context" not in str(e) and "BadAccess" not in str(e):
+                raise  # Re-raise if it's a different error
 
     def _capture_input(self):
         if self.headless:

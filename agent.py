@@ -10,7 +10,7 @@ from coding.non_callable_tools.gather_context import gather_context_planning, ga
 from coding.non_callable_tools.todo_list import TodoList
 from coding.tools.file_handling import get_tree_directory, read_file, create_file, get_directory
 from coding.tools.modify_inline import modify_file_inline
-from coding.tools.code_analysis import find_function_usages, get_function_source, list_functions_in_file
+from coding.tools.code_analysis import find_function_usages, get_function_source, get_file_outline
 from coding.non_callable_tools.action_logger import action_logger
 from coding.tools.testing import parse_test_results
 from BASE_components.BASE_tests import run_all_tests
@@ -490,7 +490,7 @@ def plan_feature(prompt: str, modelHandler: GenericHandler, todo_list: TodoList,
         read_file,
         find_function_usages,
         get_function_source,
-        list_functions_in_file,
+        get_file_outline,
         get_directory,
         # get_tree_directory,  # Already provided in planning context
     ]
@@ -524,7 +524,7 @@ def implement_feature(modelHandler: GenericHandler, todo_list: TodoList):
         get_directory,
         get_tree_directory,
         modify_file_inline,
-        list_functions_in_file,
+        get_file_outline,
         find_function_usages,
         get_function_source,
         todo_list.complete_task,
@@ -586,7 +586,7 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
         get_directory,
         get_tree_directory,
         modify_file_inline,
-        list_functions_in_file,
+        get_file_outline,
         find_function_usages,
         get_function_source,
         todo_list.complete_task,
@@ -648,7 +648,7 @@ def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
         get_directory,
         get_tree_directory,
         modify_file_inline,
-        list_functions_in_file,
+        get_file_outline,
         find_function_usages,
         get_function_source,
         run_all_tests_tool,

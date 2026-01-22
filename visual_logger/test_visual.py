@@ -25,7 +25,7 @@ error_scenarios = [
         "description": "Reading non-existent file"
     },
     {
-        "name": "list_functions_in_file", 
+        "name": "get_file_outline", 
         "args": {"file_path": "file_that_does_not_exist.py"},
         "description": "Analyzing non-existent file"
     },
@@ -68,9 +68,9 @@ def generate_tool_result(tool_name, args):
             from coding.tools.file_handling import get_tree_directory
             return get_tree_directory(**args)
             
-        elif tool_name == "list_functions_in_file":
-            from coding.tools.code_analysis import list_functions_in_file
-            result = list_functions_in_file(**args)
+        elif tool_name == "get_file_outline":
+            from coding.tools.code_analysis import get_file_outline
+            result = get_file_outline(**args)
             if isinstance(result, list):
                 return f"Functions in {args.get('file_path', 'file')}: {', '.join(result)}"
             return result
@@ -259,7 +259,7 @@ def main():
             {"name": "read_file", "args": {"file_path": "BASE_components/BASE_weapon.py"}},
             {"name": "read_file", "args": {"file_path": "GameFolder/weapons/GAME_weapon.py"}},
             {"name": "get_tree_directory", "args": {"path": "GameFolder/weapons"}},
-            {"name": "list_functions_in_file", "args": {"file_path": "GameFolder/weapons/BlackHoleGun.py"}},
+            {"name": "get_file_outline", "args": {"file_path": "GameFolder/weapons/BlackHoleGun.py"}},
         ]
 
         simulate_model_response_with_tools(
@@ -422,7 +422,7 @@ class PlasmaProjectile(Projectile):
         # Model responds with tools to check setup
         integration_tools = [
             {"name": "read_file", "args": {"file_path": "GameFolder/setup.py"}},
-            {"name": "list_functions_in_file", "args": {"file_path": "GameFolder/setup.py"}},
+            {"name": "get_file_outline", "args": {"file_path": "GameFolder/setup.py"}},
         ]
 
         simulate_model_response_with_tools(
