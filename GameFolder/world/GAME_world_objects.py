@@ -80,6 +80,7 @@ class GrassField(BasePlatform):
         if self.is_destroyed or not self._graphics_initialized:
             return
         fullness = self.current_food / max(1.0, self.max_food)
+        bucket = max(0, min(10, int(fullness * 10)))
 
         if camera is not None:
             rect = camera.world_center_rect_to_screen(self.world_center[0], self.world_center[1], self.radius * 2, self.radius * 2)
@@ -101,11 +102,16 @@ class GrassField(BasePlatform):
             "ERBA.png",
             size=(int(rect.width), int(rect.height)),
             fallback_draw=fallback,
-            fallback_tag=f"fullness_{int(fullness * 10)}",
+            fallback_tag=f"fullness_{bucket}",
         )
         if grass_surface is None:
             return
         if loaded and fullness < 1.0:
-            grass_surface = grass_surface.copy()
-            grass_surface.set_alpha(int(120 + 120 * fullness))
+            grass_surface, _ = AssetHandler.get_image_with_alpha(
+                "ERBA.png",
+                size=(int(rect.width), int(rect.height)),
+                alpha=int(120 + 120 * (bucket / 10.0)),
+                fallback_draw=None,
+                fallback_tag=None,
+            )
         screen.blit(grass_surface, rect)

@@ -11,6 +11,7 @@ import zlib
 import os
 import sys
 import importlib
+import math
 from typing import Dict, List, Optional, Callable, Any
 from collections import deque
 import select
@@ -81,6 +82,8 @@ class NetworkClient:
             'supports_msgpack': msgpack is not None,
             'supports_static_cache': True,
         }
+
+        self.debug_logging = bool(int(os.getenv("CC_NET_DEBUG", "0")))
 
         # Packet statistics tracking
         self.packet_stats = {
@@ -486,14 +489,14 @@ class NetworkClient:
             try:
                 message = self.outgoing_queue.popleft()
                 msg_type = message.get('type', 'unknown')
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] 📤 DEBUG CLIENT: Sending message type '{msg_type}' - queue size now: {len(self.outgoing_queue)}")
-                if msg_type == 'file_chunk' and message.get('is_backup'):
-                    chunk_num = message.get('chunk_num', '?')
-                    total_chunks = message.get('total_chunks', '?')
-                    backup_name = message.get('backup_name', 'unknown')
+                if self.debug_logging:
                     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] 📤 DEBUG CLIENT: Sending backup chunk {chunk_num+1 if isinstance(chunk_num, int) else chunk_num}/{total_chunks} for '{backup_name}'")
+                    print(f"[{timestamp}] 📤 DEBUG CLIENT: Sending message type '{msg_type}' - queue size now: {len(self.outgoing_queue)}")
+                    if msg_type == 'file_chunk' and message.get('is_backup'):
+                        chunk_num = message.get('chunk_num', '?')
+                        total_chunks = message.get('total_chunks', '?')
+                        backup_name = message.get('backup_name', 'unknown')
+                        print(f"[{timestamp}] 📤 DEBUG CLIENT: Sending backup chunk {chunk_num+1 if isinstance(chunk_num, int) else chunk_num}/{total_chunks} for '{backup_name}'")
 
                 data = pickle.dumps(message, protocol=4)
                 length_bytes = len(data).to_bytes(4, byteorder='big')
@@ -505,8 +508,9 @@ class NetworkClient:
                     self.packet_stats['sent_timestamps'].append(current_time)
                     self.packet_stats['total_sent'] += 1
                 
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] [success] DEBUG CLIENT: Successfully sent message type '{msg_type}'")
+                if self.debug_logging:
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] [success] DEBUG CLIENT: Successfully sent message type '{msg_type}'")
             except Exception as e:
                 timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
                 print(f"[{timestamp}] [error] DEBUG CLIENT: Send error for message type '{message.get('type', 'unknown')}': {e}")
@@ -549,7 +553,8 @@ class NetworkClient:
         msg_type = message.get('type')
 
         # Debug: Log all received messages
-        print(f"📨 CLIENT MSG: Received message type '{msg_type}' from server")
+        if self.debug_logging:
+            print(f"📨 CLIENT MSG: Received message type '{msg_type}' from server")
 
         if msg_type == 'file_sync':
             if self.on_file_sync_received:
@@ -633,13 +638,14 @@ class NetworkClient:
             backup_name = message.get('backup_name')
             print(f"🔄 BACKUP REQUEST: Client received backup request for '{backup_name}'")
             if backup_name:
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] 📤 BACKUP REQUEST: Client calling _send_backup_to_server for '{backup_name}'")
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] 🔍 DEBUG CLIENT: About to call _send_backup_to_server")
+                if self.debug_logging:
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 📤 BACKUP REQUEST: Client calling _send_backup_to_server for '{backup_name}'")
+                    print(f"[{timestamp}] 🔍 DEBUG CLIENT: About to call _send_backup_to_server")
                 self._send_backup_to_server(backup_name)
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] 🔍 DEBUG CLIENT: _send_backup_to_server completed")
+                if self.debug_logging:
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 🔍 DEBUG CLIENT: _send_backup_to_server completed")
             else:
                 print(f"[error] BACKUP REQUEST: Invalid backup request - no backup_name provided")
 
@@ -700,10 +706,10 @@ class NetworkClient:
 
             def on_chunk(chunk_num: int, total_chunks: int, chunk_data: bytes) -> None:
                 progress = (chunk_num + 1) / total_chunks * 100
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] 📤 BACKUP SEND: Queued chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' - data size: {len(chunk_data)} bytes")
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
+                if self.debug_logging:
+                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                    print(f"[{timestamp}] 📤 BACKUP SEND: Queued chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' - data size: {len(chunk_data)} bytes")
+                    print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
 
             self._queue_chunked_file(
                 temp_path,
@@ -1233,14 +1239,143 @@ class EntityManager:
 
     def draw_all(self, screen, arena_height: float, camera=None):
         """Draw all entities and platforms."""
+        screen_bounds = None
+        if camera is not None:
+            min_dim = min(screen.get_width(), screen.get_height())
+            margin = max(64, int(min_dim * 0.12))
+            screen_bounds = (
+                -margin,
+                -margin,
+                screen.get_width() + margin,
+                screen.get_height() + margin,
+            )
+
+        def bounds_intersect(a, b):
+            return not (a[2] <= b[0] or a[0] >= b[2] or a[3] <= b[1] or a[1] >= b[3])
+
+        def get_entity_bounds(entity):
+            if camera is None:
+                rect = None
+                if hasattr(entity, "get_rect"):
+                    try:
+                        rect = entity.get_rect(arena_height)
+                    except Exception:
+                        rect = None
+                if rect is None and hasattr(entity, "rect"):
+                    rect = entity.rect
+                if rect is None:
+                    return None
+                return (rect.left, rect.top, rect.right, rect.bottom)
+
+            rect = None
+            if hasattr(entity, "get_draw_rect"):
+                try:
+                    rect = entity.get_draw_rect(arena_height, camera)
+                except Exception:
+                    rect = None
+            if rect is not None:
+                return (rect.left, rect.top, rect.right, rect.bottom)
+
+            location = getattr(entity, "location", None)
+            if location is not None:
+                if hasattr(entity, "width") and hasattr(entity, "height"):
+                    center = camera.world_to_screen_point(location[0], location[1])
+                    half_w = float(entity.width) / 2.0
+                    half_h = float(entity.height) / 2.0
+                    return (
+                        center[0] - half_w,
+                        center[1] - half_h,
+                        center[0] + half_w,
+                        center[1] + half_h,
+                    )
+                if hasattr(entity, "radius"):
+                    radius = float(entity.radius)
+                    center = camera.world_to_screen_point(location[0], location[1])
+                    return (
+                        center[0] - radius,
+                        center[1] - radius,
+                        center[0] + radius,
+                        center[1] + radius,
+                    )
+                if hasattr(entity, "length") and hasattr(entity, "width") and hasattr(entity, "angle"):
+                    start = (location[0], location[1])
+                    end = (
+                        location[0] + float(entity.length) * math.cos(entity.angle),
+                        location[1] + float(entity.length) * math.sin(entity.angle),
+                    )
+                    start_s = camera.world_to_screen_point(start[0], start[1])
+                    end_s = camera.world_to_screen_point(end[0], end[1])
+                    pad = float(entity.width) / 2.0
+                    min_x = min(start_s[0], end_s[0]) - pad
+                    max_x = max(start_s[0], end_s[0]) + pad
+                    min_y = min(start_s[1], end_s[1]) - pad
+                    max_y = max(start_s[1], end_s[1]) + pad
+                    return (min_x, min_y, max_x, max_y)
+                if hasattr(entity, "height") and hasattr(entity, "base") and hasattr(entity, "angle"):
+                    p1_x, p1_y = location[0], location[1]
+                    p2_x = p1_x + float(entity.height) * math.cos(entity.angle)
+                    p2_y = p1_y + float(entity.height) * math.sin(entity.angle)
+                    p3_x = p2_x - float(entity.base) * 0.5 * math.sin(entity.angle)
+                    p3_y = p2_y + float(entity.base) * 0.5 * math.cos(entity.angle)
+                    p4_x = p2_x + float(entity.base) * 0.5 * math.sin(entity.angle)
+                    p4_y = p2_y - float(entity.base) * 0.5 * math.cos(entity.angle)
+                    points = (
+                        camera.world_to_screen_point(p1_x, p1_y),
+                        camera.world_to_screen_point(p3_x, p3_y),
+                        camera.world_to_screen_point(p4_x, p4_y),
+                    )
+                    min_x = min(p[0] for p in points)
+                    max_x = max(p[0] for p in points)
+                    min_y = min(p[1] for p in points)
+                    max_y = max(p[1] for p in points)
+                    return (min_x, min_y, max_x, max_y)
+
+            world_center = getattr(entity, "world_center", None)
+            if world_center is not None:
+                if hasattr(entity, "size"):
+                    size = float(entity.size)
+                    center = camera.world_to_screen_point(world_center[0], world_center[1])
+                    half = size / 2.0
+                    return (
+                        center[0] - half,
+                        center[1] - half,
+                        center[0] + half,
+                        center[1] + half,
+                    )
+                if hasattr(entity, "radius"):
+                    radius = float(entity.radius)
+                    center = camera.world_to_screen_point(world_center[0], world_center[1])
+                    return (
+                        center[0] - radius,
+                        center[1] - radius,
+                        center[0] + radius,
+                        center[1] + radius,
+                    )
+
+            return None
+
+        def is_visible(entity):
+            if getattr(entity, "always_visible", False):
+                return True
+            if screen_bounds is None:
+                return True
+            bounds = get_entity_bounds(entity)
+            if bounds is None:
+                return True
+            return bounds_intersect(bounds, screen_bounds)
+
         # Draw platforms first (background)
         for platform in self.platforms.values():
             if hasattr(platform, 'draw'):
+                if not is_visible(platform):
+                    continue
                 platform.draw(screen, arena_height, camera=camera)
 
         # Draw entities (characters, projectiles, weapons)
         for entity in self.entities.values():
             if hasattr(entity, 'draw'):
+                if not is_visible(entity):
+                    continue
                 entity.draw(screen, arena_height, camera=camera)
 
 

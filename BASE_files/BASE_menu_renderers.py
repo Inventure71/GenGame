@@ -5,6 +5,7 @@ These methods handle rendering of different menu screens using a component-based
 
 import pygame
 from BASE_files.BASE_menu_helpers import decrypt_code
+from BASE_components.BASE_asset_handler import AssetHandler
 from BASE_files.BASE_ui_components import (
     UIManager, Button, TextField, Label, Panel,
     ScrollableList, RoomStatusBar, PatchBrowser,
@@ -45,21 +46,21 @@ class MenuRenderers:
     def _create_scaled_fonts(self):
         """Create scaled fonts with automatic fallback to system fonts."""
         try:
-            self.scaled_menu_font = pygame.font.Font(None, self.scale_font_size(48))
-            self.scaled_button_font = pygame.font.Font(None, self.scale_font_size(32))
-            self.scaled_small_font = pygame.font.Font(None, self.scale_font_size(24))
+            self.scaled_menu_font = AssetHandler.get_font(None, self.scale_font_size(48))
+            self.scaled_button_font = AssetHandler.get_font(None, self.scale_font_size(32))
+            self.scaled_small_font = AssetHandler.get_font(None, self.scale_font_size(24))
         except Exception as e:
             print(f"Warning: Default fonts failed ({e}), using system fonts")
             try:
-                self.scaled_menu_font = pygame.font.SysFont("Arial", self.scale_font_size(48))
-                self.scaled_button_font = pygame.font.SysFont("Arial", self.scale_font_size(32))
-                self.scaled_small_font = pygame.font.SysFont("Arial", self.scale_font_size(24))
+                self.scaled_menu_font = AssetHandler.get_sys_font("Arial", self.scale_font_size(48))
+                self.scaled_button_font = AssetHandler.get_sys_font("Arial", self.scale_font_size(32))
+                self.scaled_small_font = AssetHandler.get_sys_font("Arial", self.scale_font_size(24))
             except Exception as e2:
                 print(f"Warning: System fonts also failed ({e2}), using minimal fonts")
                 # Ultimate fallback - create fonts at minimum size
-                self.scaled_menu_font = pygame.font.Font(None, 12)
-                self.scaled_button_font = pygame.font.Font(None, 12)
-                self.scaled_small_font = pygame.font.Font(None, 12)
+                self.scaled_menu_font = AssetHandler.get_font(None, 12)
+                self.scaled_button_font = AssetHandler.get_font(None, 12)
+                self.scaled_small_font = AssetHandler.get_font(None, 12)
 
     def _get_scaled_fonts(self):
         """Get the appropriate fonts based on scaling (returns tuple: menu, button, small)."""

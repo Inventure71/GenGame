@@ -1,5 +1,6 @@
 import pygame
 from BASE_files.BASE_network import NetworkObject
+from BASE_components.BASE_asset_handler import AssetHandler
 from GameFolder.abilities.ability_loader import get_primary_abilities, get_passive_abilities, reload_abilities
 
 
@@ -91,6 +92,5 @@ class AbilityPickup(NetworkObject):
         pygame.draw.rect(screen, (20, 20, 20), rect, 2, border_radius=6)
 
         label = "P" if self.ability_type == "primary" else "S"
-        font = pygame.font.Font(None, 20)
-        text = font.render(label, True, (30, 30, 30))
+        text = AssetHandler.render_text(label, None, 20, (30, 30, 30))
         screen.blit(text, text.get_rect(center=rect.center))

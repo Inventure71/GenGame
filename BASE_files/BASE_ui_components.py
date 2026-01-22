@@ -1,4 +1,5 @@
 import pygame
+from BASE_components.BASE_asset_handler import AssetHandler
 
 class UIComponent:
     """Base class for all UI elements."""
@@ -120,7 +121,7 @@ class Label(UIComponent):
         self._update_rect()
 
     def _update_rect(self):
-        surf = self.font.render(self.text, True, self.color)
+        surf = AssetHandler.render_text_from_font(self.text, self.font, self.color)
         self.rect.width = surf.get_width()
         self.rect.height = surf.get_height()
         if self.center:
@@ -132,7 +133,7 @@ class Label(UIComponent):
         self._update_rect()
 
     def render(self, screen):
-        surf = self.font.render(self.text, True, self.color)
+        surf = AssetHandler.render_text_from_font(self.text, self.font, self.color)
         screen.blit(surf, self.rect.topleft)
 
 class Button(UIComponent):
@@ -171,7 +172,7 @@ class Button(UIComponent):
         pygame.draw.rect(screen, self.border_color, self.rect, 2, border_radius=8)
         
         # Draw text
-        text_surf = self.font.render(self.text, True, self.text_color)
+        text_surf = AssetHandler.render_text_from_font(self.text, self.font, self.text_color)
         text_rect = text_surf.get_rect(center=self.rect.center)
         screen.blit(text_surf, text_rect)
 
@@ -459,11 +460,11 @@ class TextField(UIComponent):
             display_text = self._text if self._text or not self.placeholder else self.placeholder
             color = self.text_color if self._text else self.placeholder_color
 
-            text_surf = self.font.render(display_text, True, color)
+            text_surf = AssetHandler.render_text_from_font(display_text, self.font, color)
 
             # Calculate cursor position in text
             text_up_to_cursor = self._text[:self.cursor_pos]
-            cursor_text_surf = self.font.render(text_up_to_cursor, True, self.text_color)
+            cursor_text_surf = AssetHandler.render_text_from_font(text_up_to_cursor, self.font, self.text_color)
             cursor_offset = cursor_text_surf.get_width()
 
             # Handle text truncation for display
@@ -502,7 +503,7 @@ class TextField(UIComponent):
                     display_text = line_text[self.h_scroll_offset:]
 
                 # Render each line
-                text_surf = self.font.render(display_text, True, self.text_color)
+                text_surf = AssetHandler.render_text_from_font(display_text, self.font, self.text_color)
                 screen.blit(text_surf, (self.rect.x + self.padding, y_offset))
                 y_offset += self.line_height
 
@@ -519,7 +520,7 @@ class TextField(UIComponent):
                     visible_start = self.h_scroll_offset
                     visible_cursor_col = max(0, cursor_col - visible_start)
                     visible_text_up_to_cursor = cursor_line_text[visible_start:cursor_col]
-                    cursor_text_surf = self.font.render(visible_text_up_to_cursor, True, self.text_color)
+                    cursor_text_surf = AssetHandler.render_text_from_font(visible_text_up_to_cursor, self.font, self.text_color)
                     cursor_x = self.rect.x + self.padding + cursor_text_surf.get_width()
                     cursor_y = self.rect.y + self.padding + cursor_line_visible * self.line_height
                     pygame.draw.line(screen, (255, 255, 255), (cursor_x, cursor_y), (cursor_x, cursor_y + self.line_height), 2)
@@ -581,8 +582,8 @@ class ScrollableList(UIComponent):
             
             # Text rendering (using a default font if none provided to the list)
             # This is a bit of a hack, better to pass a font to ScrollableList
-            font = pygame.font.Font(None, 24)
-            text_surf = font.render(item['text'], True, (255, 255, 255))
+            font = AssetHandler.get_font(None, 24)
+            text_surf = AssetHandler.render_text_from_font(item['text'], font, (255, 255, 255))
             screen.blit(text_surf, (item_rect.x + 10, item_rect.y + (self.item_height - text_surf.get_height())//2))
 
 # --- TIER 2: COMPOSITES ---
@@ -599,16 +600,16 @@ class RoomStatusBar(UIComponent):
         
         # Room Code
         code_text = f"Room Code: {code}"
-        surf = self.menu.small_font.render(code_text, True, (100, 200, 255))
+        surf = AssetHandler.render_text_from_font(code_text, self.menu.small_font, (100, 200, 255))
         screen.blit(surf, (self.rect.x, self.rect.y))
         
         # Share instruction
-        share_surf = self.menu.small_font.render("Share code to let others join", True, (150, 150, 150))
+        share_surf = AssetHandler.render_text_from_font("Share code to let others join", self.menu.small_font, (150, 150, 150))
         screen.blit(share_surf, (self.rect.x, self.rect.y + 25))
         
         # Status
         color = (100, 255, 100) if status == "CONNECTED" else (255, 100, 100)
-        stat_surf = self.menu.small_font.render(f"Status: {status}", True, color)
+        stat_surf = AssetHandler.render_text_from_font(f"Status: {status}", self.menu.small_font, color)
         screen.blit(stat_surf, (self.rect.x, self.rect.y + 55))
 
 class PatchBrowser(UIComponent):
@@ -664,7 +665,7 @@ class PatchBrowser(UIComponent):
         # Header
         count = len(self.menu.patch_manager.selected_patches)
         header_text = f"Select Patch (0-1) - {count}/1 selected"
-        surf = self.menu.button_font.render(header_text, True, (255, 255, 255))
+        surf = AssetHandler.render_text_from_font(header_text, self.menu.button_font, (255, 255, 255))
         screen.blit(surf, (self.rect.x + 10, self.rect.y + 10))
 
         self.list.render(screen)
@@ -741,7 +742,7 @@ class AgentWorkspace(UIComponent):
 
     def render(self, screen):
         # Label
-        surf = self.menu.button_font.render("Describe features or improvements:", True, (255, 255, 255))
+        surf = AssetHandler.render_text_from_font("Describe features or improvements:", self.menu.button_font, (255, 255, 255))
         screen.blit(surf, (self.rect.x, self.rect.y))
 
         self.prompt_field.render(screen)
@@ -752,7 +753,7 @@ class AgentWorkspace(UIComponent):
         
         # Monitor link
         mon_text = "Live Monitor: http://127.0.0.1:8765"
-        mon_surf = self.menu.small_font.render(mon_text, True, (150, 200, 255))
+        mon_surf = AssetHandler.render_text_from_font(mon_text, self.menu.small_font, (150, 200, 255))
         mon_rect = mon_surf.get_rect(center=(self.rect.centerx, self.rect.y + 370))
         screen.blit(mon_surf, mon_rect)
 
@@ -830,7 +831,6 @@ class NotificationOverlay(UIComponent):
             pygame.draw.rect(screen, border_color, self.rect, 2)
 
             # Error message text
-            surf = self.menu.small_font.render(self.menu.error_message, True, (255, 150, 150))
+            surf = AssetHandler.render_text_from_font(self.menu.error_message, self.menu.small_font, (255, 150, 150))
             rect = surf.get_rect(center=(700, 80))
             screen.blit(surf, rect)
-

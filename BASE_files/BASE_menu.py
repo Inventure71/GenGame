@@ -19,6 +19,7 @@ from BASE_files.BASE_game_client import run_client, DEFAULT_WIDTH, DEFAULT_HEIGH
 from BASE_files.BASE_menu_renderers import MenuRenderers
 from BASE_files.BASE_menu_handlers import MenuHandlers
 from BASE_files.BASE_menu_network import MenuNetwork
+from BASE_components.BASE_asset_handler import AssetHandler
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.action_logger import ActionLogger
 
@@ -76,15 +77,15 @@ class BaseMenu:
 
         print("Loading fonts...")
         try:
-            self.menu_font = pygame.font.Font(None, 48)  # Title font
-            self.button_font = pygame.font.Font(None, 32)  # Button font
-            self.small_font = pygame.font.Font(None, 24)   # Small text font
+            self.menu_font = AssetHandler.get_font(None, 48)  # Title font
+            self.button_font = AssetHandler.get_font(None, 32)  # Button font
+            self.small_font = AssetHandler.get_font(None, 24)   # Small text font
             print("Fonts loaded successfully.")
         except Exception as e:
             print(f"Warning: Could not load default font: {e}. Trying SysFont...")
-            self.menu_font = pygame.font.SysFont("Arial", 48)
-            self.button_font = pygame.font.SysFont("Arial", 32)
-            self.small_font = pygame.font.SysFont("Arial", 24)
+            self.menu_font = AssetHandler.get_sys_font("Arial", 48)
+            self.button_font = AssetHandler.get_sys_font("Arial", 32)
+            self.small_font = AssetHandler.get_sys_font("Arial", 24)
 
         # Game state
         self.player_id = ""

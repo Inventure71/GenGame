@@ -1,5 +1,6 @@
 import pygame
 from BASE_components.BASE_ui import BaseUI
+from BASE_components.BASE_asset_handler import AssetHandler
 
 
 class GameUI(BaseUI):
@@ -7,8 +8,8 @@ class GameUI(BaseUI):
 
     def __init__(self, screen, arena_width, arena_height):
         super().__init__(screen, arena_width, arena_height)
-        self.font = pygame.font.Font(None, 24)
-        self.small_font = pygame.font.Font(None, 18)
+        self.font = AssetHandler.get_font(None, 24)
+        self.small_font = AssetHandler.get_font(None, 18)
 
     def draw(self, characters: list, game_over: bool = False, winner=None, respawn_timers: dict = None, local_player_id: str = None, network_stats: dict = None):
         self._draw_stats(characters, network_stats)
@@ -53,10 +54,14 @@ class GameUI(BaseUI):
             f"Passive: {passive_name}",
             f"  {passive_desc}",
         ]
+        surfaces = [
+            AssetHandler.render_text(line, None, 24, (255, 255, 255))
+            for line in lines
+        ]
 
         pad = 10
         line_height = 20
-        width = max(self.font.size(line)[0] for line in lines) + pad * 2
+        width = max(surface.get_width() for surface in surfaces) + pad * 2
         height = line_height * len(lines) + pad * 2
         x = self.arena_width - width - 20
         y = 20
@@ -66,9 +71,8 @@ class GameUI(BaseUI):
         self.screen.blit(panel, (x, y))
 
         text_y = y + pad
-        for line in lines:
-            text = self.font.render(line, True, (255, 255, 255))
-            self.screen.blit(text, (x + pad, text_y))
+        for surface in surfaces:
+            self.screen.blit(surface, (x + pad, text_y))
             text_y += line_height
 
     def _draw_stats(self, characters, network_stats: dict = None):
@@ -92,7 +96,7 @@ class GameUI(BaseUI):
             ]
 
             for line in lines:
-                text = self.font.render(line, True, (255, 255, 255))
+                text = AssetHandler.render_text(line, None, 24, (255, 255, 255))
                 self.screen.blit(text, (x, y))
                 y += 20
             y += 10
@@ -107,7 +111,7 @@ class GameUI(BaseUI):
             ]
             
             for line in network_lines:
-                text = self.small_font.render(line, True, (200, 200, 255))
+                text = AssetHandler.render_text(line, None, 18, (200, 200, 255))
                 self.screen.blit(text, (x, y))
                 y += 18
 
@@ -116,7 +120,12 @@ class GameUI(BaseUI):
         for char in characters:
             if char.id in respawn_timers:
                 time_left = int(respawn_timers[char.id]) + 1
-                text = self.small_font.render(f"{char.name} respawning in {time_left}s", True, (255, 220, 0))
+                text = AssetHandler.render_text(
+                    f"{char.name} respawning in {time_left}s",
+                    None,
+                    18,
+                    (255, 220, 0),
+                )
                 self.screen.blit(text, (20, y))
                 y -= 18
 
@@ -127,17 +136,16 @@ class GameUI(BaseUI):
         overlay.fill((0, 0, 0, 180))
         self.screen.blit(overlay, (0, 0))
 
-        big_font = pygame.font.Font(None, 72)
         if winner:
             if isinstance(winner, str):
                 winner_name = winner
             else:
                 winner_name = winner.id if hasattr(winner, "id") else getattr(winner, "name", "Unknown")
-            text = big_font.render(f"{winner_name} WINS!", True, (255, 215, 0))
+            text = AssetHandler.render_text(f"{winner_name} WINS!", None, 72, (255, 215, 0))
         else:
-            text = big_font.render("GAME OVER", True, (200, 200, 200))
+            text = AssetHandler.render_text("GAME OVER", None, 72, (200, 200, 200))
 
         rect = text.get_rect(center=(width / 2, height / 2))
         self.screen.blit(text, rect)
-        instr = self.font.render("Press ESC to Exit", True, (255, 255, 255))
+        instr = AssetHandler.render_text("Press ESC to Exit", None, 24, (255, 255, 255))
         self.screen.blit(instr, instr.get_rect(center=(width / 2, height / 2 + 50)))

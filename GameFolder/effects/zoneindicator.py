@@ -6,6 +6,7 @@ class ZoneIndicator(BaseEffect):
     def __init__(self, center, radius):
         super().__init__(center)
         self.radius = radius
+        self.always_visible = True
 
     def update_from_safe_zone(self, center, radius):
         self.location = center
