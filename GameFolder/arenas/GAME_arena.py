@@ -49,6 +49,22 @@ class Arena(BaseArena):
             self.ui = None
 
     def _spawn_world(self):
+        for _ in range(self.num_grass_fields):
+            radius = random.randint(20, 60)
+            cx = random.randint(radius, self.width - radius)
+            cy = random.randint(radius, self.height - radius)
+            grass = GrassField(cx, cy, radius, max_food=10, arena_height=self.height)
+            self.grass_fields.append(grass)
+            self.platforms.append(grass)
+        
+        for _ in range(self.num_slowing_obstacles):
+            size = random.randint(60, 140)
+            cx = random.randint(size, self.width - size)
+            cy = random.randint(size, self.height - size)
+            obstacle = WorldObstacle(cx, cy, size, "slowing", self.height)
+            self.obstacles.append(obstacle)
+            self.platforms.append(obstacle)
+        
         for _ in range(self.num_blocking_obstacles):
             size = random.randint(50, 120)
             cx = random.randint(size, self.width - size)
@@ -57,21 +73,6 @@ class Arena(BaseArena):
             self.obstacles.append(obstacle)
             self.platforms.append(obstacle)
 
-        for _ in range(self.num_slowing_obstacles):
-            size = random.randint(60, 140)
-            cx = random.randint(size, self.width - size)
-            cy = random.randint(size, self.height - size)
-            obstacle = WorldObstacle(cx, cy, size, "slowing", self.height)
-            self.obstacles.append(obstacle)
-            self.platforms.append(obstacle)
-
-        for _ in range(self.num_grass_fields):
-            radius = random.randint(20, 60)
-            cx = random.randint(radius, self.width - radius)
-            cy = random.randint(radius, self.height - radius)
-            grass = GrassField(cx, cy, radius, max_food=10, arena_height=self.height)
-            self.grass_fields.append(grass)
-            self.platforms.append(grass)
 
     def _spawn_initial_pickups(self):
         for _ in range(30):

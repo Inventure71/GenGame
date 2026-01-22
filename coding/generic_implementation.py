@@ -360,7 +360,7 @@ class GenericHandler:
                 self.clean_chat_history()
                 for item in current_turn_log_tests:
                     current_turn_log.append(item)
-                response_content = self.client.convert_to_client_schema(role="assistant", content=f"What I did: {explanation_run_tests_tool}")
+                response_content = self.client.convert_to_client_schema(role="assistant", content=explanation_run_tests_tool if explanation_run_tests_tool else "No explanation provided.")
                 current_turn_log_tests.append(response_content)
                 current_turn_log.append(response_content)
                 # Already filtered in the tool call to be only failures.

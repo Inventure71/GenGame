@@ -11,8 +11,17 @@ Call `run_all_tests_tool(explanation="...")` **ONLY**:
 
 ### Explanation Format = KNOWLEDGE HANDOFF (MANDATORY)
 
+**🚨 CRITICAL: Memory Loss After `run_all_tests_tool()` 🚨**
+
+When you call `run_all_tests_tool()`, your memory is **IMMEDIATELY WIPED**.  
+The next agent receives **ONLY** your `explanation` parameter.  
+If tests fail, the next agent has **ZERO** knowledge of what you learned.  
+**YOU MUST PASS EVERYTHING YOU LEARNED** in the `explanation`.
+
 The `explanation` is **not** just "why tests should pass".  
-It is a **knowledge capsule** for the NEXT AGENT. Treat it as the ONLY memory that survives.
+It is a **complete knowledge dump** for the NEXT AGENT. Treat it as the ONLY memory that survives.
+
+**Detail requirement:** Include enough information (code snippets with line numbers, function signatures, constants, debug output, execution traces) that the next agent **DOES NOT NEED TO RE-READ ANY FILES** you already read. They should be able to continue debugging directly from your explanation.
 
 **You MUST follow this exact structure:**
 
@@ -62,27 +71,48 @@ NEXT_ACTIONS_FOR_FIX_AGENT:
 
 **Rules:**
 
+- **Include code snippets with line numbers** - Don't just reference files, include the actual code the next agent needs to see
+- **Include function signatures** - Document exact parameter names, types, return values
+- **Include attribute/constant values** - Document exact numeric values, default values, where they're defined
+- **Include debug output** - Show actual vs expected values, state transitions, timestamps
+- **Include execution traces** - Document step-by-step execution order you analyzed
 - Always fill **every section** (write `NONE` if truly nothing, but think hard first).
-- Be **specific**: mention exact files, classes, methods, attributes, constants.
+- Be **specific**: mention exact files, classes, methods, attributes, constants, line numbers.
 - Capture **both**: what worked and what you already tried that didn't work.
 - Assume the next agent **cannot see your past thoughts or tool calls**; this handoff is all they get.
+- **Detail level:** The next agent should NOT need to re-read any files you already read. They should be able to continue debugging directly from your explanation.
 - **No fluff** - Every bullet should help the next agent avoid re-doing work.
 
-### What to Include in Explanation
+### What to Include in Explanation (COMPLETE KNOWLEDGE DUMP)
 
-- **Current changes**: What you just modified in this turn
-- **Session learning**: Key insights, patterns, or discoveries from previous turns
-- **Debug findings**: What debug output revealed (if applicable)
-- **Root cause analysis**: Why the fix should work
-- **Context**: Any relevant information that helps understand the fix
-- **Rejected hypotheses**: What you tried that didn't work (to avoid re-trying)
+**You must include EVERYTHING you learned, not just current changes:**
+
+- **All files read**: Every file you read, with relevant code snippets (with line numbers), function signatures, key logic
+- **All functions/methods inspected**: Exact signatures, parameter names, return types, line ranges, key logic
+- **All attributes/constants discovered**: Exact values, where they're defined, default values
+- **All code changes made**: File paths, line ranges, old code → new code, why each change was made
+- **All hypotheses tested**: Which confirmed (with evidence), which rejected (with evidence)
+- **All debug output**: Actual vs expected values, state transitions, timestamps, cooldown behavior
+- **All execution order traces**: Step-by-step analysis of method execution, where order problems were found
+- **All constants/config**: Cooldowns, damage values, durations, thresholds, coordinates (with exact values and locations)
+- **All bug locations**: File:function:line, why it's suspect, relevant code snippets
+- **All next steps**: Exact file paths, function names, specific checks the next agent should perform
+
+**Detail requirement:** The next agent should be able to continue debugging **WITHOUT re-reading any files you already read**. Include enough code snippets, line numbers, and context that they can work directly from your explanation.
 
 ### Critical Rules
 
 - **ONE test run per response maximum**
+- **Memory loss after call** - Your memory is wiped immediately after `run_all_tests_tool()` returns. The next agent only sees your `explanation`.
 - **Always provide explanation** - Even if just adding debug prints, explain what you're investigating
-- **Pass forward learning** - Include insights from your entire debugging session, not just the current turn
+- **Pass forward ALL learning** - Include insights from your entire debugging session, not just the current turn
+- **Include code snippets** - Don't just reference files, include actual code with line numbers
+- **Include function signatures** - Document exact parameter names, types, return values
+- **Include constants/values** - Document exact numeric values, where they're defined
+- **Include debug output** - Show actual vs expected values, state transitions
+- **Include execution traces** - Document step-by-step execution order analysis
 - **Use the template** - Follow the structured format above to ensure nothing is forgotten
+- **Detail level** - The next agent should NOT need to re-read any files you already read
 
 ### Example Usage
 
