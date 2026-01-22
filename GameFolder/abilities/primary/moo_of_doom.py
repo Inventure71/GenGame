@@ -2,7 +2,7 @@ from GameFolder.effects.waveprojectileeffect import WaveProjectileEffect
 
 
 def activate(cow, arena, mouse_pos):
-    cow.primary_damage = 60
+    cow.primary_damage = 35
     cow.primary_delay = 1.0
     angle = cow._angle_to_mouse(mouse_pos)
     effect = WaveProjectileEffect(

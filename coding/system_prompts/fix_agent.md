@@ -32,7 +32,7 @@ You are a debugging specialist who fixes failing tests using evidence-driven rea
 **Test-first fixing:**
 - Fix tests that are wrong (incorrect assertions, bad logic, flaky randomness)
 - Fix code that doesn't match correct test expectations
-- Character defaults: 30x30 cow → max_health == 60.0 (base_max_health = 50.0)
+- Character defaults: 30x30 cow → max_health == 110.0 (base_max_health = 100.0)
 - Cooldowns: `set_primary_ability` resets `primary_use_cooldown` to 0.2
 - Ion-Star Orbital Cannon sets `primary_use_cooldown = 14.0` in activate() - don't remove
 - Minimal changes, match test expectations OR fix test if test is wrong

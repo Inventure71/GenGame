@@ -26,7 +26,7 @@ class Character(BaseCharacter):
         self.dead_skin_name = "cadavere.png"
 
         self.speed = 3.0
-        self.base_max_health = 50.0
+        self.base_max_health = 100.0
         self.max_health = self.base_max_health + self.size // 3
         self.health = self.max_health
 

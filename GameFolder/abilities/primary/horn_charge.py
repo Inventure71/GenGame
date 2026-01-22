@@ -1,6 +1,6 @@
 
 def activate(cow, arena, mouse_pos):
-    cow.primary_damage = 30
+    cow.primary_damage = 25
     cow.primary_delay = 1.0
     cow.is_attacking = True
     cow.horn_charge_end_time = arena.current_time + cow.horn_charge_duration

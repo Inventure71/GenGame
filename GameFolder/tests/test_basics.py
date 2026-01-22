@@ -16,7 +16,7 @@ def test_character_creation():
     assert char.name == "TestCow"
     assert char.location == [100.0, 200.0]
     assert char.size == 30.0
-    assert char.max_health == 60.0
+    assert char.max_health == 110.0
     assert char.health == char.max_health
     assert char.is_alive is True
     assert char.is_eliminated is False

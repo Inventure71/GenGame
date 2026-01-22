@@ -3,7 +3,7 @@ from GameFolder.effects.radialeffect import RadialEffect
 
 def activate(cow, arena, mouse_pos):
     cow.primary_knockback = 30
-    cow.primary_damage = 30
+    cow.primary_damage = 15
     cow.primary_delay = 1.0
     effect = RadialEffect(
         location=[cow.location[0], cow.location[1]],

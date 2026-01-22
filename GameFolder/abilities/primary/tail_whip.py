@@ -3,7 +3,7 @@ from GameFolder.effects.lineeffect import LineEffect
 
 def activate(cow, arena, mouse_pos):
     cow.primary_knockback = 300
-    cow.primary_damage = 10
+    cow.primary_damage = 12
     cow.primary_delay = 0.5
     angle = cow._angle_to_mouse(mouse_pos)
     effect = LineEffect(
