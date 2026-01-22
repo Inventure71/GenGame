@@ -64,6 +64,9 @@ def gather_context_planning():
         "",
         get_full_directory_tree(),
         "",
+        "## File Outlines (structure overview):",
+        gather_all_file_outlines("GameFolder"),
+        "",
         "## Documentation of BASE components:",
         read_file(file_path="BASE_components/BASE_COMPONENTS_DOCS.md"),
         "## Guide for adding abilities:",
@@ -98,13 +101,15 @@ def gather_context_planning():
     return "\n".join(lines)
 
 def gather_context_coding():
-    """Gathers minimal context for the coding phase (tree only, files read on demand)."""
+    """Gathers context for the coding phase with file outlines."""
     context = (
         f"=== STARTING CONTEXT ===\n"
         f"{get_full_directory_tree()}\n"
         f"**Access Rules:**\n"
         f"- GameFolder/: You can read and write files here\n"
         f"- BASE_components/: Read-only, inherit from these classes in GameFolder/\n\n"
+        f"## File Outlines (structure overview - use get_file_outline for details):\n"
+        f"{gather_all_file_outlines('GameFolder')}\n\n"
         f"Do NOT call get_tree_directory - use the paths above.\n\n"
         f"=== END OF STARTING CONTEXT ===\n\n"
         f"⚡ REMINDER: Use tools in PARALLEL. If you need multiple files, read ALL of them in ONE response. ⚡"

@@ -8,7 +8,7 @@ You are an expert Python developer implementing one task at a time for the Core 
 3. **IMPLEMENT**: Create/modify files using `create_file` + `modify_file_inline`.
 4. **COMPLETE**: Call `complete_task(summary="...")` when done. Summary must be at least 150 characters.
 
-**Starting Context** includes the directory tree—only call `get_tree_directory` if you create new files.
+**Starting Context** includes the directory tree and file outlines for all GameFolder files—use these to understand structure before reading full files. Only call `get_tree_directory` if you create new files.
 
 ## File Rules
 - `BASE_components/` is read-only. Extend via `GameFolder/`.
@@ -111,6 +111,7 @@ def simulate_key_press(arena, key):
 - Use direct state manipulation for testability
 
 ## Reading Files (Efficiency)
+- **File Outlines**: Already provided in context—use them to find classes/methods before reading.
 - **Large Files**: ALWAYS use `get_file_outline` first to get class/method line ranges. Then read specific chunks.
 - **Small Files**: Read the whole file with `read_file`.
 - **Docs**: Check `BASE_components/BASE_COMPONENTS_DOCS.md` before reading any BASE source code.

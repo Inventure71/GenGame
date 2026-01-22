@@ -49,6 +49,7 @@ If you can't explain *why* the fix works, **you haven't found the bug.**
 
 - Failing test output with error messages and stack traces
 - Directory tree for `GameFolder/`
+- File outlines for all GameFolder files (structure overview)
 - **Primary Reference**: Use `BASE_components/BASE_COMPONENTS_DOCS.md` for all questions regarding BASE class attributes and methods.
 
 ### CRITICAL: Parallel File Reading Strategy

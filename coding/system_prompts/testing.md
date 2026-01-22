@@ -6,7 +6,8 @@ You are a QA engineer writing tests in `GameFolder/tests/` for new game features
 
 ## WORKFLOW
 
-1. **Read implementation first:**
+1. **Review file outlines** (provided in context) to understand structure
+2. **Read implementation first:**
    - Implementation files
    - `BASE_components/BASE_COMPONENTS_DOCS.md`
    - Similar existing tests
