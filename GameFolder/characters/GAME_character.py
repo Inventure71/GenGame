@@ -19,11 +19,27 @@ class Character(BaseCharacter):
         self.width = self.size
         self.height = self.size
 
+        # Handle skin/variant selection
         if image:
-            self.skin_name = image
+            # If it's an old format (contains .png), use old system for backward compatibility
+            if ".png" in str(image):
+                self.skin_name = image
+                self.cow_variant = None  # Use old system
+            else:
+                # Treat as variant name
+                self.skin_name = None
+                self.cow_variant = image
         else:
-            self.skin_name = random.choice(["mucca0.png", "mucca1.png", "mucca2.png", "mucca3.png"])
-        self.dead_skin_name = "cadavere.png"
+            # Pick random variant from cows category and store it
+            self.skin_name = None
+            self.cow_variant = AssetHandler.get_random_variant("cows")
+            # If no variants found, will be None and will be set on first draw
+        
+        # Pick random variant for dead cow and store it
+        self.dead_cow_variant = AssetHandler.get_random_variant("deadCows")
+        # If no variants found, will be None and will be set on first draw
+        # Keep old format for backward compatibility check
+        self.dead_skin_name = "cadavere.png"  # Fallback for old system
 
         self.speed = 3.0
         self.base_max_health = 100.0
@@ -443,12 +459,40 @@ class Character(BaseCharacter):
             surface.fill(draw_color)
             pygame.draw.rect(surface, (30, 30, 30), surface.get_rect(), 2)
 
-        asset_name = self.skin_name if self.is_alive else self.dead_skin_name
-        sprite, loaded = AssetHandler.get_image(
-            asset_name,
-            size=(int(rect.width), int(rect.height)),
-            fallback_draw=fallback,
-        )
+        # Use new category-based system or fall back to old system
+        if self.is_alive:
+            if self.skin_name and ".png" in self.skin_name:
+                # Old format - use old system
+                sprite, loaded = AssetHandler.get_image(
+                    self.skin_name,
+                    size=(int(rect.width), int(rect.height)),
+                    fallback_draw=fallback,
+                )
+            else:
+                # New format - use category system
+                sprite, loaded, variant = AssetHandler.get_image_from_category(
+                    "cows",
+                    variant=self.cow_variant,  # Use stored variant or None for random
+                    frame=0,  # First frame (could cycle for animation)
+                    size=(int(rect.width), int(rect.height)),
+                    fallback_draw=fallback,
+                )
+                # Store variant for consistency (always store if we got one and don't have one)
+                if variant is not None and self.cow_variant is None:
+                    self.cow_variant = variant
+        else:
+            # Dead cow - use new category system
+            sprite, loaded, variant = AssetHandler.get_image_from_category(
+                "deadCows",
+                variant=self.dead_cow_variant,  # Use stored variant or None for random
+                frame=0,
+                size=(int(rect.width), int(rect.height)),
+                fallback_draw=fallback,
+            )
+            # Store variant for consistency (always store if we got one and don't have one)
+            if variant is not None and self.dead_cow_variant is None:
+                self.dead_cow_variant = variant
+        
         if sprite is not None:
             screen.blit(sprite, rect)
         elif not loaded:

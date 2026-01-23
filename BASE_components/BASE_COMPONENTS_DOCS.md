@@ -236,6 +236,97 @@ Minimal UI hook. GameFolder should implement real UI rendering.
 
 ---
 
+## 8. Asset Handler (`AssetHandler`)
+**File**: `BASE_components/BASE_asset_handler.py`
+
+### Purpose
+Centralized asset loading system with caching, fallback support, and category-based organization. Supports both legacy flat file structure and new category/variant structure.
+
+### Asset Organization
+Assets are organized in `GameFolder/assets/` with two supported structures:
+
+**New Structure (Recommended)**:
+```
+assets/
+  category/
+    variant/
+      0.png, 1.png, ... N.png
+```
+- Categories: `cows`, `deadCows`, `slowObstacles`, `blockObstacles`, `grass`, `background`
+- Variants: Random selection per object for visual variety
+- Frames: Numbered 0 to N for animations (single frame if N=0 only)
+
+**Legacy Structure (Fallback)**:
+- Flat files in `assets/` root (e.g., `ERBA.png`, `mucca0.png`)
+
+### Key Methods
+
+#### Image Loading
+- `get_image(asset_name, size=None, fallback_draw=None, fallback_tag=None)` → `(surface, loaded)`
+  - Loads a single image from legacy flat file structure
+  - Returns tuple: `(pygame.Surface or None, bool loaded)`
+  - Supports fallback drawing function if asset not found
+
+- `get_image_from_category(category, variant=None, frame=0, size=None, fallback_draw=None, fallback_tag=None)` → `(surface, loaded, variant)`
+  - Loads image from category/variant structure
+  - If `variant=None`, randomly selects a variant and stores it
+  - Returns tuple: `(pygame.Surface or None, bool loaded, str variant_used)`
+
+- `get_image_with_alpha(asset_name, size=None, alpha=255, ...)` → `(surface, loaded)`
+  - Loads image with alpha transparency control
+
+#### Animation Loading
+- `get_animation(base_name, frame_count, size=None, fallback_draw=None, fallback_tag=None)` → `(frames, loaded)`
+  - Legacy method: loads frames named `{base_name}0.png` to `{base_name}{N}.png`
+  - Returns tuple: `(List[pygame.Surface], bool loaded)`
+
+- `get_animation_from_category(category, variant=None, size=None, fallback_draw=None, fallback_tag=None)` → `(frames, loaded, variant)`
+  - Loads animation from category/variant structure
+  - Automatically counts frames (0.png, 1.png, ...)
+  - If `variant=None`, randomly selects a variant
+  - Returns tuple: `(List[pygame.Surface], bool loaded, str variant_used)`
+
+#### Utility Methods
+- `get_random_variant(category)` → `Optional[str]`
+  - Returns a random variant name from a category, or `None` if category doesn't exist
+
+- `get_font(font_name, size, bold=False, italic=False)` → `pygame.font.Font`
+- `get_sys_font(font_name, size, bold=False, italic=False)` → `pygame.font.Font`
+- `render_text(text, font_name, size, color, ...)` → `pygame.Surface`
+
+### Features
+- **Caching**: All assets are cached by key (name/size/variant combinations)
+- **Transparency**: Automatically preserves alpha channels with `convert_alpha()`
+- **Fallback Support**: Graceful degradation with custom drawing functions
+- **Variant Consistency**: Selected variants are stored per object for visual consistency
+- **Backward Compatible**: Legacy flat file structure still supported
+
+### Usage Example
+```python
+from BASE_components.BASE_asset_handler import AssetHandler
+
+# New category-based system (random variant)
+sprite, loaded, variant = AssetHandler.get_image_from_category(
+    "cows",
+    variant=None,  # Random selection
+    frame=0,
+    size=(30, 30),
+    fallback_draw=lambda s: s.fill((255, 0, 0))
+)
+
+# Animation from category
+frames, loaded, variant = AssetHandler.get_animation_from_category(
+    "slowObstacles",
+    variant=None,  # Random selection
+    size=(50, 50)
+)
+
+# Legacy flat file (backward compatibility)
+image, loaded = AssetHandler.get_image("ERBA.png", size=(100, 100))
+```
+
+---
+
 ## GameFolder Extension Points
 Concrete gameplay lives in these modules:
 - `GameFolder/characters/GAME_character.py`: MS2 cow logic and abilities

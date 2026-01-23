@@ -193,7 +193,9 @@ class GenericHandler:
 
             # 1. Make API call (provider-specific)
             try:
+                print("STARTING API CALL")
                 response = self.client.make_api_call(api_history, config)
+                print("API CALL COMPLETED")
             except Exception as e:
                 print(f"API call failed: {e}")
                 raise e
@@ -279,6 +281,8 @@ class GenericHandler:
                                         print("Run all tests tool was successful, so we will stop the loop FORCEFULLY", flush=True)
                                         print("We need to run the complete_task tool now manually", flush=True)
                                         self.client.tool_map["complete_task"](summary="All tests passed")
+                                        # Log this manual action so it appears in the visual logger
+                                        action_logger.log_action("complete_task", {"summary": "All tests passed (Auto-called)"}, "Task Completed", success=True, chat_history=api_history)
                                         stop_loop = True
                                     else:
                                         # Minimal inline filter for failures and stdout

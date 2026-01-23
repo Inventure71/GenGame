@@ -4,6 +4,7 @@ import sys
 import traceback
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
 from BASE_components.BASE_camera import BaseCamera
+from BASE_components.BASE_asset_handler import AssetHandler
 
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
@@ -76,6 +77,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
                     world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
                     camera.set_world_size(world_width, world_height)
+                    load_background()  # Reload background with new world size
                     
                     print("✓ Game classes deep reloaded after patch application")
                 else:
@@ -101,6 +103,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                         world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
                         world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
                         camera.set_world_size(world_width, world_height)
+                        load_background()  # Load background with world size
                         
                         print("✓ Game files synchronized and classes deep reloaded")
                         # Set flag immediately to prevent race condition
@@ -139,6 +142,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
                     world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
                     camera.set_world_size(world_width, world_height)
+                    load_background()  # Load background with world size
                     
                     print("✓ Game classes deep reloaded for game start")
                 else:
@@ -202,6 +206,27 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         world_width = DEFAULT_WIDTH
         world_height = DEFAULT_HEIGHT
         camera = BaseCamera(world_width, world_height, width, height)
+        
+        # Background will be loaded after world dimensions are known
+        background_tile = None
+        background_tile_size = None
+        background_variant = None
+        
+        def load_background():
+            """Load background tile for infinite tiling."""
+            nonlocal background_tile, background_tile_size, background_variant
+            # Try to load random background from background category (at original size for tiling)
+            bg_surface, loaded, variant = AssetHandler.get_image_from_category(
+                "background",
+                variant=None,  # Pick random variant
+                frame=0,
+                size=None,  # Load at original size for tiling
+            )
+            if loaded and bg_surface is not None:
+                # Store the tile image and its size for infinite tiling
+                background_tile = bg_surface
+                background_tile_size = bg_surface.get_size()
+                background_variant = variant
 
         # Input state
         held_keys = set()
@@ -278,7 +303,70 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 camera.set_center(follow_entity.location[0], follow_entity.location[1])
 
             # Render
-            screen.fill((20, 90, 20))  # Grass green background
+            # Draw background image if available, otherwise use green color
+            if background_tile is not None and camera is not None:
+                # Get camera viewport in world coordinates
+                left, bottom, right, top = camera.get_viewport()
+                
+                bg_width, bg_height = background_tile_size
+                
+                # Calculate which tiles we need to draw (infinite tiling)
+                # Start from the leftmost/bottommost tile that intersects the viewport
+                start_tile_x = int(left // bg_width)
+                start_tile_y = int(bottom // bg_height)
+                end_tile_x = int((right + bg_width - 1) // bg_width)
+                end_tile_y = int((top + bg_height - 1) // bg_height)
+                
+                # Draw all tiles that intersect the viewport
+                for tile_y in range(start_tile_y, end_tile_y + 1):
+                    for tile_x in range(start_tile_x, end_tile_x + 1):
+                        # Calculate world position of this tile
+                        tile_world_x = tile_x * bg_width
+                        tile_world_y = tile_y * bg_height
+                        
+                        # Convert to screen coordinates
+                        screen_x, screen_y = camera.world_to_screen_point(tile_world_x, tile_world_y + bg_height)
+                        screen_x = int(screen_x)
+                        screen_y = int(screen_y)
+                        
+                        # Calculate how much of this tile is visible in world coordinates
+                        tile_left = max(left, tile_world_x)
+                        tile_bottom = max(bottom, tile_world_y)
+                        tile_right = min(right, tile_world_x + bg_width)
+                        tile_top = min(top, tile_world_y + bg_height)
+                        
+                        # Calculate source rect within the tile (tile surface uses y-down)
+                        # Tile surface: y=0 at top, y=bg_height at bottom
+                        # World: tile_world_y is bottom, tile_world_y + bg_height is top
+                        src_x = int(tile_left - tile_world_x)
+                        # Convert from world y-up to tile surface y-down
+                        # Visible area in world: from tile_bottom (low y) to tile_top (high y)
+                        # In tile surface: top of visible = bg_height - (tile_top - tile_world_y)
+                        #                  bottom of visible = bg_height - (tile_bottom - tile_world_y)
+                        src_y = int(bg_height - (tile_top - tile_world_y))
+                        src_width = int(tile_right - tile_left)
+                        src_height = int(tile_top - tile_bottom)
+                        
+                        # Calculate destination on screen (convert world coords to screen coords)
+                        # world_to_screen_point converts: screen_y = top - world_y
+                        # So for tile_top (high world y), we get low screen y (top of screen)
+                        # We want to draw at the top of the visible area on screen
+                        dest_x, dest_y = camera.world_to_screen_point(tile_left, tile_top)
+                        dest_x = int(dest_x)
+                        dest_y = int(dest_y)
+                        
+                        # Blit the visible portion of this tile
+                        if src_width > 0 and src_height > 0:
+                            src_rect = pygame.Rect(src_x, src_y, src_width, src_height)
+                            screen.blit(background_tile, (dest_x, dest_y), area=src_rect)
+            elif background_tile is not None:
+                # No camera, just tile the background (shouldn't happen in normal gameplay)
+                bg_width, bg_height = background_tile_size
+                for y in range(0, height, bg_height):
+                    for x in range(0, width, bg_width):
+                        screen.blit(background_tile, (x, y))
+            else:
+                screen.fill((20, 90, 20))  # Grass green background fallback
 
             # Draw all platforms and entities managed by the entity manager
             entity_manager.draw_all(screen, world_height, camera=camera)

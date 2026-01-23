@@ -1,7 +1,8 @@
 import math
 import random
 import pygame
-from BASE_components.BASE_arena import Arena as BaseArena
+from BASE_components.BASE_arena import Arena as BaseArena, WORLD_WIDTH, WORLD_HEIGHT
+from BASE_components.BASE_asset_handler import AssetHandler
 from GameFolder.effects.coneeffect import ConeEffect
 from GameFolder.effects.radialeffect import RadialEffect
 from GameFolder.effects.lineeffect import LineEffect
@@ -43,8 +44,24 @@ class Arena(BaseArena):
         self._spawn_world()
         self._spawn_initial_pickups()
 
+        # Load random background image from category if available
+        self.background_tile = None
+        self.background_tile_size = None
+        self.background_variant = None
         if not self.headless:
             self.ui = GameUI(self.screen, self.width, self.height)
+            # Try to load random background from background category (at original size for tiling)
+            bg_surface, loaded, variant = AssetHandler.get_image_from_category(
+                "background",
+                variant=None,  # Pick random variant
+                frame=0,
+                size=None,  # Load at original size for tiling
+            )
+            if loaded and bg_surface is not None:
+                # Store the tile image and its size for infinite tiling
+                self.background_tile = bg_surface
+                self.background_tile_size = bg_surface.get_size()
+                self.background_variant = variant
         else:
             self.ui = None
 
@@ -376,7 +393,72 @@ class Arena(BaseArena):
         if self.screen is None:
             return
         camera = getattr(self, "camera", None)
-        self.screen.fill((20, 90, 20))
+        
+        # Draw background image if available, otherwise use green color
+        if self.background_tile is not None and camera is not None:
+            # Get camera viewport in world coordinates
+            left, bottom, right, top = camera.get_viewport()
+            
+            bg_width, bg_height = self.background_tile_size
+            
+            # Calculate which tiles we need to draw (infinite tiling)
+            # Start from the leftmost/bottommost tile that intersects the viewport
+            start_tile_x = int(left // bg_width)
+            start_tile_y = int(bottom // bg_height)
+            end_tile_x = int((right + bg_width - 1) // bg_width)
+            end_tile_y = int((top + bg_height - 1) // bg_height)
+            
+            # Draw all tiles that intersect the viewport
+            for tile_y in range(start_tile_y, end_tile_y + 1):
+                for tile_x in range(start_tile_x, end_tile_x + 1):
+                    # Calculate world position of this tile
+                    tile_world_x = tile_x * bg_width
+                    tile_world_y = tile_y * bg_height
+                    
+                    # Convert to screen coordinates
+                    screen_x, screen_y = camera.world_to_screen_point(tile_world_x, tile_world_y + bg_height)
+                    screen_x = int(screen_x)
+                    screen_y = int(screen_y)
+                    
+                    # Calculate how much of this tile is visible in world coordinates
+                    tile_left = max(left, tile_world_x)
+                    tile_bottom = max(bottom, tile_world_y)
+                    tile_right = min(right, tile_world_x + bg_width)
+                    tile_top = min(top, tile_world_y + bg_height)
+                    
+                    # Calculate source rect within the tile (tile surface uses y-down)
+                    # Tile surface: y=0 at top, y=bg_height at bottom
+                    # World: tile_world_y is bottom, tile_world_y + bg_height is top
+                    src_x = int(tile_left - tile_world_x)
+                    # Convert from world y-up to tile surface y-down
+                    # Visible area in world: from tile_bottom (low y) to tile_top (high y)
+                    # In tile surface: top of visible = bg_height - (tile_top - tile_world_y)
+                    #                  bottom of visible = bg_height - (tile_bottom - tile_world_y)
+                    src_y = int(bg_height - (tile_top - tile_world_y))
+                    src_width = int(tile_right - tile_left)
+                    src_height = int(tile_top - tile_bottom)
+                    
+                    # Calculate destination on screen (convert world coords to screen coords)
+                    # world_to_screen_point converts: screen_y = top - world_y
+                    # So for tile_top (high world y), we get low screen y (top of screen)
+                    # We want to draw at the top of the visible area on screen
+                    dest_x, dest_y = camera.world_to_screen_point(tile_left, tile_top)
+                    dest_x = int(dest_x)
+                    dest_y = int(dest_y)
+                    
+                    # Blit the visible portion of this tile
+                    if src_width > 0 and src_height > 0:
+                        src_rect = pygame.Rect(src_x, src_y, src_width, src_height)
+                        self.screen.blit(self.background_tile, (dest_x, dest_y), area=src_rect)
+        elif self.background_tile is not None:
+            # No camera, just tile the background (shouldn't happen in normal gameplay)
+            bg_width, bg_height = self.background_tile_size
+            for y in range(0, self.height, bg_height):
+                for x in range(0, self.width, bg_width):
+                    self.screen.blit(self.background_tile, (x, y))
+        else:
+            self.screen.fill((20, 90, 20))  # Grass green background fallback
+        
         for platform in self.platforms:
             platform.draw(self.screen, self.height, camera=camera)
         for effect in self.effects:

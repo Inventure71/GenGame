@@ -9,6 +9,18 @@ class WorldObstacle(BasePlatform):
         self.size = size
         self.obstacle_type = obstacle_type
         self._anim_offset = random.randint(0, 1000)
+        
+        # Random animation speed per obstacle (milliseconds per frame)
+        # Range: 160-400ms per frame (slower animations - at least half as slow as before)
+        self._anim_speed = random.uniform(160, 400)
+
+        # Pick and store variant for consistency (so same obstacle always uses same variant)
+        if obstacle_type == "slowing":
+            self.obstacle_variant = AssetHandler.get_random_variant("slowObstacles")
+        elif obstacle_type == "blocking":
+            self.obstacle_variant = AssetHandler.get_random_variant("blockObstacles")
+        else:
+            self.obstacle_variant = None
 
         py_x = center_x - size / 2
         py_y = arena_height - center_y - size / 2
@@ -30,20 +42,43 @@ class WorldObstacle(BasePlatform):
                 surface.fill((70, 140, 180))
                 pygame.draw.rect(surface, (30, 60, 80), surface.get_rect(), 2)
 
-            frames, _ = AssetHandler.get_animation(
-                "ACQUA_",
-                5,
+            frames, _, variant = AssetHandler.get_animation_from_category(
+                "slowObstacles",
+                variant=self.obstacle_variant,  # Use stored variant
                 size=(int(rect.width), int(rect.height)),
                 fallback_draw=fallback,
             )
             if frames:
                 tick = pygame.time.get_ticks() if pygame.get_init() else 0
-                frame_index = int((tick / 120) + self._anim_offset) % len(frames)
+                # Use per-obstacle animation speed instead of fixed 120ms
+                frame_index = int((tick / self._anim_speed) + self._anim_offset) % len(frames)
                 screen.blit(frames[frame_index], rect)
             return
 
-        color = (90, 90, 90)
+        elif self.obstacle_type == "blocking":
+            def fallback(surface):
+                surface.fill((90, 90, 90))
+                pygame.draw.rect(surface, (30, 30, 30), surface.get_rect(), 2)
 
+            # Try to load image from blockObstacles category
+            sprite, loaded, variant = AssetHandler.get_image_from_category(
+                "blockObstacles",
+                variant=self.obstacle_variant,  # Use stored variant
+                frame=0,
+                size=(int(rect.width), int(rect.height)),
+                fallback_draw=fallback,
+            )
+            if sprite is not None:
+                screen.blit(sprite, rect)
+            elif not loaded:
+                # Fallback to colored rectangle if asset not found
+                color = (90, 90, 90)
+                pygame.draw.rect(screen, color, rect)
+                pygame.draw.rect(screen, (30, 30, 30), rect, 2)
+            return
+
+        # Default fallback for unknown obstacle types
+        color = (90, 90, 90)
         pygame.draw.rect(screen, color, rect)
         pygame.draw.rect(screen, (30, 30, 30), rect, 2)
 
@@ -54,6 +89,9 @@ class GrassField(BasePlatform):
         self.radius = radius
         self.max_food = max_food
         self.current_food = max_food
+        
+        # Pick and store variant for consistency
+        self.grass_variant = AssetHandler.get_random_variant("grass")
 
         py_x = center_x - radius
         py_y = arena_height - center_y - radius
@@ -98,20 +136,36 @@ class GrassField(BasePlatform):
             pygame.draw.circle(surface, color, center, radius)
             pygame.draw.circle(surface, (20, 60, 20), center, radius, 2)
 
-        grass_surface, loaded = AssetHandler.get_image(
-            "ERBA.png",
+        # Try to load from grass category first
+        grass_surface, loaded, variant = AssetHandler.get_image_from_category(
+            "grass",
+            variant=self.grass_variant,  # Use stored variant
+            frame=0,
             size=(int(rect.width), int(rect.height)),
             fallback_draw=fallback,
             fallback_tag=f"fullness_{bucket}",
         )
-        if grass_surface is None:
-            return
-        if loaded and fullness < 1.0:
-            grass_surface, _ = AssetHandler.get_image_with_alpha(
+        
+        # Store variant if it was randomly selected
+        if variant is not None and self.grass_variant is None:
+            self.grass_variant = variant
+        
+        # If category system didn't work, fall back to old flat file system
+        if not loaded and grass_surface is None:
+            grass_surface, loaded = AssetHandler.get_image(
                 "ERBA.png",
                 size=(int(rect.width), int(rect.height)),
-                alpha=int(120 + 120 * (bucket / 10.0)),
-                fallback_draw=None,
-                fallback_tag=None,
+                fallback_draw=fallback,
+                fallback_tag=f"fullness_{bucket}",
             )
+        
+        if grass_surface is None:
+            return
+            
+        # Apply alpha based on fullness if asset was loaded and not at full
+        if loaded and fullness < 1.0:
+            # Create a copy to avoid modifying cached surface
+            grass_surface = grass_surface.copy()
+            grass_surface.set_alpha(int(120 + 120 * (bucket / 10.0)))
+        
         screen.blit(grass_surface, rect)
