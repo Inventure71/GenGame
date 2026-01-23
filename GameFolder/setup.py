@@ -17,7 +17,10 @@ def setup_battle_arena(width: int = WORLD_WIDTH, height: int = WORLD_HEIGHT, hea
             y = random.uniform(80, height - 80)
             blocked = False
             for obstacle in arena.obstacles:
-                if abs(x - obstacle.world_center[0]) < obstacle.size / 2 + 30 and abs(y - obstacle.world_center[1]) < obstacle.size / 2 + 30:
+                dx = x - obstacle.world_center[0]
+                dy = y - obstacle.world_center[1]
+                distance_sq = dx * dx + dy * dy
+                if distance_sq < (obstacle.size / 2 + 30) ** 2:
                     blocked = True
                     break
             if not blocked:

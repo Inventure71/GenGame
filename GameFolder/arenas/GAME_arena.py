@@ -83,12 +83,29 @@ class Arena(BaseArena):
             self.platforms.append(obstacle)
         
         for _ in range(self.num_blocking_obstacles):
-            size = random.randint(50, 120)
+            # Weighted random selection favoring big obstacles
+            # Small (50-70): 10% chance, Medium (71-95): 30% chance, Big (96-200): 60% chance
+            rand = random.random()
+            if rand < 0.1:  # 10% chance for small
+                size = random.randint(50, 70)
+            elif rand < 0.4:  # 30% chance for medium
+                size = random.randint(71, 95)
+            else:  # 60% chance for big
+                size = random.randint(96, 200)
+            
             cx = random.randint(size, self.width - size)
             cy = random.randint(size, self.height - size)
             obstacle = WorldObstacle(cx, cy, size, "blocking", self.height)
             self.obstacles.append(obstacle)
             self.platforms.append(obstacle)
+        
+        # Sort obstacles by Y position for correct z-ordering (top to bottom on screen)
+        # screen_y = top - world_y, so: higher world_y → top of screen, lower world_y → bottom of screen
+        # We want: top of screen drawn first (behind), bottom of screen drawn last (on top)
+        # So sort descending: higher world_y first, lower world_y last
+        self.obstacles.sort(key=lambda o: o.world_center[1], reverse=True)
+        # Sort grass fields by Y position for correct z-ordering
+        self.grass_fields.sort(key=lambda g: g.world_center[1], reverse=True)
 
 
     def _spawn_initial_pickups(self):
@@ -108,7 +125,10 @@ class Arena(BaseArena):
             y = random.uniform(60, self.height - 60)
             blocked = False
             for obstacle in self.obstacles:
-                if abs(x - obstacle.world_center[0]) < obstacle.size / 2 + 40 and abs(y - obstacle.world_center[1]) < obstacle.size / 2 + 40:
+                dx = x - obstacle.world_center[0]
+                dy = y - obstacle.world_center[1]
+                distance_sq = dx * dx + dy * dy
+                if distance_sq < (obstacle.size / 2 + 40) ** 2:
                     blocked = True
                     break
             if blocked:
@@ -181,19 +201,34 @@ class Arena(BaseArena):
     def _resolve_obstacle_collisions(self, cow):
         cow_radius = cow.size / 2
         for obstacle in self.obstacles:
+            obstacle_radius = obstacle.size / 2
             dx = cow.location[0] - obstacle.world_center[0]
             dy = cow.location[1] - obstacle.world_center[1]
-            overlap_x = cow_radius + obstacle.size / 2 - abs(dx)
-            overlap_y = cow_radius + obstacle.size / 2 - abs(dy)
-
-            if overlap_x > 0 and overlap_y > 0:
+            distance_sq = dx * dx + dy * dy
+            radius_sum = cow_radius + obstacle_radius
+            
+            # Check if circles overlap
+            if distance_sq < radius_sum * radius_sum:
                 if obstacle.obstacle_type == "slowing":
                     cow.is_slowed = True
                     continue
-                if overlap_x < overlap_y:
-                    cow.location[0] += overlap_x if dx > 0 else -overlap_x
+                
+                # Push cow out along the line connecting centers
+                distance = math.sqrt(distance_sq)
+                if distance == 0:
+                    # Handle exact overlap by pushing in a random direction
+                    angle = random.uniform(0, 2 * math.pi)
+                    dx = math.cos(angle)
+                    dy = math.sin(angle)
+                    distance = 1.0
                 else:
-                    cow.location[1] += overlap_y if dy > 0 else -overlap_y
+                    dx /= distance
+                    dy /= distance
+                
+                # Move cow to just outside the obstacle
+                overlap = radius_sum - distance
+                cow.location[0] += dx * overlap
+                cow.location[1] += dy * overlap
 
     def _resolve_poops(self, cow):
         for effect in self.effects[:]:
@@ -459,15 +494,35 @@ class Arena(BaseArena):
         else:
             self.screen.fill((20, 90, 20))  # Grass green background fallback
         
-        for platform in self.platforms:
-            platform.draw(self.screen, self.height, camera=camera)
+        # Draw in specific order: grass, slowing obstacles, cows, blocking obstacles
+        # 1. Draw grass fields (sorted by Y position)
+        for grass in self.grass_fields:
+            grass.draw(self.screen, self.height, camera=camera)
+        
+        # 2. Draw slowing obstacles (sorted top to bottom: top of screen first, bottom last)
+        slowing_obstacles = [o for o in self.obstacles if o.obstacle_type == "slowing"]
+        slowing_obstacles.sort(key=lambda o: o.world_center[1], reverse=True)  # Higher Y (top) first
+        for obstacle in slowing_obstacles:
+            obstacle.draw(self.screen, self.height, camera=camera)
+        
+        # 3. Draw effects and zone indicator
         for effect in self.effects:
             effect.draw(self.screen, self.height, camera=camera)
         self.zone_indicator.draw(self.screen, self.height, camera=camera)
+        
+        # 4. Draw pickups
         for pickup in self.weapon_pickups:
             pickup.draw(self.screen, self.height, camera=camera)
+        
+        # 5. Draw cows
         for cow in self.characters:
             cow.draw(self.screen, self.height, camera=camera)
+        
+        # 6. Draw blocking obstacles last (sorted top to bottom: top of screen first, bottom last)
+        blocking_obstacles = [o for o in self.obstacles if o.obstacle_type == "blocking"]
+        blocking_obstacles.sort(key=lambda o: o.world_center[1], reverse=True)  # Higher Y (top) first
+        for obstacle in blocking_obstacles:
+            obstacle.draw(self.screen, self.height, camera=camera)
         if self.ui:
             self.ui.draw(self.characters, self.game_over, self.winner, self.respawn_timer)
         # safely handle display flip - catch OpenGL context errors

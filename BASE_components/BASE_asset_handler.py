@@ -246,16 +246,20 @@ class AssetHandler:
         return frames, all_loaded
 
     @classmethod
-    def _get_category_variants(cls, category: str) -> List[str]:
-        """Get all available variants for a category."""
-        if category in cls._variant_cache:
-            return cls._variant_cache[category]
+    def _get_category_variants(cls, category: str, subcategory: Optional[str] = None) -> List[str]:
+        """Get all available variants for a category, optionally filtered by subcategory."""
+        cache_key = (category, subcategory) if subcategory else category
+        if cache_key in cls._variant_cache:
+            return cls._variant_cache[cache_key]
         
         asset_root = cls._asset_root()
-        category_path = os.path.join(asset_root, category)
+        if subcategory:
+            category_path = os.path.join(asset_root, category, subcategory)
+        else:
+            category_path = os.path.join(asset_root, category)
         
         if not os.path.isdir(category_path):
-            cls._variant_cache[category] = []
+            cls._variant_cache[cache_key] = []
             return []
         
         variants = []
@@ -264,22 +268,25 @@ class AssetHandler:
             if os.path.isdir(variant_path):
                 variants.append(item)
         
-        cls._variant_cache[category] = variants
+        cls._variant_cache[cache_key] = variants
         return variants
 
     @classmethod
-    def get_random_variant(cls, category: str) -> Optional[str]:
-        """Get a random variant from a category."""
-        variants = cls._get_category_variants(category)
+    def get_random_variant(cls, category: str, subcategory: Optional[str] = None) -> Optional[str]:
+        """Get a random variant from a category, optionally filtered by subcategory."""
+        variants = cls._get_category_variants(category, subcategory)
         if not variants:
             return None
         return random.choice(variants)
 
     @classmethod
-    def _count_frames(cls, category: str, variant: str) -> int:
+    def _count_frames(cls, category: str, variant: str, subcategory: Optional[str] = None) -> int:
         """Count how many frames exist for a variant (0.png, 1.png, ...)."""
         asset_root = cls._asset_root()
-        variant_path = os.path.join(asset_root, category, variant)
+        if subcategory:
+            variant_path = os.path.join(asset_root, category, subcategory, variant)
+        else:
+            variant_path = os.path.join(asset_root, category, variant)
         
         if not os.path.isdir(variant_path):
             return 0
@@ -301,16 +308,17 @@ class AssetHandler:
         size: Optional[Tuple[int, int]] = None,
         fallback_draw: Optional[Callable[[pygame.Surface], None]] = None,
         fallback_tag: Optional[str] = None,
+        subcategory: Optional[str] = None,
     ) -> Tuple[List[pygame.Surface], bool, Optional[str]]:
         """
-        Load animation from category/variant structure.
+        Load animation from category/subcategory/variant structure.
         Returns: (frames, all_loaded, variant_used)
         """
         size = cls._normalize_size(size)
         
         # Get variant (random if not specified)
         if variant is None:
-            variant = cls.get_random_variant(category)
+            variant = cls.get_random_variant(category, subcategory)
             if variant is None:
                 # No variants found, use fallback if provided
                 if fallback_draw is not None and size is not None:
@@ -320,7 +328,7 @@ class AssetHandler:
                 return [], False, None
         
         # Count frames automatically
-        frame_count = cls._count_frames(category, variant)
+        frame_count = cls._count_frames(category, variant, subcategory)
         if frame_count == 0:
             # No frames found, use fallback if provided
             if fallback_draw is not None and size is not None:
@@ -330,7 +338,7 @@ class AssetHandler:
             return [], False, variant
         
         # Check cache
-        anim_key = (category, variant, frame_count, size)
+        anim_key = (category, subcategory, variant, frame_count, size)
         if anim_key in cls._animation_cache:
             frames, loaded = cls._animation_cache[anim_key]
             return frames, loaded, variant
@@ -341,7 +349,10 @@ class AssetHandler:
         asset_root = cls._asset_root()
         
         for i in range(frame_count):
-            frame_path = os.path.join(asset_root, category, variant, f"{i}.png")
+            if subcategory:
+                frame_path = os.path.join(asset_root, category, subcategory, variant, f"{i}.png")
+            else:
+                frame_path = os.path.join(asset_root, category, variant, f"{i}.png")
             if not os.path.isfile(frame_path):
                 all_loaded = False
                 frames = []
@@ -375,19 +386,20 @@ class AssetHandler:
         size: Optional[Tuple[int, int]] = None,
         fallback_draw: Optional[Callable[[pygame.Surface], None]] = None,
         fallback_tag: Optional[str] = None,
+        subcategory: Optional[str] = None,
     ) -> Tuple[Optional[pygame.Surface], bool, Optional[str]]:
         """
-        Load a single image from category/variant/frame structure.
+        Load a single image from category/subcategory/variant/frame structure.
         Returns: (surface, loaded, variant_used)
         """
         size = cls._normalize_size(size)
         
         # Get variant (random if not specified)
         if variant is None:
-            variant = cls.get_random_variant(category)
+            variant = cls.get_random_variant(category, subcategory)
             if variant is None:
                 if fallback_draw is not None and size is not None:
-                    fallback_key = (category, size, fallback_tag)
+                    fallback_key = (category, subcategory, size, fallback_tag)
                     if fallback_key not in cls._fallback_cache:
                         fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
                         fallback_draw(fallback_surface)
@@ -397,10 +409,13 @@ class AssetHandler:
         
         # Build path
         asset_root = cls._asset_root()
-        frame_path = os.path.join(asset_root, category, variant, f"{frame}.png")
+        if subcategory:
+            frame_path = os.path.join(asset_root, category, subcategory, variant, f"{frame}.png")
+        else:
+            frame_path = os.path.join(asset_root, category, variant, f"{frame}.png")
         
         # Check cache
-        image_key = (category, variant, frame, size)
+        image_key = (category, subcategory, variant, frame, size)
         if image_key in cls._image_cache:
             surface, loaded = cls._image_cache[image_key]
             return surface, loaded, variant
@@ -408,7 +423,7 @@ class AssetHandler:
         # Load image
         if not os.path.isfile(frame_path):
             if fallback_draw is not None and size is not None:
-                fallback_key = (category, variant, size, fallback_tag)
+                fallback_key = (category, subcategory, variant, size, fallback_tag)
                 if fallback_key not in cls._fallback_cache:
                     fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
                     fallback_draw(fallback_surface)
@@ -436,7 +451,7 @@ class AssetHandler:
             return surface, True, variant
         except Exception:
             if fallback_draw is not None and size is not None:
-                fallback_key = (category, variant, size, fallback_tag)
+                fallback_key = (category, subcategory, variant, size, fallback_tag)
                 if fallback_key not in cls._fallback_cache:
                     fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
                     fallback_draw(fallback_surface)

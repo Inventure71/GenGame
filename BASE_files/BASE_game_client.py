@@ -292,6 +292,17 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
             # Update network client
             network_client.update()
+            
+            # Update entities for client-side animation (characters need to update animation frames)
+            for entity in entity_manager.entities.values():
+                if hasattr(entity, 'update'):
+                    # Create a dummy arena object for update() call if needed
+                    # Most entities just need delta_time for animation
+                    try:
+                        entity.update(frame_delta, None)
+                    except (TypeError, AttributeError):
+                        # Some entities might not need arena parameter
+                        pass
 
             # Update camera to follow local player (fallback to first entity)
             follow_entity = None

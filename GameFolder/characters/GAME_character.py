@@ -48,6 +48,17 @@ class Character(BaseCharacter):
 
         self.damage_multiplier = 1.0
         self.primary_damage = 0.0
+        
+        # Track movement direction for sprite rotation
+        self.last_movement_direction = [0.0, 1.0]  # Default pointing up
+        
+        # Walking animation tracking
+        self.is_moving = False
+        self.animation_frame = 0  # 0 = stopped, 1+ = walking frames
+        self.animation_timer = 0.0
+        self.animation_frame_count = 0  # Will be set when variant is determined
+        self.animation_speed = 0.15  # Time per frame in seconds
+        
         self.primary_delay = 0.6
         self.primary_knockback = 0.0
         self.primary_use_cooldown = 0.2
@@ -103,6 +114,20 @@ class Character(BaseCharacter):
             self.size = float(self.width)
         if not hasattr(self, "base_size"):
             self.base_size = float(self.width)
+        
+        # Initialize client-side-only animation attributes (not synced from server)
+        if not hasattr(self, "animation_frame"):
+            self.animation_frame = 0
+        if not hasattr(self, "animation_timer"):
+            self.animation_timer = 0.0
+        if not hasattr(self, "animation_frame_count"):
+            self.animation_frame_count = 0
+        if not hasattr(self, "animation_speed"):
+            self.animation_speed = 0.15  # Time per frame in seconds (matches __init__)
+        if not hasattr(self, "_prev_location"):
+            self._prev_location = list(self.location) if hasattr(self, 'location') else [0.0, 0.0]
+        if not hasattr(self, "last_movement_direction"):
+            self.last_movement_direction = [0.0, 1.0]  # Default pointing up
         if not hasattr(self, "dashes_left"):
             self.dashes_left = 3
         if not hasattr(self, "max_dashes"):
@@ -226,7 +251,34 @@ class Character(BaseCharacter):
                     pickup.set_ability_name(old)
             return
 
+    def _update_client_animation(self, delta_time: float):
+        """Client-only walking animation state."""
+        if not hasattr(self, '_prev_location'):
+            self._prev_location = self.location.copy() if hasattr(self.location, 'copy') else list(self.location)
+
+        # Detect movement by comparing current and previous location
+        moved = (abs(self.location[0] - self._prev_location[0]) > 0.01 or
+                 abs(self.location[1] - self._prev_location[1]) > 0.01)
+        self._prev_location = self.location.copy() if hasattr(self.location, 'copy') else list(self.location)
+
+        # Use movement detection (client-side only - animation is purely visual)
+        moving = getattr(self, "is_moving", False) or moved
+        if moving:
+            self.animation_timer += delta_time
+            frame_count = self.animation_frame_count if self.animation_frame_count > 0 else 1
+            if self.animation_timer >= self.animation_speed:
+                self.animation_timer = 0.0
+                self.animation_frame = (self.animation_frame + 1) % frame_count
+        else:
+            # Not moving - use frame 0 (stopped)
+            self.animation_frame = 0
+            self.animation_timer = 0.0
+
     def update(self, delta_time: float, arena):
+        if arena is None:
+            self._update_client_animation(delta_time)
+            return
+
         self.last_arena_height = arena.height
 
         if not hasattr(self, "skin_name"):
@@ -264,6 +316,9 @@ class Character(BaseCharacter):
                 if self.angry:
                     self.angry = False
                     self.update_damage_multiplier()
+        
+        if not getattr(arena, "headless", False):
+            self._update_client_animation(delta_time)
 
     def move(self, direction, arena, mouse_pos=None, dash=False):
         if not self.is_alive:
@@ -293,6 +348,18 @@ class Character(BaseCharacter):
 
         if dx != 0 and dy != 0:
             speed /= math.sqrt(2)
+
+        # Update movement direction for sprite rotation (only if actually moving)
+        # Note: is_moving is kept for potential gameplay use, but animation frames are client-side only
+        is_moving_now = (dx != 0 or dy != 0)
+        if is_moving_now:
+            # Normalize direction vector
+            dist = math.hypot(dx, dy)
+            if dist > 0:
+                self.last_movement_direction = [dx / dist, dy / dist]
+            self.is_moving = True
+        else:
+            self.is_moving = False
 
         self.location[0] += dx * speed
         self.location[1] += dy * speed
@@ -445,11 +512,19 @@ class Character(BaseCharacter):
     def draw(self, screen: pygame.Surface, arena_height: float = None, camera=None):
         if not self._graphics_initialized:
             return
+        # Get collision rect (unchanged - used for collision detection)
         rect = self.get_draw_rect(arena_height, camera)
         
         # Ensure rect has valid dimensions
         if rect.width <= 0 or rect.height <= 0:
             return
+        
+        # Client-side visual scale multiplier (only affects drawing, not collision)
+        VISUAL_SCALE = 1.5  # Make cow appear 1.5x bigger visually
+        
+        # Calculate visual size for drawing (larger than collision rect)
+        visual_width = int(rect.width * VISUAL_SCALE)
+        visual_height = int(rect.height * VISUAL_SCALE)
         
         draw_color = (200, 200, 255) if self.is_attacking else self.color
         if not self.is_alive:
@@ -465,28 +540,37 @@ class Character(BaseCharacter):
                 # Old format - use old system
                 sprite, loaded = AssetHandler.get_image(
                     self.skin_name,
-                    size=(int(rect.width), int(rect.height)),
+                    size=(visual_width, visual_height),  # Use visual size for drawing
                     fallback_draw=fallback,
                 )
             else:
                 # New format - use category system
+                # Use current animation frame (0 when stopped, 1+ when moving)
                 sprite, loaded, variant = AssetHandler.get_image_from_category(
                     "cows",
                     variant=self.cow_variant,  # Use stored variant or None for random
-                    frame=0,  # First frame (could cycle for animation)
-                    size=(int(rect.width), int(rect.height)),
+                    frame=self.animation_frame,  # Use current animation frame
+                    size=(visual_width, visual_height),  # Use visual size for drawing
                     fallback_draw=fallback,
                 )
-                # Store variant for consistency (always store if we got one and don't have one)
-                if variant is not None and self.cow_variant is None:
-                    self.cow_variant = variant
+                # Store variant for consistency and count frames for animation
+                if variant is not None:
+                    if self.cow_variant is None:
+                        self.cow_variant = variant
+                    # Count frames for this variant if not already counted
+                    if self.animation_frame_count == 0:
+                        frame_count = AssetHandler._count_frames("cows", variant)
+                        if frame_count > 0:
+                            self.animation_frame_count = frame_count
+                        else:
+                            self.animation_frame_count = 1  # At least frame 0 exists
         else:
             # Dead cow - use new category system
             sprite, loaded, variant = AssetHandler.get_image_from_category(
                 "deadCows",
                 variant=self.dead_cow_variant,  # Use stored variant or None for random
                 frame=0,
-                size=(int(rect.width), int(rect.height)),
+                size=(visual_width, visual_height),  # Use visual size for drawing
                 fallback_draw=fallback,
             )
             # Store variant for consistency (always store if we got one and don't have one)
@@ -494,7 +578,25 @@ class Character(BaseCharacter):
                 self.dead_cow_variant = variant
         
         if sprite is not None:
-            screen.blit(sprite, rect)
+            # Rotate sprite based on movement direction (only if asset was loaded, not fallback)
+            if loaded:
+                # Calculate rotation angle from movement direction
+                # Image points up by default (positive Y), so we use atan2(dx, dy) to get angle from positive Y axis
+                # pygame.transform.rotate() rotates counter-clockwise
+                dx, dy = self.last_movement_direction
+                angle_rad = math.atan2(dx, dy)
+                angle_deg = -math.degrees(angle_rad)  # Negate to fix left/right inversion
+
+                # Rotate the sprite (pygame rotates counter-clockwise)
+                rotated_sprite = pygame.transform.rotate(sprite, angle_deg)
+                
+                # Center the larger visual sprite on the original collision rect center
+                rotated_rect = rotated_sprite.get_rect(center=rect.center)
+                screen.blit(rotated_sprite, rotated_rect)
+            else:
+                # Fallback - draw without rotation, centered on collision rect
+                fallback_rect = sprite.get_rect(center=rect.center)
+                screen.blit(sprite, fallback_rect)
         elif not loaded:
             pygame.draw.rect(screen, draw_color, rect)
             pygame.draw.rect(screen, (30, 30, 30), rect, 2)

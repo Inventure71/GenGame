@@ -14,11 +14,23 @@ class WorldObstacle(BasePlatform):
         # Range: 160-400ms per frame (slower animations - at least half as slow as before)
         self._anim_speed = random.uniform(160, 400)
 
+        # Determine size category for blocking obstacles (small, medium, big)
+        # Based on size ranges: small (50-70), medium (71-95), big (96-200)
+        if obstacle_type == "blocking":
+            if size <= 70:
+                self.obstacle_size_category = "small"
+            elif size <= 95:
+                self.obstacle_size_category = "medium"
+            else:
+                self.obstacle_size_category = "big"
+        else:
+            self.obstacle_size_category = None
+
         # Pick and store variant for consistency (so same obstacle always uses same variant)
         if obstacle_type == "slowing":
             self.obstacle_variant = AssetHandler.get_random_variant("slowObstacles")
         elif obstacle_type == "blocking":
-            self.obstacle_variant = AssetHandler.get_random_variant("blockObstacles")
+            self.obstacle_variant = AssetHandler.get_random_variant("blockObstacles", self.obstacle_size_category)
         else:
             self.obstacle_variant = None
 
@@ -39,8 +51,10 @@ class WorldObstacle(BasePlatform):
 
         if self.obstacle_type == "slowing":
             def fallback(surface):
-                surface.fill((70, 140, 180))
-                pygame.draw.rect(surface, (30, 60, 80), surface.get_rect(), 2)
+                center = (surface.get_width() // 2, surface.get_height() // 2)
+                radius = min(center[0], center[1])
+                pygame.draw.circle(surface, (70, 140, 180), center, radius)
+                pygame.draw.circle(surface, (30, 60, 80), center, radius, 2)
 
             frames, _, variant = AssetHandler.get_animation_from_category(
                 "slowObstacles",
@@ -57,30 +71,35 @@ class WorldObstacle(BasePlatform):
 
         elif self.obstacle_type == "blocking":
             def fallback(surface):
-                surface.fill((90, 90, 90))
-                pygame.draw.rect(surface, (30, 30, 30), surface.get_rect(), 2)
+                center = (surface.get_width() // 2, surface.get_height() // 2)
+                radius = min(center[0], center[1])
+                pygame.draw.circle(surface, (90, 90, 90), center, radius)
+                pygame.draw.circle(surface, (30, 30, 30), center, radius, 2)
 
-            # Try to load image from blockObstacles category
+            # Try to load image from blockObstacles category with size-based subcategory
             sprite, loaded, variant = AssetHandler.get_image_from_category(
                 "blockObstacles",
                 variant=self.obstacle_variant,  # Use stored variant
                 frame=0,
                 size=(int(rect.width), int(rect.height)),
                 fallback_draw=fallback,
+                subcategory=self.obstacle_size_category,  # Use size category (big/medium/small)
             )
             if sprite is not None:
                 screen.blit(sprite, rect)
             elif not loaded:
-                # Fallback to colored rectangle if asset not found
-                color = (90, 90, 90)
-                pygame.draw.rect(screen, color, rect)
-                pygame.draw.rect(screen, (30, 30, 30), rect, 2)
+                # Fallback to colored circle if asset not found
+                center = (rect.centerx, rect.centery)
+                radius = min(rect.width, rect.height) // 2
+                pygame.draw.circle(screen, (90, 90, 90), center, radius)
+                pygame.draw.circle(screen, (30, 30, 30), center, radius, 2)
             return
 
         # Default fallback for unknown obstacle types
-        color = (90, 90, 90)
-        pygame.draw.rect(screen, color, rect)
-        pygame.draw.rect(screen, (30, 30, 30), rect, 2)
+        center = (rect.centerx, rect.centery)
+        radius = min(rect.width, rect.height) // 2
+        pygame.draw.circle(screen, (90, 90, 90), center, radius)
+        pygame.draw.circle(screen, (30, 30, 30), center, radius, 2)
 
 
 class GrassField(BasePlatform):

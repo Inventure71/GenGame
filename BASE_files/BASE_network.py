@@ -40,11 +40,14 @@ class NetworkObject:
         """
         state = self.__dict__.copy()
 
-        # Remove heavy graphics resources that shouldn't be transmitted
+        # Remove heavy graphics resources and client-side-only visual state that shouldn't be transmitted
         heavy_keys = [
             'image', 'rect', 'mask', 'screen', 'font', 'sounds', 'sound',
             'surface', 'texture', 'sprite', 'animation_frames', 'particle_effects',
-            '_graphics_initialized'
+            '_graphics_initialized',
+            # Client-side animation state (purely visual, doesn't affect gameplay)
+            'animation_frame', 'animation_timer', 'animation_frame_count',
+            '_prev_location'  # Client-side movement tracking
         ]
 
         for key in heavy_keys:
