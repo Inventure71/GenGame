@@ -49,16 +49,6 @@ class Character(BaseCharacter):
         self.damage_multiplier = 1.0
         self.primary_damage = 0.0
         
-        # Track movement direction for sprite rotation
-        self.last_movement_direction = [0.0, 1.0]  # Default pointing up
-        
-        # Walking animation tracking
-        self.is_moving = False
-        self.animation_frame = 0  # 0 = stopped, 1+ = walking frames
-        self.animation_timer = 0.0
-        self.animation_frame_count = 0  # Will be set when variant is determined
-        self.animation_speed = 0.15  # Time per frame in seconds
-        
         self.primary_delay = 0.6
         self.primary_knockback = 0.0
         self.primary_use_cooldown = 0.2
@@ -115,19 +105,6 @@ class Character(BaseCharacter):
         if not hasattr(self, "base_size"):
             self.base_size = float(self.width)
         
-        # Initialize client-side-only animation attributes (not synced from server)
-        if not hasattr(self, "animation_frame"):
-            self.animation_frame = 0
-        if not hasattr(self, "animation_timer"):
-            self.animation_timer = 0.0
-        if not hasattr(self, "animation_frame_count"):
-            self.animation_frame_count = 0
-        if not hasattr(self, "animation_speed"):
-            self.animation_speed = 0.15  # Time per frame in seconds (matches __init__)
-        if not hasattr(self, "_prev_location"):
-            self._prev_location = list(self.location) if hasattr(self, 'location') else [0.0, 0.0]
-        if not hasattr(self, "last_movement_direction"):
-            self.last_movement_direction = [0.0, 1.0]  # Default pointing up
         if not hasattr(self, "dashes_left"):
             self.dashes_left = 3
         if not hasattr(self, "max_dashes"):
@@ -251,35 +228,10 @@ class Character(BaseCharacter):
                     pickup.set_ability_name(old)
             return
 
-    def _update_client_animation(self, delta_time: float):
-        """Client-only walking animation state."""
-        if not hasattr(self, '_prev_location'):
-            self._prev_location = self.location.copy() if hasattr(self.location, 'copy') else list(self.location)
-
-        # Detect movement by comparing current and previous location
-        moved = (abs(self.location[0] - self._prev_location[0]) > 0.01 or
-                 abs(self.location[1] - self._prev_location[1]) > 0.01)
-        self._prev_location = self.location.copy() if hasattr(self.location, 'copy') else list(self.location)
-
-        # Use movement or eating to drive animation (client-side only)
-        moving = getattr(self, "is_moving", False) or moved or getattr(self, "is_eating", False)
-        if moving:
-            self.animation_timer += delta_time
-            frame_count = self.animation_frame_count if self.animation_frame_count > 0 else 1
-            if self.animation_timer >= self.animation_speed:
-                self.animation_timer = 0.0
-                self.animation_frame = (self.animation_frame + 1) % frame_count
-        else:
-            # Not moving - use frame 0 (stopped)
-            self.animation_frame = 0
-            self.animation_timer = 0.0
-
     def update(self, delta_time: float, arena):
+        super().update(delta_time, arena)
         if arena is None:
-            self._update_client_animation(delta_time)
             return
-
-        self.last_arena_height = arena.height
 
         if not hasattr(self, "skin_name"):
             self.skin_name = random.choice(["mucca0.png", "mucca1.png", "mucca2.png", "mucca3.png"])
@@ -317,9 +269,6 @@ class Character(BaseCharacter):
                     self.angry = False
                     self.update_damage_multiplier()
         
-        if not getattr(arena, "headless", False):
-            self._update_client_animation(delta_time)
-
     def move(self, direction, arena, mouse_pos=None, dash=False):
         if not self.is_alive:
             return
@@ -349,17 +298,7 @@ class Character(BaseCharacter):
         if dx != 0 and dy != 0:
             speed /= math.sqrt(2)
 
-        # Update movement direction for sprite rotation (only if actually moving)
-        # Note: is_moving is kept for potential gameplay use, but animation frames are client-side only
-        is_moving_now = (dx != 0 or dy != 0)
-        if is_moving_now:
-            # Normalize direction vector
-            dist = math.hypot(dx, dy)
-            if dist > 0:
-                self.last_movement_direction = [dx / dist, dy / dist]
-            self.is_moving = True
-        else:
-            self.is_moving = False
+        self._update_movement_state(dx, dy)
 
         self.location[0] += dx * speed
         self.location[1] += dy * speed
@@ -590,8 +529,11 @@ class Character(BaseCharacter):
         VISUAL_SCALE = 1.5  # Make cow appear 1.5x bigger visually
         
         # Calculate visual size for drawing (larger than collision rect)
-        visual_width = int(rect.width * VISUAL_SCALE)
-        visual_height = int(rect.height * VISUAL_SCALE)
+        visual_width, visual_height = AssetHandler.get_visual_size(
+            rect.width,
+            rect.height,
+            scale=VISUAL_SCALE,
+        )
         
         draw_color = (200, 200, 255) if self.is_attacking else self.color
         if not self.is_alive:

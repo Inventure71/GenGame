@@ -1,5 +1,4 @@
-import pygame
-from BASE_files.BASE_network import NetworkObject
+from BASE_components.BASE_pickups import BasePickup
 from BASE_components.BASE_asset_handler import AssetHandler
 from GameFolder.abilities.ability_loader import get_primary_abilities, get_passive_abilities, reload_abilities
 
@@ -23,17 +22,16 @@ def reload_ability_names():
     PASSIVE_ABILITY_NAMES = _get_passive_names()
 
 
-class AbilityPickup(NetworkObject):
+class AbilityPickup(BasePickup):
     def __init__(self, ability_name: str, ability_type: str, location: [float, float]):
-        super().__init__()
+        super().__init__(location, width=36, height=36, pickup_radius=48)
         self.ability_name = ability_name
         self.ability_type = ability_type
-        self.location = location
-        self.width = 36
-        self.height = 36
-        self.pickup_radius = 48
-        self.is_active = True
         self.description = self._lookup_description()
+        self.asset_image_name = AssetHandler.get_random_asset_from_subcategory(
+            "pickups",
+            "primary" if self.ability_type == "primary" else "passive",
+        )
 
         if self.ability_type == "primary":
             self.color = (255, 170, 80)
@@ -41,7 +39,6 @@ class AbilityPickup(NetworkObject):
             self.color = (100, 160, 255)
 
         self._set_network_identity("GameFolder.pickups.GAME_pickups", "AbilityPickup")
-        self.init_graphics()
 
     def _lookup_description(self) -> str:
         ability_def = None
@@ -59,38 +56,10 @@ class AbilityPickup(NetworkObject):
             raise ValueError(f"AbilityPickup missing description for '{self.ability_name}' ({self.ability_type})")
         return ability_def["description"]
 
-    def init_graphics(self):
-        super().init_graphics()
-        try:
-            pygame.display.get_surface()
-        except Exception:
-            return
-
-    def pickup(self):
-        self.is_active = False
-
     def set_ability_name(self, ability_name: str):
         """Update the pickup's ability and refresh any derived fields."""
         self.ability_name = ability_name
         self.description = self._lookup_description()
 
-    def get_pickup_rect(self, arena_height: float) -> pygame.Rect:
-        py_x = self.location[0] - self.pickup_radius / 2
-        py_y = arena_height - self.location[1] - self.pickup_radius / 2
-        return pygame.Rect(py_x, py_y, self.pickup_radius, self.pickup_radius)
-
-    def draw(self, screen: pygame.Surface, arena_height: float, camera=None):
-        if not self.is_active or not self._graphics_initialized:
-            return
-        if camera is not None:
-            rect = camera.world_center_rect_to_screen(self.location[0], self.location[1], self.width, self.height)
-        else:
-            py_x = self.location[0] - self.width / 2
-            py_y = arena_height - self.location[1] - self.height / 2
-            rect = pygame.Rect(py_x, py_y, self.width, self.height)
-        pygame.draw.rect(screen, self.color, rect, border_radius=6)
-        pygame.draw.rect(screen, (20, 20, 20), rect, 2, border_radius=6)
-
-        label = "P" if self.ability_type == "primary" else "S"
-        text = AssetHandler.render_text(label, None, 20, (30, 30, 30))
-        screen.blit(text, text.get_rect(center=rect.center))
+    def get_label(self) -> str:
+        return "P" if self.ability_type == "primary" else "S"

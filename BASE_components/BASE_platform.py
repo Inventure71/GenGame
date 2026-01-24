@@ -104,3 +104,39 @@ class BasePlatform(NetworkObject):
         if self.is_destroyed or not self._graphics_initialized:
             return
         pygame.draw.rect(screen, self.color, self.rect)
+
+
+class BaseWorldPlatform(BasePlatform):
+    """World-space platform that converts to screen-space for rendering."""
+
+    def __init__(
+        self,
+        center_x: float,
+        center_y: float,
+        width: float,
+        height: float,
+        arena_height: float,
+        color=(100, 100, 100),
+        health: float = 100.0,
+    ):
+        self.world_center = [center_x, center_y]
+        self.last_arena_height = arena_height
+        py_x = center_x - width / 2
+        py_y = arena_height - center_y - height / 2
+        super().__init__(py_x, py_y, width, height, color=color, health=health)
+
+    def get_draw_rect(self, arena_height: float = None, camera=None) -> pygame.Rect:
+        if arena_height is None:
+            arena_height = self.last_arena_height
+        else:
+            self.last_arena_height = arena_height
+        if camera is not None:
+            return camera.world_center_rect_to_screen(
+                self.world_center[0],
+                self.world_center[1],
+                self.width,
+                self.height,
+            )
+        py_x = self.world_center[0] - self.width / 2
+        py_y = arena_height - self.world_center[1] - self.height / 2
+        return pygame.Rect(py_x, py_y, self.width, self.height)

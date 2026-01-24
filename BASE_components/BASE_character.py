@@ -1,3 +1,4 @@
+import math
 import pygame
 from BASE_files.BASE_network import NetworkObject
 
@@ -41,6 +42,15 @@ class BaseCharacter(NetworkObject):
         self.speed_min_size = self.SPEED_MIN_SIZE
         self.speed_max_size = self.SPEED_MAX_SIZE
 
+        # Movement and animation state (client-side visuals).
+        self.last_movement_direction = [0.0, 1.0]
+        self.is_moving = False
+        self.animation_frame = 0
+        self.animation_timer = 0.0
+        self.animation_frame_count = 0
+        self.animation_speed = 0.15
+        self._prev_location = list(self.location) if hasattr(self.location, "copy") else list(self.location)
+
         self.init_graphics()
 
     def __setstate__(self, state):
@@ -49,6 +59,20 @@ class BaseCharacter(NetworkObject):
             self.lives = self.MAX_LIVES
         if not hasattr(self, "is_eliminated"):
             self.is_eliminated = False
+        if not hasattr(self, "animation_frame"):
+            self.animation_frame = 0
+        if not hasattr(self, "animation_timer"):
+            self.animation_timer = 0.0
+        if not hasattr(self, "animation_frame_count"):
+            self.animation_frame_count = 0
+        if not hasattr(self, "animation_speed"):
+            self.animation_speed = 0.15
+        if not hasattr(self, "_prev_location"):
+            self._prev_location = list(self.location) if hasattr(self.location, "copy") else list(self.location)
+        if not hasattr(self, "last_movement_direction"):
+            self.last_movement_direction = [0.0, 1.0]
+        if not hasattr(self, "is_moving"):
+            self.is_moving = False
         self.init_graphics()
 
     def init_graphics(self):
@@ -89,7 +113,12 @@ class BaseCharacter(NetworkObject):
         return
 
     def update(self, delta_time: float, arena):
+        if arena is None:
+            self._update_client_animation(delta_time)
+            return
         self.last_arena_height = arena.height
+        if not getattr(arena, "headless", False):
+            self._update_client_animation(delta_time)
 
     def get_rect(self, arena_height: float = None) -> pygame.Rect:
         if arena_height is None:
@@ -105,6 +134,7 @@ class BaseCharacter(NetworkObject):
 
     def move(self, direction, arena):
         dx, dy = direction
+        self._update_movement_state(dx, dy)
         self.location[0] += dx * self.speed
         self.location[1] += dy * self.speed
         margin_x = self.width / 2
@@ -126,6 +156,44 @@ class BaseCharacter(NetworkObject):
         )
         t = max(0.0, min(1.0, t))
         return self.speed_fast_min + (self.speed_slow_max - self.speed_fast_min) * t
+
+    def _update_movement_state(self, dx: float, dy: float):
+        is_moving_now = (dx != 0 or dy != 0)
+        if is_moving_now:
+            dist = math.hypot(dx, dy)
+            if dist > 0:
+                self.last_movement_direction = [dx / dist, dy / dist]
+            self.is_moving = True
+        else:
+            self.is_moving = False
+
+    def _update_client_animation(self, delta_time: float):
+        """Client-only walking animation state."""
+        if not hasattr(self, "_prev_location"):
+            self._prev_location = (
+                self.location.copy() if hasattr(self.location, "copy") else list(self.location)
+            )
+
+        moved = (
+            abs(self.location[0] - self._prev_location[0]) > 0.01
+            or abs(self.location[1] - self._prev_location[1]) > 0.01
+        )
+        self._prev_location = (
+            self.location.copy() if hasattr(self.location, "copy") else list(self.location)
+        )
+
+        moving = bool(getattr(self, "is_moving", False)) or moved or bool(
+            getattr(self, "is_eating", False)
+        )
+        if moving:
+            self.animation_timer += delta_time
+            frame_count = self.animation_frame_count if self.animation_frame_count > 0 else 1
+            if self.animation_timer >= self.animation_speed:
+                self.animation_timer = 0.0
+                self.animation_frame = (self.animation_frame + 1) % frame_count
+        else:
+            self.animation_frame = 0
+            self.animation_timer = 0.0
 
     def take_damage(self, amount: float):
         if not self.is_alive or amount <= 0:

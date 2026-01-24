@@ -1,9 +1,9 @@
 import pygame
 import random
-from BASE_components.BASE_platform import BasePlatform
+from BASE_components.BASE_platform import BaseWorldPlatform
 from BASE_components.BASE_asset_handler import AssetHandler
 
-class WorldObstacle(BasePlatform):
+class WorldObstacle(BaseWorldPlatform):
     def __init__(self, center_x: float, center_y: float, size: float, obstacle_type: str, arena_height: float):
         self.world_center = [center_x, center_y]
         self.size = size
@@ -34,20 +34,17 @@ class WorldObstacle(BasePlatform):
         else:
             self.obstacle_variant = None
 
-        py_x = center_x - size / 2
-        py_y = arena_height - center_y - size / 2
-
         color = (80, 80, 80) if obstacle_type == "blocking" else (60, 120, 160)
-        super().__init__(py_x, py_y, size, size, color=color)
+        super().__init__(center_x, center_y, size, size, arena_height, color=color)
         self._set_network_identity("GameFolder.world.GAME_world_objects", "WorldObstacle")
 
     def draw(self, screen: pygame.Surface, arena_height: float = None, camera=None):
         if self.is_destroyed or not self._graphics_initialized:
             return
-        if camera is not None:
-            rect = camera.world_center_rect_to_screen(self.world_center[0], self.world_center[1], self.size, self.size)
-        else:
-            rect = self.rect
+        rect = self.get_draw_rect(arena_height, camera)
+        visual_width, visual_height = AssetHandler.get_visual_size(rect.width, rect.height)
+        visual_rect = pygame.Rect(0, 0, visual_width, visual_height)
+        visual_rect.center = rect.center
 
         if self.obstacle_type == "slowing":
             def fallback(surface):
@@ -59,14 +56,14 @@ class WorldObstacle(BasePlatform):
             frames, _, variant = AssetHandler.get_animation_from_category(
                 "slowObstacles",
                 variant=self.obstacle_variant,  # Use stored variant
-                size=(int(rect.width), int(rect.height)),
+                size=(visual_width, visual_height),
                 fallback_draw=fallback,
             )
             if frames:
                 tick = pygame.time.get_ticks() if pygame.get_init() else 0
                 # Use per-obstacle animation speed instead of fixed 120ms
                 frame_index = int((tick / self._anim_speed) + self._anim_offset) % len(frames)
-                screen.blit(frames[frame_index], rect)
+                screen.blit(frames[frame_index], visual_rect)
             return
 
         elif self.obstacle_type == "blocking":
@@ -81,28 +78,28 @@ class WorldObstacle(BasePlatform):
                 "blockObstacles",
                 variant=self.obstacle_variant,  # Use stored variant
                 frame=0,
-                size=(int(rect.width), int(rect.height)),
+                size=(visual_width, visual_height),
                 fallback_draw=fallback,
                 subcategory=self.obstacle_size_category,  # Use size category (big/medium/small)
             )
             if sprite is not None:
-                screen.blit(sprite, rect)
+                screen.blit(sprite, visual_rect)
             elif not loaded:
                 # Fallback to colored circle if asset not found
-                center = (rect.centerx, rect.centery)
-                radius = min(rect.width, rect.height) // 2
+                center = (visual_rect.centerx, visual_rect.centery)
+                radius = min(visual_rect.width, visual_rect.height) // 2
                 pygame.draw.circle(screen, (90, 90, 90), center, radius)
                 pygame.draw.circle(screen, (30, 30, 30), center, radius, 2)
             return
 
         # Default fallback for unknown obstacle types
-        center = (rect.centerx, rect.centery)
-        radius = min(rect.width, rect.height) // 2
+        center = (visual_rect.centerx, visual_rect.centery)
+        radius = min(visual_rect.width, visual_rect.height) // 2
         pygame.draw.circle(screen, (90, 90, 90), center, radius)
         pygame.draw.circle(screen, (30, 30, 30), center, radius, 2)
 
 
-class GrassField(BasePlatform):
+class GrassField(BaseWorldPlatform):
     def __init__(self, center_x: float, center_y: float, radius: float, max_food: float, arena_height: float):
         self.world_center = [center_x, center_y]
         self.radius = radius
@@ -112,10 +109,7 @@ class GrassField(BasePlatform):
         # Pick and store variant for consistency
         self.grass_variant = AssetHandler.get_random_variant("grass")
 
-        py_x = center_x - radius
-        py_y = arena_height - center_y - radius
-
-        super().__init__(py_x, py_y, radius * 2, radius * 2, color=(40, 160, 40))
+        super().__init__(center_x, center_y, radius * 2, radius * 2, arena_height, color=(40, 160, 40))
         self._set_network_identity("GameFolder.world.GAME_world_objects", "GrassField")
 
     def can_eat(self, cow_x: float, cow_y: float, cow_radius: float) -> bool:
@@ -139,15 +133,10 @@ class GrassField(BasePlatform):
         fullness = self.current_food / max(1.0, self.max_food)
         bucket = max(0, min(10, int(fullness * 10)))
 
-        if camera is not None:
-            rect = camera.world_center_rect_to_screen(self.world_center[0], self.world_center[1], self.radius * 2, self.radius * 2)
-        else:
-            rect = pygame.Rect(
-                self.world_center[0] - self.radius,
-                arena_height - self.world_center[1] - self.radius,
-                self.radius * 2,
-                self.radius * 2,
-            )
+        rect = self.get_draw_rect(arena_height, camera)
+        visual_width, visual_height = AssetHandler.get_visual_size(rect.width, rect.height)
+        visual_rect = pygame.Rect(0, 0, visual_width, visual_height)
+        visual_rect.center = rect.center
         def fallback(surface):
             center = (surface.get_width() // 2, surface.get_height() // 2)
             radius = min(center[0], center[1])
@@ -160,7 +149,7 @@ class GrassField(BasePlatform):
             "grass",
             variant=self.grass_variant,  # Use stored variant
             frame=0,
-            size=(int(rect.width), int(rect.height)),
+            size=(visual_width, visual_height),
             fallback_draw=fallback,
             fallback_tag=f"fullness_{bucket}",
         )
@@ -173,7 +162,7 @@ class GrassField(BasePlatform):
         if not loaded and grass_surface is None:
             grass_surface, loaded = AssetHandler.get_image(
                 "ERBA.png",
-                size=(int(rect.width), int(rect.height)),
+                size=(visual_width, visual_height),
                 fallback_draw=fallback,
                 fallback_tag=f"fullness_{bucket}",
             )
@@ -187,4 +176,4 @@ class GrassField(BasePlatform):
             grass_surface = grass_surface.copy()
             grass_surface.set_alpha(int(120 + 120 * (bucket / 10.0)))
         
-        screen.blit(grass_surface, rect)
+        screen.blit(grass_surface, visual_rect)

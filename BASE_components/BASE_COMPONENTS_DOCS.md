@@ -1,6 +1,6 @@
 # Core Conflict BASE Components Documentation
 
-This document is the API reference for the **lowest‑level** Core Conflict engine pieces. These live in `BASE_components/` and are **READ‑ONLY**. All gameplay logic, abilities, effects, pickups, and visuals should be implemented in `GameFolder/` by extending these base classes.
+This document is the API reference for the **lowest‑level** Core Conflict engine pieces. These live in `BASE_components/` and are **READ‑ONLY**. All gameplay logic, abilities, effects, and game-specific visuals should be implemented in `GameFolder/` by extending these base classes.
 
 **Guiding rule:** Base = low‑level primitives + immutable systems (game loop, safe zone). GameFolder = specialization.
 
@@ -10,13 +10,14 @@ This document is the API reference for the **lowest‑level** Core Conflict engi
 
 ### What lives in BASE
 - Immutable systems: game loop, safe zone updates
-- Low‑level primitives: `BaseCharacter`, `BasePlatform`, `BaseEffect`, `TimedEffect`, `BaseUI`
+- Low‑level primitives: `BaseCharacter`, `BasePlatform`, `BaseWorldPlatform`, `BaseEffect`, `TimedEffect`, `BaseUI`, `BasePickup`
+- Shared helpers: movement/animation state, collision geometry helpers, pickup rendering
 - Network serialization support via `NetworkObject` (in `BASE_files/BASE_network.py`)
 
 ### What lives in GameFolder
 - Concrete gameplay systems: MS2 abilities/effects, pickups, obstacles, grass
 - Collision rules and item pickup logic
-- UI rendering
+- Game-specific UI rendering
 - Character behavior and ability logic
 
 ---
@@ -49,6 +50,7 @@ A minimal, network‑serializable character that supports movement, damage, and 
 - `self.last_arena_height`: Cached arena height for rect calculations
 - Speed scaling constants: `SPEED_FAST_MIN`, `SPEED_SLOW_MAX`, `SPEED_MIN_SIZE`, `SPEED_MAX_SIZE`
 - Speed instance vars: `speed_fast_min`, `speed_slow_max`, `speed_min_size`, `speed_max_size`
+- Animation state: `last_movement_direction`, `is_moving`, `animation_frame`, `animation_timer`, `animation_frame_count`, `animation_speed`, `_prev_location`
 
 ### Key Methods
 - `get_input_data(held_keys, mouse_buttons, mouse_pos)` (static)
@@ -66,6 +68,10 @@ A minimal, network‑serializable character that supports movement, damage, and 
   - Returns draw rect with optional camera support
 - `compute_speed_for_size(size)` → `float`
   - Shared helper for size-based speed scaling (smaller = faster)
+- `_update_movement_state(dx, dy)`
+  - Updates `last_movement_direction` and `is_moving`
+- `_update_client_animation(delta_time)`
+  - Updates animation frames (uses `is_eating` if defined)
 - `update(delta_time, arena)`
   - Updates character state (caches arena height)
 - `draw(screen, arena_height, camera)`
@@ -118,6 +124,9 @@ Immutable game loop and safe‑zone management. Override in GameFolder for gamep
 - `check_winner()`: Checks for game over condition
 - `_update_effects(delta_time)`: Updates and removes expired effects
 - `_apply_safe_zone_damage()`: Applies safe zone damage to characters outside
+- `_apply_knockback(cow, source_location, distance)`: Shared knockback helper
+- `_push_out_of_rect(cow, obstacle_rect)`: Shared collision resolution helper
+- `_circle_intersects_circle(...)` / `_circle_intersects_triangle(...)` / `_circle_intersects_line(...)`: Geometry helpers
 - `add_character(character)` / `add_platform(platform)` / `add_effect(effect)`: Add entities
 - `render()`: Minimal render loop (override for visuals)
 
@@ -172,7 +181,7 @@ Shrinking zone that damages characters outside its radius. This is immutable.
 
 ---
 
-## 5. Platform (`BasePlatform`)
+## 5. Platform (`BasePlatform`, `BaseWorldPlatform`)
 **File**: `BASE_components/BASE_platform.py`
 
 ### Purpose
@@ -194,9 +203,36 @@ Low‑level platform/obstacle type for collision and rendering.
 - `init_graphics()`: Initialize graphics (thread-safe, safe to call multiple times)
 - `draw(screen, arena_height, camera)`: Draw platform
 
+### `BaseWorldPlatform`
+World-space platform that stores a `world_center` and converts to screen-space for drawing.
+
+Key method:
+- `get_draw_rect(arena_height, camera)` → `pygame.Rect`: Converts world center to a screen-space rect
+
 ---
 
-## 6. Camera (`BaseCamera`)
+## 6. Pickups (`BasePickup`)
+**File**: `BASE_components/BASE_pickups.py`
+
+### Purpose
+Generic pickup with world-space location, activation state, and basic rendering. GameFolder should extend this to add game-specific behavior and labels.
+
+### Key Attributes
+- `self.location`: `[x, y]` in world coordinates
+- `self.width` / `self.height`: Size of the pickup sprite
+- `self.pickup_radius`: Collision radius
+- `self.is_active`: Active flag
+- `self.color`: Draw color
+- `self.label`: Optional label text
+
+### Key Methods
+- `get_pickup_rect(arena_height)` → `pygame.Rect`: Collision rect
+- `get_label()` → `str`: Override to supply label text
+- `draw(screen, arena_height, camera)`: Renders pickup with optional label
+
+---
+
+## 7. Camera (`BaseCamera`)
 **File**: `BASE_components/BASE_camera.py`
 
 ### Purpose
@@ -219,7 +255,7 @@ World-to-screen camera for large arenas. Keeps all server logic in absolute worl
 
 ---
 
-## 7. UI (`BaseUI`)
+## 8. UI (`BaseUI`)
 **File**: `BASE_components/BASE_ui.py`
 
 ### Purpose
@@ -236,7 +272,7 @@ Minimal UI hook. GameFolder should implement real UI rendering.
 
 ---
 
-## 8. Asset Handler (`AssetHandler`)
+## 9. Asset Handler (`AssetHandler`)
 **File**: `BASE_components/BASE_asset_handler.py`
 
 ### Purpose

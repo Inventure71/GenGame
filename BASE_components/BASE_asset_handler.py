@@ -30,6 +30,8 @@ class AssetHandler:
     _text_cache = {}
     _text_cache_max = 512
     _variant_cache = {}  # Cache for available variants per category
+    _subcategory_file_cache = {}  # Cache for flat files in category/subcategory
+    DEFAULT_VISUAL_SCALE = 1.2
 
     @staticmethod
     def _asset_root() -> str:
@@ -43,30 +45,87 @@ class AssetHandler:
         return (max(1, int(size[0])), max(1, int(size[1])))
 
     @classmethod
-    def _load_image(cls, asset_name: str, size: Optional[Tuple[int, int]]) -> Tuple[Optional[pygame.Surface], bool]:
-        asset_root = cls._asset_root()
-        path = os.path.join(asset_root, asset_name)
+    def get_visual_size(
+        cls,
+        width: float,
+        height: float,
+        scale: Optional[float] = None,
+    ) -> Tuple[int, int]:
+        visual_scale = cls.DEFAULT_VISUAL_SCALE if scale is None else float(scale)
+        visual_width = max(1, int(round(width * visual_scale)))
+        visual_height = max(1, int(round(height * visual_scale)))
+        return visual_width, visual_height
+
+    @staticmethod
+    def _scale_surface(surface: pygame.Surface, size: Optional[Tuple[int, int]]) -> pygame.Surface:
+        if size is None:
+            return surface
+        surface = pygame.transform.smoothscale(surface, size)
+        if not (surface.get_flags() & pygame.SRCALPHA):
+            new_surface = pygame.Surface(size, pygame.SRCALPHA)
+            new_surface.blit(surface, (0, 0))
+            surface = new_surface
+        return surface
+
+    @classmethod
+    def _load_surface_from_path(cls, path: str, size: Optional[Tuple[int, int]]) -> Tuple[Optional[pygame.Surface], bool]:
         if not os.path.isfile(path):
             return None, False
         try:
-            # Load image - always try to preserve alpha channel
-            surface = pygame.image.load(path)
-            # Always use convert_alpha() to ensure proper alpha channel support
-            # This will preserve transparency if the image has it
-            surface = surface.convert_alpha()
-            
-            if size is not None:
-                # smoothscale preserves alpha channel automatically
-                surface = pygame.transform.smoothscale(surface, size)
-                # Ensure alpha is still present after scaling
-                if not (surface.get_flags() & pygame.SRCALPHA):
-                    # Recreate with alpha if it was lost (shouldn't happen with smoothscale)
-                    new_surface = pygame.Surface(size, pygame.SRCALPHA)
-                    new_surface.blit(surface, (0, 0))
-                    surface = new_surface
+            surface = pygame.image.load(path).convert_alpha()
+            surface = cls._scale_surface(surface, size)
             return surface, True
         except Exception:
             return None, False
+
+    @classmethod
+    def _get_or_create_fallback(
+        cls,
+        cache_key: Tuple,
+        size: Optional[Tuple[int, int]],
+        fallback_draw: Optional[Callable[[pygame.Surface], None]],
+    ) -> Tuple[Optional[pygame.Surface], bool]:
+        if fallback_draw is None or size is None:
+            return None, False
+        if cache_key not in cls._fallback_cache:
+            fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
+            fallback_draw(fallback_surface)
+            cls._fallback_cache[cache_key] = fallback_surface
+        return cls._fallback_cache[cache_key], False
+
+    @classmethod
+    def _build_variant_path(
+        cls,
+        category: str,
+        variant: str,
+        subcategory: Optional[str] = None,
+    ) -> str:
+        asset_root = cls._asset_root()
+        if subcategory:
+            return os.path.join(asset_root, category, subcategory, variant)
+        return os.path.join(asset_root, category, variant)
+
+    @classmethod
+    def _build_frame_path(
+        cls,
+        category: str,
+        variant: str,
+        frame: int,
+        subcategory: Optional[str] = None,
+        asset_prefix: Optional[str] = None,
+    ) -> str:
+        base_path = cls._build_variant_path(category, variant, subcategory)
+        if asset_prefix:
+            filename = f"{asset_prefix}_{frame}.png"
+        else:
+            filename = f"{frame}.png"
+        return os.path.join(base_path, filename)
+
+    @classmethod
+    def _load_image(cls, asset_name: str, size: Optional[Tuple[int, int]]) -> Tuple[Optional[pygame.Surface], bool]:
+        asset_root = cls._asset_root()
+        path = os.path.join(asset_root, asset_name)
+        return cls._load_surface_from_path(path, size)
 
     @classmethod
     def get_image(
@@ -84,13 +143,8 @@ class AssetHandler:
         surface, loaded = cls._image_cache[image_key]
         if loaded or fallback_draw is None or size is None:
             return surface, loaded
-
         fallback_key = (asset_name, size, fallback_tag)
-        if fallback_key not in cls._fallback_cache:
-            fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
-            fallback_draw(fallback_surface)
-            cls._fallback_cache[fallback_key] = fallback_surface
-        return cls._fallback_cache[fallback_key], False
+        return cls._get_or_create_fallback(fallback_key, size, fallback_draw)
 
     @classmethod
     def get_image_with_alpha(
@@ -253,10 +307,7 @@ class AssetHandler:
             return cls._variant_cache[cache_key]
         
         asset_root = cls._asset_root()
-        if subcategory:
-            category_path = os.path.join(asset_root, category, subcategory)
-        else:
-            category_path = os.path.join(asset_root, category)
+        category_path = os.path.join(asset_root, category, subcategory) if subcategory else os.path.join(asset_root, category)
         
         if not os.path.isdir(category_path):
             cls._variant_cache[cache_key] = []
@@ -272,6 +323,43 @@ class AssetHandler:
         return variants
 
     @classmethod
+    def _get_subcategory_files(cls, category: str, subcategory: str, extensions: Tuple[str, ...]) -> List[str]:
+        cache_key = (category, subcategory, extensions)
+        if cache_key in cls._subcategory_file_cache:
+            return cls._subcategory_file_cache[cache_key]
+
+        asset_root = cls._asset_root()
+        subcategory_path = os.path.join(asset_root, category, subcategory)
+        if not os.path.isdir(subcategory_path):
+            cls._subcategory_file_cache[cache_key] = []
+            return []
+
+        files = []
+        for item in os.listdir(subcategory_path):
+            item_path = os.path.join(subcategory_path, item)
+            if os.path.isfile(item_path):
+                lower_item = item.lower()
+                if any(lower_item.endswith(ext) for ext in extensions):
+                    files.append(item)
+
+        cls._subcategory_file_cache[cache_key] = files
+        return files
+
+    @classmethod
+    def get_random_asset_from_subcategory(
+        cls,
+        category: str,
+        subcategory: str,
+        extensions: Tuple[str, ...] = (".png", ".jpg", ".jpeg", ".webp"),
+    ) -> Optional[str]:
+        """Pick a random file from assets/category/subcategory and return its relative asset path."""
+        files = cls._get_subcategory_files(category, subcategory, extensions)
+        if not files:
+            return None
+        filename = random.choice(files)
+        return os.path.join(category, subcategory, filename)
+
+    @classmethod
     def get_random_variant(cls, category: str, subcategory: Optional[str] = None) -> Optional[str]:
         """Get a random variant from a category, optionally filtered by subcategory."""
         variants = cls._get_category_variants(category, subcategory)
@@ -282,11 +370,7 @@ class AssetHandler:
     @classmethod
     def _count_frames(cls, category: str, variant: str, subcategory: Optional[str] = None, asset_prefix: Optional[str] = None) -> int:
         """Count how many frames exist for a variant (0.png, 1.png, ... or {asset_prefix}_0.png, {asset_prefix}_1.png, ...)."""
-        asset_root = cls._asset_root()
-        if subcategory:
-            variant_path = os.path.join(asset_root, category, subcategory, variant)
-        else:
-            variant_path = os.path.join(asset_root, category, variant)
+        variant_path = cls._build_variant_path(category, variant, subcategory)
         
         if not os.path.isdir(variant_path):
             return 0
@@ -352,19 +436,18 @@ class AssetHandler:
         asset_root = cls._asset_root()
         
         for i in range(frame_count):
-            if subcategory:
-                frame_path = os.path.join(asset_root, category, subcategory, variant, f"{i}.png")
-            else:
-                frame_path = os.path.join(asset_root, category, variant, f"{i}.png")
+            frame_path = cls._build_frame_path(category, variant, i, subcategory=subcategory)
             if not os.path.isfile(frame_path):
                 all_loaded = False
                 frames = []
                 break
             
             try:
-                surface = pygame.image.load(frame_path).convert_alpha()
-                if size is not None:
-                    surface = pygame.transform.smoothscale(surface, size)
+                surface, loaded = cls._load_surface_from_path(frame_path, size)
+                if not loaded or surface is None:
+                    all_loaded = False
+                    frames = []
+                    break
                 frames.append(surface)
             except Exception:
                 all_loaded = False
@@ -373,9 +456,13 @@ class AssetHandler:
         
         # Use fallback if loading failed
         if not all_loaded and fallback_draw is not None and size is not None:
-            fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
-            fallback_draw(fallback_surface)
-            frames = [fallback_surface for _ in range(max(1, frame_count))]
+            fallback_surface, _ = cls._get_or_create_fallback(
+                (category, subcategory, variant, size, fallback_tag),
+                size,
+                fallback_draw,
+            )
+            if fallback_surface is not None:
+                frames = [fallback_surface for _ in range(max(1, frame_count))]
         
         cls._animation_cache[anim_key] = (frames, all_loaded)
         return frames, all_loaded, variant
@@ -403,29 +490,21 @@ class AssetHandler:
         if variant is None:
             variant = cls.get_random_variant(category, subcategory)
             if variant is None:
-                if fallback_draw is not None and size is not None:
-                    fallback_key = (category, subcategory, size, fallback_tag)
-                    if fallback_key not in cls._fallback_cache:
-                        fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
-                        fallback_draw(fallback_surface)
-                        cls._fallback_cache[fallback_key] = fallback_surface
-                    return cls._fallback_cache[fallback_key], False, None
-                return None, False, None
+                fallback_surface, _ = cls._get_or_create_fallback(
+                    (category, subcategory, size, fallback_tag),
+                    size,
+                    fallback_draw,
+                )
+                return fallback_surface, False, None
         
         # Build path
-        asset_root = cls._asset_root()
-        if asset_prefix:
-            # Use asset_prefix naming: {asset_prefix}_{frame}.png
-            if subcategory:
-                frame_path = os.path.join(asset_root, category, subcategory, variant, f"{asset_prefix}_{frame}.png")
-            else:
-                frame_path = os.path.join(asset_root, category, variant, f"{asset_prefix}_{frame}.png")
-        else:
-            # Standard naming: {frame}.png
-            if subcategory:
-                frame_path = os.path.join(asset_root, category, subcategory, variant, f"{frame}.png")
-            else:
-                frame_path = os.path.join(asset_root, category, variant, f"{frame}.png")
+        frame_path = cls._build_frame_path(
+            category,
+            variant,
+            frame,
+            subcategory=subcategory,
+            asset_prefix=asset_prefix,
+        )
         
         # Check cache (include asset_prefix in cache key)
         image_key = (category, subcategory, variant, frame, size, asset_prefix)
@@ -435,39 +514,21 @@ class AssetHandler:
         
         # Load image
         if not os.path.isfile(frame_path):
-            if fallback_draw is not None and size is not None:
-                fallback_key = (category, subcategory, variant, size, fallback_tag)
-                if fallback_key not in cls._fallback_cache:
-                    fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
-                    fallback_draw(fallback_surface)
-                    cls._fallback_cache[fallback_key] = fallback_surface
-                return cls._fallback_cache[fallback_key], False, variant
-            return None, False, variant
+            fallback_surface, _ = cls._get_or_create_fallback(
+                (category, subcategory, variant, size, fallback_tag),
+                size,
+                fallback_draw,
+            )
+            return fallback_surface, False, variant
         
-        try:
-            # Load image - always try to preserve alpha channel
-            surface = pygame.image.load(frame_path)
-            # Always use convert_alpha() to ensure proper alpha channel support
-            # This will preserve transparency if the image has it
-            surface = surface.convert_alpha()
-            
-            if size is not None:
-                # smoothscale preserves alpha channel automatically
-                surface = pygame.transform.smoothscale(surface, size)
-                # Ensure alpha is still present after scaling
-                if not (surface.get_flags() & pygame.SRCALPHA):
-                    # Recreate with alpha if it was lost (shouldn't happen with smoothscale)
-                    new_surface = pygame.Surface(size, pygame.SRCALPHA)
-                    new_surface.blit(surface, (0, 0))
-                    surface = new_surface
+        surface, loaded = cls._load_surface_from_path(frame_path, size)
+        if loaded and surface is not None:
             cls._image_cache[image_key] = (surface, True)
             return surface, True, variant
-        except Exception:
-            if fallback_draw is not None and size is not None:
-                fallback_key = (category, subcategory, variant, size, fallback_tag)
-                if fallback_key not in cls._fallback_cache:
-                    fallback_surface = pygame.Surface(size, pygame.SRCALPHA)
-                    fallback_draw(fallback_surface)
-                    cls._fallback_cache[fallback_key] = fallback_surface
-                return cls._fallback_cache[fallback_key], False, variant
-            return None, False, variant
+
+        fallback_surface, _ = cls._get_or_create_fallback(
+            (category, subcategory, variant, size, fallback_tag),
+            size,
+            fallback_draw,
+        )
+        return fallback_surface, False, variant
