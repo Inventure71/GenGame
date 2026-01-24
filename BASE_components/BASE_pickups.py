@@ -71,7 +71,8 @@ class BasePickup(NetworkObject):
             pygame.draw.rect(screen, self.color, visual_rect, border_radius=6)
             pygame.draw.rect(screen, (20, 20, 20), visual_rect, 2, border_radius=6)
 
-        label = self.get_label()
-        if label:
-            text = AssetHandler.render_text(label, None, 20, (30, 30, 30))
-            screen.blit(text, text.get_rect(center=rect.center))
+        if sprite is None or not loaded:
+            label = self.get_label()
+            if label:
+                text = AssetHandler.render_text(label, None, 20, (30, 30, 30))
+                screen.blit(text, text.get_rect(center=rect.center))

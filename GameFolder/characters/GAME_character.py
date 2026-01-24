@@ -43,7 +43,7 @@ class Character(BaseCharacter):
 
         self.speed = 3.0
         self.base_max_health = 100.0
-        self.max_health = self.base_max_health + self.size // 3
+        self.max_health = self._compute_max_health_for_size(self.size)
         self.health = self.max_health
 
         self.damage_multiplier = 1.0
@@ -151,6 +151,11 @@ class Character(BaseCharacter):
             self.skin_name = random.choice(["mucca0.png", "mucca1.png", "mucca2.png", "mucca3.png"])
         if not hasattr(self, "dead_skin_name"):
             self.dead_skin_name = "cadavere.png"
+
+    def _compute_max_health_for_size(self, size: float) -> float:
+        size_delta = max(0.0, size - self.base_size)
+        # Super-linear growth: big bodies get disproportionately tanky.
+        return self.base_max_health + (size_delta ** 1.35) * 2.0
 
     @staticmethod
     def get_input_data(held_keys, mouse_buttons, mouse_pos):
@@ -422,7 +427,7 @@ class Character(BaseCharacter):
         ability_def["apply"](self)
 
     def changed_size(self):
-        self.max_health = self.base_max_health + self.size // 3
+        self.max_health = self._compute_max_health_for_size(self.size)
         self.health = min(self.health, self.max_health)
         self.width = self.size
         self.height = self.size
