@@ -12,7 +12,10 @@ class GameUI(BaseUI):
         self.small_font = AssetHandler.get_font(None, 18)
 
     def draw(self, characters: list, game_over: bool = False, winner=None, respawn_timers: dict = None, local_player_id: str = None, network_stats: dict = None):
-        self._draw_stats(characters, network_stats)
+        self._draw_stats(characters, local_player_id, network_stats)
+        target = self._pick_target_character(characters, local_player_id)
+        if target:
+            self._draw_health_bar(target)
         if respawn_timers:
             self._draw_respawns(respawn_timers, characters)
         if self._is_help_requested():
@@ -56,22 +59,20 @@ class GameUI(BaseUI):
             self.screen.blit(surface, (x + pad, text_y))
             text_y += line_height
 
-    def _draw_stats(self, characters, network_stats: dict = None):
+    def _draw_stats(self, characters, local_player_id: str = None, network_stats: dict = None):
         x = 20
         y = 20
-        for idx, char in enumerate(characters):
-            if char.is_eliminated:
-                continue
-            name = getattr(char, "name", f"Cow {idx+1}")
-            health = int(char.health)
-            size = int(getattr(char, "size", char.width))
-            dashes = getattr(char, "dashes_left", 0)
-            ability = getattr(char, "primary_ability_name", None) or "No Primary"
-            passive = getattr(char, "passive_ability_name", None) or "No Passive"
+        target = self._pick_target_character(characters, local_player_id)
+        if target and not getattr(target, "is_eliminated", False):
+            name = getattr(target, "name", "Cow")
+            size = int(getattr(target, "size", target.width))
+            dashes = getattr(target, "dashes_left", 0)
+            ability = getattr(target, "primary_ability_name", None) or "No Primary"
+            passive = getattr(target, "passive_ability_name", None) or "No Passive"
 
             lines = [
                 f"{name}",
-                f"HP: {health}  Size: {size}  Dashes: {dashes}",
+                f"Size: {size}  Dashes: {dashes}",
                 f"Primary: {ability}",
                 f"Passive: {passive}",
             ]
@@ -95,3 +96,34 @@ class GameUI(BaseUI):
                 text = AssetHandler.render_text(line, None, 18, (200, 200, 255))
                 self.screen.blit(text, (x, y))
                 y += 18
+
+    def _draw_health_bar(self, character):
+        max_health = float(getattr(character, "max_health", 100.0) or 0.0)
+        health = float(getattr(character, "health", 0.0) or 0.0)
+        if max_health <= 0:
+            return
+
+        ratio = max(0.0, min(1.0, health / max_health))
+        if ratio > 0.6:
+            fill_color = (60, 200, 90)
+        elif ratio > 0.3:
+            fill_color = (230, 200, 60)
+        else:
+            fill_color = (220, 70, 70)
+
+        bar_width = 220
+        bar_height = 18
+        x = 20
+        y = self.arena_height - bar_height - 20
+
+        bg_rect = pygame.Rect(x, y, bar_width, bar_height)
+        fill_rect = pygame.Rect(x, y, int(bar_width * ratio), bar_height)
+
+        pygame.draw.rect(self.screen, (30, 30, 30), bg_rect)
+        pygame.draw.rect(self.screen, fill_color, fill_rect)
+        pygame.draw.rect(self.screen, (220, 220, 220), bg_rect, 2)
+
+        label = f"HP {int(health)}/{int(max_health)}"
+        text = AssetHandler.render_text(label, None, 18, (255, 255, 255))
+        text_rect = text.get_rect(midleft=(x + 8, y + bar_height / 2))
+        self.screen.blit(text, text_rect)

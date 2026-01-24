@@ -153,9 +153,12 @@ class Character(BaseCharacter):
             self.dead_skin_name = "cadavere.png"
 
     def _compute_max_health_for_size(self, size: float) -> float:
-        size_delta = max(0.0, size - self.base_size)
         # Super-linear growth: big bodies get disproportionately tanky.
-        return self.base_max_health + (size_delta ** 1.35) * 2.0
+        size_delta = size - self.base_size  # allow negative when smaller
+        health = self.base_max_health + (abs(size_delta) ** 1.35) * 2.0
+        if size_delta < 0:
+            health = self.base_max_health - (abs(size_delta) ** 1.35) * 2.0
+        return max(5, health)
 
     @staticmethod
     def get_input_data(held_keys, mouse_buttons, mouse_pos):
