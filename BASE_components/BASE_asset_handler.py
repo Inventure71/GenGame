@@ -280,8 +280,8 @@ class AssetHandler:
         return random.choice(variants)
 
     @classmethod
-    def _count_frames(cls, category: str, variant: str, subcategory: Optional[str] = None) -> int:
-        """Count how many frames exist for a variant (0.png, 1.png, ...)."""
+    def _count_frames(cls, category: str, variant: str, subcategory: Optional[str] = None, asset_prefix: Optional[str] = None) -> int:
+        """Count how many frames exist for a variant (0.png, 1.png, ... or {asset_prefix}_0.png, {asset_prefix}_1.png, ...)."""
         asset_root = cls._asset_root()
         if subcategory:
             variant_path = os.path.join(asset_root, category, subcategory, variant)
@@ -293,7 +293,10 @@ class AssetHandler:
         
         frame_count = 0
         while True:
-            frame_path = os.path.join(variant_path, f"{frame_count}.png")
+            if asset_prefix:
+                frame_path = os.path.join(variant_path, f"{asset_prefix}_{frame_count}.png")
+            else:
+                frame_path = os.path.join(variant_path, f"{frame_count}.png")
             if not os.path.isfile(frame_path):
                 break
             frame_count += 1
@@ -387,9 +390,11 @@ class AssetHandler:
         fallback_draw: Optional[Callable[[pygame.Surface], None]] = None,
         fallback_tag: Optional[str] = None,
         subcategory: Optional[str] = None,
+        asset_prefix: Optional[str] = None,
     ) -> Tuple[Optional[pygame.Surface], bool, Optional[str]]:
         """
         Load a single image from category/subcategory/variant/frame structure.
+        If asset_prefix is provided, looks for files named {asset_prefix}_{frame}.png instead of {frame}.png
         Returns: (surface, loaded, variant_used)
         """
         size = cls._normalize_size(size)
@@ -409,13 +414,21 @@ class AssetHandler:
         
         # Build path
         asset_root = cls._asset_root()
-        if subcategory:
-            frame_path = os.path.join(asset_root, category, subcategory, variant, f"{frame}.png")
+        if asset_prefix:
+            # Use asset_prefix naming: {asset_prefix}_{frame}.png
+            if subcategory:
+                frame_path = os.path.join(asset_root, category, subcategory, variant, f"{asset_prefix}_{frame}.png")
+            else:
+                frame_path = os.path.join(asset_root, category, variant, f"{asset_prefix}_{frame}.png")
         else:
-            frame_path = os.path.join(asset_root, category, variant, f"{frame}.png")
+            # Standard naming: {frame}.png
+            if subcategory:
+                frame_path = os.path.join(asset_root, category, subcategory, variant, f"{frame}.png")
+            else:
+                frame_path = os.path.join(asset_root, category, variant, f"{frame}.png")
         
-        # Check cache
-        image_key = (category, subcategory, variant, frame, size)
+        # Check cache (include asset_prefix in cache key)
+        image_key = (category, subcategory, variant, frame, size, asset_prefix)
         if image_key in cls._image_cache:
             surface, loaded = cls._image_cache[image_key]
             return surface, loaded, variant

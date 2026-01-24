@@ -261,8 +261,8 @@ class Character(BaseCharacter):
                  abs(self.location[1] - self._prev_location[1]) > 0.01)
         self._prev_location = self.location.copy() if hasattr(self.location, 'copy') else list(self.location)
 
-        # Use movement detection (client-side only - animation is purely visual)
-        moving = getattr(self, "is_moving", False) or moved
+        # Use movement or eating to drive animation (client-side only)
+        moving = getattr(self, "is_moving", False) or moved or getattr(self, "is_eating", False)
         if moving:
             self.animation_timer += delta_time
             frame_count = self.animation_frame_count if self.animation_frame_count > 0 else 1
@@ -509,6 +509,73 @@ class Character(BaseCharacter):
         dy = mouse_pos[1] - self.location[1]
         return math.atan2(dy, dx)
 
+    def _get_direction_info(self):
+        """
+        Determine which asset type (up/side) and transformations to use based on movement direction.
+        Returns: (asset_type: str, rotation_angle: float, flip_horizontal: bool, flip_vertical: bool)
+        
+        Directions:
+        - up: straight up (default up asset, no transform)
+        - right: 90 degrees to the right (up asset, rotate -90° clockwise)
+        - down: mirror vertical (up asset, flip vertical)
+        - left: 90 degrees to the left (up asset, rotate 90° counter-clockwise)
+        - up-right: default side asset (no transform)
+        - down-right: 90 degrees to the right (side asset, rotate -90° clockwise)
+        - down-left: mirror horizontal then 90 degrees to the left (side asset, flip horizontal, rotate 90° counter-clockwise)
+        - up-left: mirror horizontal (side asset, flip horizontal)
+        """
+        dx, dy = self.last_movement_direction
+        
+        # If not moving, default to up direction
+        if dx == 0 and dy == 0:
+            return "up", 0.0, False, False
+        
+        # Normalize direction (should already be normalized, but ensure)
+        dist = math.hypot(dx, dy)
+        if dist > 0:
+            dx /= dist
+            dy /= dist
+        
+        # Determine which of 8 directions we're facing
+        # Using thresholds to determine cardinal vs diagonal directions
+        # For diagonal, we check if both components are significant
+        abs_dx = abs(dx)
+        abs_dy = abs(dy)
+        
+        # Threshold for considering a direction "diagonal" vs "cardinal"
+        diagonal_threshold = 0.5  # cos(45°) ≈ 0.707, but we use 0.5 for easier classification
+        
+        if abs_dx < diagonal_threshold:
+            # Primarily vertical movement
+            if dy > 0:
+                # Up
+                return "up", 0.0, False, False
+            else:
+                # Down (mirror vertical)
+                return "up", 0.0, False, True
+        elif abs_dy < diagonal_threshold:
+            # Primarily horizontal movement
+            if dx > 0:
+                # Right (90 degrees right)
+                return "up", -90.0, False, False
+            else:
+                # Left (90 degrees left)
+                return "up", 90.0, False, False
+        else:
+            # Diagonal movement - use side assets
+            if dx > 0 and dy > 0:
+                # Up-right (default side)
+                return "side", 0.0, False, False
+            elif dx > 0 and dy < 0:
+                # Down-right (90 degrees right)
+                return "side", -90.0, False, False
+            elif dx < 0 and dy < 0:
+                # Down-left (mirror horizontal then 90 degrees to the left = flip horizontal, rotate 90° counter-clockwise)
+                return "side", 90.0, True, False
+            else:  # dx < 0 and dy > 0
+                # Up-left (mirror horizontal)
+                return "side", 0.0, True, False
+
     def draw(self, screen: pygame.Surface, arena_height: float = None, camera=None):
         if not self._graphics_initialized:
             return
@@ -543,8 +610,20 @@ class Character(BaseCharacter):
                     size=(visual_width, visual_height),  # Use visual size for drawing
                     fallback_draw=fallback,
                 )
+                # For old format, apply rotation like before
+                if sprite is not None and loaded:
+                    dx, dy = self.last_movement_direction
+                    angle_rad = math.atan2(dx, dy)
+                    angle_deg = -math.degrees(angle_rad)
+                    sprite = pygame.transform.rotate(sprite, angle_deg)
             else:
-                # New format - use category system
+                # New format - use category system with up/side assets
+                # Determine which asset type and transformations to use
+                asset_type, rotation_angle, flip_horizontal, flip_vertical = self._get_direction_info()
+
+                # Use eating-specific assets if eating, otherwise normal assets
+                asset_prefix = "eat" if self.is_eating else asset_type
+
                 # Use current animation frame (0 when stopped, 1+ when moving)
                 sprite, loaded, variant = AssetHandler.get_image_from_category(
                     "cows",
@@ -552,18 +631,42 @@ class Character(BaseCharacter):
                     frame=self.animation_frame,  # Use current animation frame
                     size=(visual_width, visual_height),  # Use visual size for drawing
                     fallback_draw=fallback,
+                    asset_prefix=asset_prefix,
                 )
                 # Store variant for consistency and count frames for animation
                 if variant is not None:
                     if self.cow_variant is None:
                         self.cow_variant = variant
-                    # Count frames for this variant if not already counted
+                    # Count frames across up/side and eat prefixes
+                    # Use max to support variants that only define some prefixes
                     if self.animation_frame_count == 0:
-                        frame_count = AssetHandler._count_frames("cows", variant)
+                        prefixes = ["up", "side", "eat"]
+                        counts = [
+                            AssetHandler._count_frames("cows", variant, asset_prefix=prefix)
+                            for prefix in prefixes
+                        ]
+                        frame_count = max(counts)
                         if frame_count > 0:
                             self.animation_frame_count = frame_count
                         else:
                             self.animation_frame_count = 1  # At least frame 0 exists
+                
+                # Apply transformations if asset was loaded
+                if sprite is not None and loaded:
+                    # Eating assets should not be direction-transformed
+                    if self.is_eating:
+                        rotation_angle = 0.0
+                        flip_horizontal = False
+                        flip_vertical = False
+                    # Apply horizontal flip
+                    if flip_horizontal:
+                        sprite = pygame.transform.flip(sprite, True, False)
+                    # Apply vertical flip
+                    if flip_vertical:
+                        sprite = pygame.transform.flip(sprite, False, True)
+                    # Apply rotation
+                    if rotation_angle != 0.0:
+                        sprite = pygame.transform.rotate(sprite, rotation_angle)
         else:
             # Dead cow - use new category system
             sprite, loaded, variant = AssetHandler.get_image_from_category(
@@ -578,25 +681,10 @@ class Character(BaseCharacter):
                 self.dead_cow_variant = variant
         
         if sprite is not None:
-            # Rotate sprite based on movement direction (only if asset was loaded, not fallback)
-            if loaded:
-                # Calculate rotation angle from movement direction
-                # Image points up by default (positive Y), so we use atan2(dx, dy) to get angle from positive Y axis
-                # pygame.transform.rotate() rotates counter-clockwise
-                dx, dy = self.last_movement_direction
-                angle_rad = math.atan2(dx, dy)
-                angle_deg = -math.degrees(angle_rad)  # Negate to fix left/right inversion
-
-                # Rotate the sprite (pygame rotates counter-clockwise)
-                rotated_sprite = pygame.transform.rotate(sprite, angle_deg)
-                
-                # Center the larger visual sprite on the original collision rect center
-                rotated_rect = rotated_sprite.get_rect(center=rect.center)
-                screen.blit(rotated_sprite, rotated_rect)
-            else:
-                # Fallback - draw without rotation, centered on collision rect
-                fallback_rect = sprite.get_rect(center=rect.center)
-                screen.blit(sprite, fallback_rect)
+            # Center the sprite on the original collision rect center
+            # Transformations have already been applied above for new format
+            sprite_rect = sprite.get_rect(center=rect.center)
+            screen.blit(sprite, sprite_rect)
         elif not loaded:
             pygame.draw.rect(screen, draw_color, rect)
             pygame.draw.rect(screen, (30, 30, 30), rect, 2)
