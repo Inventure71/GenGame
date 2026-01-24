@@ -44,7 +44,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT  # Viewport dimensions
         screen = pygame.display.set_mode(
             (width, height),
-            pygame.FULLSCREEN | pygame.DOUBLEBUF,
+            #pygame.FULLSCREEN | pygame.DOUBLEBUF,
             vsync=1,
         )
         pygame.display.set_caption(f"Core Conflict Client - {player_id}")
@@ -55,11 +55,13 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         entity_manager = EntityManager()
 
         # Set up network callbacks
-        assigned_character = None
+        assigned_character = player_id or None
+        assigned_network_id = None
 
         def on_character_assigned(assignment):
-            nonlocal assigned_character
+            nonlocal assigned_character, assigned_network_id
             assigned_character = assignment.get('assigned_character')
+            assigned_network_id = assignment.get('assigned_network_id')
             print(f"Assigned to control: {assigned_character}")
 
         def reload_game_classes():
@@ -152,6 +154,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 print(f"Failed to reload game classes for game start: {e}")
 
         def on_game_state_received(game_state):
+            nonlocal game_over, winner, assigned_network_id
             try:
                 entity_manager.update_from_server(game_state)
             except Exception as e:
@@ -159,19 +162,38 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 network_client.request_full_state()
                 return
 
-            # Set local player if not already set and we have character assignment
-            if entity_manager.local_player_id is None and assigned_character:
+            # Resolve local player from assignment, even if network IDs change mid-session.
+            desired_network_id = None
+            if assigned_network_id and assigned_network_id in entity_manager.entities:
+                desired_network_id = assigned_network_id
+
+            if desired_network_id is None and assigned_character:
                 # Find character by assigned name/id (games may use either field)
                 for char_data in game_state.get('characters', []) or []:
                     if char_data.get('name') == assigned_character or char_data.get('id') == assigned_character:
-                        entity_manager.set_local_player(char_data.get('network_id'))
-                        # Initialize prediction with server position
-                        server_pos = char_data.get('location', [0, 0])
-                        entity_manager.prediction.predicted_position = server_pos.copy()
-                        entity_manager.prediction.server_position = server_pos.copy()
+                        desired_network_id = char_data.get('network_id')
+                        if desired_network_id:
+                            assigned_network_id = desired_network_id
                         break
 
-            nonlocal game_over, winner
+            local_entity = None
+            if entity_manager.local_player_id:
+                local_entity = entity_manager.get_entity(entity_manager.local_player_id)
+                if assigned_character and local_entity is not None:
+                    local_id = getattr(local_entity, "id", None)
+                    local_name = getattr(local_entity, "name", None)
+                    if local_id != assigned_character and local_name != assigned_character:
+                        local_entity = None
+
+            if (entity_manager.local_player_id is None or local_entity is None) and desired_network_id:
+                entity_manager.set_local_player(desired_network_id)
+                # Initialize prediction with server position if already present
+                entity = entity_manager.get_entity(desired_network_id)
+                if entity and hasattr(entity, "location"):
+                    server_pos = entity.location
+                    entity_manager.prediction.predicted_position = list(server_pos)
+                    entity_manager.prediction.server_position = list(server_pos)
+
             game_over = game_state.get('game_over', False)
             winner = game_state.get('winner_id', game_state.get('winner', None))
 
@@ -197,6 +219,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         network_client.on_disconnected = on_disconnected
         network_client.on_game_restarting = on_game_restarting
         network_client.on_server_restarted = on_server_restarted
+        if network_client.last_character_assignment:
+            on_character_assigned(network_client.last_character_assignment)
 
         # Initialize local state
         game_over = False

@@ -609,13 +609,22 @@ class GameServer:
                 character_id = requested_name
                 self.player_id_to_character[player_id] = character_id
 
+                # Best-effort lookup of the assigned character network_id for client camera sync
+                assigned_network_id = None
+                if self.arena and getattr(self.arena, "characters", None):
+                    for char in self.arena.characters:
+                        if getattr(char, "id", None) == character_id or getattr(char, "name", None) == character_id:
+                            assigned_network_id = getattr(char, "network_id", None)
+                            break
+
                 print(f"Player '{requested_name}' connected as {character_id}")
 
                 # Send back the assigned character info
                 response = {
                     'type': 'character_assignment',
                     'requested_name': requested_name,
-                    'assigned_character': requested_name  # Use the requested name for display
+                    'assigned_character': requested_name,  # Use the requested name for display
+                    'assigned_network_id': assigned_network_id,
                 }
                 data = pickle.dumps(response)
                 length_bytes = len(data).to_bytes(4, byteorder='big')

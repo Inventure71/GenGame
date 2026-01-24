@@ -62,6 +62,7 @@ class NetworkClient:
         self.on_game_start = None
         self.on_game_restarting = None
         self.on_server_restarted = None
+        self.last_character_assignment = None
 
         # Lag compensation
         self.last_server_time = 0.0
@@ -590,6 +591,7 @@ class NetworkClient:
             if self.on_game_state_received:
                 self.on_game_state_received(game_state)
         elif msg_type == 'character_assignment':
+            self.last_character_assignment = message
             if self.on_character_assigned:
                 self.on_character_assigned(message)
         elif msg_type == 'file_chunk':
