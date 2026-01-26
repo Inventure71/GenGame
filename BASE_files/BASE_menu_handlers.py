@@ -210,6 +210,36 @@ class MenuHandlers:
         agent_thread.start()
         self.menu.agent_thread = agent_thread
 
+    def on_auto_name_patch_click(self):
+        """Handle auto name patch button click - extracts name from first line of enhanced prompt."""
+        # Use the enhanced prompt from action_logger if available, otherwise fall back to agent_prompt
+        prompt_to_use = getattr(self.menu.action_logger, 'prompt_used', None) or self.menu.agent_prompt
+        
+        if not prompt_to_use:
+            print("No prompt available to extract name from")
+            return
+        
+        # Extract first line from prompt
+        first_line = prompt_to_use.split('\n')[0].strip()
+        
+        # Split on first colon and take only the part before it (e.g., "Name: Description:" -> "Name")
+        if ':' in first_line:
+            first_line = first_line.split(':', 1)[0].strip()
+        
+        # Set as patch name
+        first_line = first_line.replace(" ", "-")
+        self.menu.patch_name = first_line
+        print(f"Auto-named patch: {self.menu.patch_name}")
+        
+        # Update the UI text field if it exists
+        if self.menu.current_menu == "agent":
+            ui = self.menu.renderers.managers.get("agent")
+            if ui:
+                for comp in ui.components:
+                    if comp.name == "patch_name":
+                        comp.text = self.menu.patch_name
+                        break
+
     def on_agent_save_patch_click(self):
         """Handle agent save patch button click."""
         print(f"Agent Save Patch clicked: {self.menu.patch_name}")

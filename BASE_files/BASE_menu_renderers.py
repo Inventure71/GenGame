@@ -248,7 +248,8 @@ class MenuRenderers:
         ui.add(Label(center_x, save_y + self.scale_y(5), "Save Current State as Patch", button_font, center=True))
         ui.add(Label(main_x, save_y + self.scale_y(30), "Patch Name:", button_font))
         ui.add(TextField(main_x + self.scale_x(150), save_y + self.scale_y(25), self.scale_x(300), self.scale_y(45), button_font, name="patch_name"))
-        ui.add(Button(main_x + self.scale_x(460), save_y + self.scale_y(25), self.scale_x(140), self.scale_y(45), "Save Patch", button_font, self.menu.on_agent_save_patch_click))
+        ui.add(Button(main_x + self.scale_x(460), save_y + self.scale_y(25), self.scale_x(100), self.scale_y(45), "Auto Name", button_font, self.menu.handlers.on_auto_name_patch_click))
+        ui.add(Button(main_x + self.scale_x(570), save_y + self.scale_y(25), self.scale_x(140), self.scale_y(45), "Save Patch", button_font, self.menu.on_agent_save_patch_click))
 
         # 3. Big button to rebase to default state (remove patches from game folder)
         rebase_y = self.scale_y(740)

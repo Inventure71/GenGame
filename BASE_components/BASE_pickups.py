@@ -1,5 +1,5 @@
 import pygame
-from BASE_files.BASE_network import NetworkObject
+from BASE_components.BASE_network import NetworkObject
 from BASE_components.BASE_asset_handler import AssetHandler
 
 
@@ -65,8 +65,20 @@ class BasePickup(NetworkObject):
             )
 
         if sprite is not None and loaded:
-            sprite_rect = sprite.get_rect(center=rect.center)
-            screen.blit(sprite, sprite_rect)
+            # Apply color tinting to the sprite
+            tinted_sprite = sprite.copy()
+            # Create a color overlay surface
+            color_overlay = pygame.Surface(sprite.get_size(), pygame.SRCALPHA)
+            # Use the pickup's color with moderate alpha for visible tinting
+            # If color is the default (200, 200, 200), don't tint (use original sprite)
+            default_color = (200, 200, 200)
+            if self.color != default_color:
+                tint_color = (*self.color, 180)  # ~70% opacity for stronger tinting
+                color_overlay.fill(tint_color)
+                # Blend the color overlay with the sprite using multiply for tinting
+                tinted_sprite.blit(color_overlay, (0, 0), special_flags=pygame.BLEND_MULT)
+            sprite_rect = tinted_sprite.get_rect(center=rect.center)
+            screen.blit(tinted_sprite, sprite_rect)
         else:
             pygame.draw.rect(screen, self.color, visual_rect, border_radius=6)
             pygame.draw.rect(screen, (20, 20, 20), visual_rect, 2, border_radius=6)

@@ -34,9 +34,9 @@ class AbilityPickup(BasePickup):
         )
 
         if self.ability_type == "primary":
-            self.color = (255, 170, 80)
+            self.color = (255,255,255)
         else:
-            self.color = (100, 160, 255)
+            self.color = (255,255,255)
 
         self._set_network_identity("GameFolder.pickups.GAME_pickups", "AbilityPickup")
 

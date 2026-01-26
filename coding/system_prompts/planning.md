@@ -14,6 +14,43 @@ You are the Lead Architect for Core Conflict. Turn user requests into a small, e
 4. Create 2-9 sequential, atomic tasks using `append_to_todo_list`
 5. End with a "Final Validation Check" task
 
+## Ability Acquisition Rules (CRITICAL - NON-NEGOTIABLE)
+
+**🚨 MANDATORY: All abilities must be acquired through pickups. Players NEVER start with abilities. 🚨**
+
+- **Primary abilities**: Must be acquired via `AbilityPickup` (or custom pickup types that extend the pickup system).
+- **Passive abilities**: Must be acquired via `AbilityPickup` (or custom pickup types that extend the pickup system).
+- **New ability types**: If the request introduces a new ability category (beyond primary/passive), it **MUST** still use the pickup system. Create a new pickup type if needed, but abilities are **never** granted at character creation.
+- **Character initialization**: In `setup.py` or anywhere else, **NEVER** call `set_primary_ability()` or `set_passive_ability()` during character creation. Players start with **NO** active abilities.
+- **Pickup registration**: All new abilities must be registered in the arena's pickup spawn system (see `Arena._spawn_ability_pickup()` and `setup.py` for patterns).
+
+**Example (CORRECT):**
+```
+Task: "Add 'Fireball' primary ability"
+- Create ability file in GameFolder/abilities/primary/fireball.py
+- Register in pickup system (Arena spawns Fireball pickups)
+- Player acquires Fireball by picking up the pickup in-game
+```
+
+**Example (WRONG - DO NOT DO THIS):**
+```
+Task: "Add 'Fireball' primary ability and grant it to player at start"
+- ❌ NEVER call set_primary_ability() in setup.py
+- ❌ NEVER grant abilities during character initialization
+```
+
+## Custom Pickup Types (Spawn Order Critical)
+
+**🚨 When adding custom pickup types (e.g., rare pickups extending `AbilityPickup`):**
+
+- **MUST check custom pickups BEFORE regular pickups spawn** in `Arena._manage_pickups()`
+- **DO NOT use total count conditions** like `len(self.weapon_pickups) < 8` - regular pickups will spawn first and block it
+- **DO use existence checks**: `barnstormer_exists = any(isinstance(p, BarnstormerPickup) for p in self.weapon_pickups)`
+- **Place custom pickup logic BEFORE** `_spawn_ability_pickup("primary")` and `_spawn_ability_pickup("passive")` calls
+- **Set custom color AFTER `super().__init__()`** or `AbilityPickup.__init__()` will overwrite it
+
+**Why**: Regular pickups spawn first and fill slots, making the custom pickup check always fail if placed after.
+
 ## Character-Driven Action System (IMPORTANT)
 When adding new abilities or keybinds:
 1. **Client-Side Mapping**: Add keys to `get_input_data(held_keys, mouse_buttons, mouse_pos)` in `GAME_character.py`. This transforms hardware events into logical actions (e.g., `input_data['dash'] = True`).
@@ -65,7 +102,8 @@ Description: "Read all modified files to verify:
 - Imports are correct and absolute
 - Coordinate systems are consistent
 - super() calls are present where needed
-- setup.py registration is complete
+- setup.py registration is complete (abilities registered in pickup system, NOT granted at character creation)
+- No abilities are granted to players at initialization (check setup.py and Character.__init__)
 - No syntax errors remain"
 ```
 

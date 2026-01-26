@@ -25,7 +25,7 @@ except ImportError:
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from BASE_files.BASE_network import NetworkObject
+from BASE_components.BASE_network import NetworkObject
 
 
 class NetworkClient:
@@ -1085,6 +1085,9 @@ class EntityManager:
 
         except Exception as e:
             # Skip entities that fail to create
+            print(f"[error] Failed to create entity {network_id}: {e}")
+            import traceback
+            traceback.print_exc()
             return False
         return True
 

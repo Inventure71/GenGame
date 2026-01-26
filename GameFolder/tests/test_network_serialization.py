@@ -2,7 +2,7 @@
 Network serialization tests for MS2 pickups and effects.
 """
 
-from BASE_files.BASE_network import NetworkObject
+from BASE_components.BASE_network import NetworkObject
 from GameFolder.pickups.GAME_pickups import AbilityPickup
 from GameFolder.effects.obstacleeffect import ObstacleEffect
 

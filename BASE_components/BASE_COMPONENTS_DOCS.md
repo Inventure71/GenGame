@@ -12,7 +12,7 @@ This document is the API reference for the **lowest‑level** Core Conflict engi
 - Immutable systems: game loop, safe zone updates
 - Low‑level primitives: `BaseCharacter`, `BasePlatform`, `BaseWorldPlatform`, `BaseEffect`, `TimedEffect`, `BaseUI`, `BasePickup`
 - Shared helpers: movement/animation state, collision geometry helpers, pickup rendering
-- Network serialization support via `NetworkObject` (in `BASE_files/BASE_network.py`)
+- Network serialization support via `NetworkObject` (in `BASE_components/BASE_network.py`)
 
 ### What lives in GameFolder
 - Concrete gameplay systems: MS2 abilities/effects, pickups, obstacles, grass

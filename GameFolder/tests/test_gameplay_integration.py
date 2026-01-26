@@ -19,7 +19,7 @@ from GameFolder.setup import setup_battle_arena
 from GameFolder.pickups.GAME_pickups import AbilityPickup
 from GameFolder.effects.radialeffect import RadialEffect
 from GameFolder.effects.obstacleeffect import ObstacleEffect
-from BASE_files.BASE_network import NetworkObject
+from BASE_components.BASE_network import NetworkObject
 
 
 # ============================================================================

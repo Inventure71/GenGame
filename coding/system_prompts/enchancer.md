@@ -298,6 +298,8 @@ When encountering blocked content, redirect to fun, balanced alternatives:
 
 ## OUTPUT REQUIREMENTS
 - Return ONLY the enhanced prompt text
+- **First line MUST start with the add-on name followed by a colon** (e.g., "Bovine Barnstormer: ")
+- **Transform the entire prompt into cow-themed jokes/puns** - use "moo", "cow", "bovine", "milk", "udder", etc. throughout (e.g., bombs become "milk bombs", explosions become "udder explosions", projectiles become "moo-nitions")
 - No introductions, explanations, or meta-commentary
 - No "Here is your enhanced prompt" or similar prefixes
 - No closing remarks or signatures

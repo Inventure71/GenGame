@@ -35,8 +35,8 @@ class Arena(BaseArena):
 
         self.ability_spawn_timer = 0.0
         self.ability_spawn_interval = 6.0
-        self.max_primary_pickups = 4
-        self.max_passive_pickups = 4
+        self.max_primary_pickups = 16
+        self.max_passive_pickups = 16
 
         self.num_blocking_obstacles = 100
         self.num_slowing_obstacles = 50
@@ -125,9 +125,9 @@ class Arena(BaseArena):
 
 
     def _spawn_initial_pickups(self):
-        for _ in range(30):
+        for _ in range(self.max_primary_pickups//4):
             self._spawn_ability_pickup("primary")
-        for _ in range(30):
+        for _ in range(self.max_passive_pickups//4):
             self._spawn_ability_pickup("passive")
 
     def _spawn_ability_pickup(self, ability_type: str):

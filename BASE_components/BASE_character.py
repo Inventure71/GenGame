@@ -1,6 +1,6 @@
 import math
 import pygame
-from BASE_files.BASE_network import NetworkObject
+from BASE_components.BASE_network import NetworkObject
 
 
 class BaseCharacter(NetworkObject):
