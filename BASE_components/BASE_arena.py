@@ -1,5 +1,6 @@
 import math
 import pygame
+import threading
 from typing import Dict, List
 from BASE_components.BASE_character import BaseCharacter
 from BASE_components.BASE_platform import BasePlatform
@@ -19,6 +20,11 @@ class Arena:
         self.headless = headless
         self.width = width
         self.height = height
+
+        # Smart Arena: Check if running on background thread
+        if not self.headless and threading.current_thread() != threading.main_thread():
+            print("[WARNING] Arena initialized on background thread. Forcing headless mode to prevent crash.")
+            self.headless = True
 
         if not self.headless:
             pygame.init()

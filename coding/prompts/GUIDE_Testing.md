@@ -126,7 +126,7 @@ Per feature: Unit tests, integration tests, registration test
 ## 11. TYPE & FORMAT COMPATIBILITY
 
 **Test environment:**
-- Arena: `1400x900` (production)
+- Arena: `WORLD_WIDTH/WORLD_HEIGHT` (2800x1800) in production; `Arena()` defaults to 1400x900 for local/headless tests
 - `held_keys`: Python `set()` (not dict)
 - `mouse_pressed`: `[False, False, False]` (Left, Middle, Right)
 - Coordinate: `world_y = height - screen_y`
@@ -134,7 +134,7 @@ Per feature: Unit tests, integration tests, registration test
 
 **Key tests:**
 1. Input type: `held_keys` as set, uses `in` operator
-2. Arena dimensions: Test with `1400x900` and other sizes
+2. Arena dimensions: Test with `WORLD_WIDTH/WORLD_HEIGHT` and other sizes
 3. Coordinates: World vs screen conversion
 4. Mouse format: List with 3 booleans
 5. Network sync: Fallback when class not loaded
@@ -154,4 +154,4 @@ Per feature: Unit tests, integration tests, registration test
 - `'mouse_pos': [float, float]`
 - `'held_keys': [keycodes...]` (list for serialization)
 - `'mouse_buttons': [left, middle, right]`
-- Optional: `'eat'`, `'dash'`, `'poop'`, `'primary'`
+- Optional: `'eat'`, `'dash'`, `'poop'`, `'swap'`, `'primary'`

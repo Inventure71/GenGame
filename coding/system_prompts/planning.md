@@ -31,17 +31,17 @@ Each task must be **self-contained** (coding agent only sees current task). Incl
 ## Effect Serialization Requirements
 When planning tasks that create new effects:
 - **MUST** specify that effects store `owner_id` (string) instead of character objects
-- **MUST** specify that effects look up entities in `update(delta_time, arena=None)` when needed
 - **MUST** specify storing derived values (like `cow_size`) if needed for drawing
-- **MUST** reference existing effects (`PyroShell`, `RadialEffect`, etc.) as examples
+- **NOTE**: Effects may accept `update(delta_time, arena=None)`; the MS2 Arena passes itself when the effect signature supports it.
+- **MUST** reference existing effects (`WaveProjectileEffect`, `RadialEffect`, `ConeEffect`, etc.) as examples
 
 Example task specification:
 ```
 Task: "Create FireballEffect that follows the owner"
 - Store owner_id (string), not cow object
-- In update(), look up cow from arena.characters using owner_id
 - Store cow.size as self.cow_size if needed for draw()
-- Follow pattern from PyroShell for arena parameter handling
+- Use update(delta_time, arena=None) if owner lookups are needed (keep arena optional)
+- Follow pattern from WaveProjectileEffect for self-contained updates
 ```
 
 ## Game Perspective (Hard Constraint)

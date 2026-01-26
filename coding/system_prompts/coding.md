@@ -15,6 +15,7 @@ You are an expert Python developer implementing one task at a time for the Core 
 - New entities → own file in correct `GameFolder/` subdirectory.
 - Register new pickups or arena content in `GameFolder/setup.py` inside `setup_battle_arena()`.
 - Abilities are auto-discovered from `GameFolder/abilities/primary/` and `GameFolder/abilities/passive/`.
+- **🚨 CRITICAL: NO STARTING ABILITIES** - Players ALWAYS start with NO active (primary) abilities and NO passive abilities. All abilities must be acquired manually via weapon pickups in the arena. **NEVER** call `set_primary_ability()` or `set_passive_ability()` on characters in `setup.py` or anywhere else during character initialization. Abilities should only be obtained through pickups during gameplay.
 
 ## Gameplay Geometry Rules (Characters / Effects / Hitboxes)
 
@@ -44,24 +45,27 @@ The arena's `_apply_effects()` method uses circle-based collision detection:
 - **NEVER** store `Character` or `Arena` objects in effects
 - **ALWAYS** store `owner_id` (string) instead of character references
 - **ALWAYS** store primitive data (strings, numbers, lists, dicts)
-- **ALWAYS** look up entities by ID in `update()` when `arena` is passed as parameter
 - **ALWAYS** store derived values (like `cow_size`) if needed for `draw()` method
+- **NOTE**: Effects may accept `update(delta_time, arena=None)`; the MS2 Arena passes itself when the effect signature supports it. Keep effects serializable and never store the arena.
 
 ### Pattern for Effects Needing Entity Access
 ```python
 class MyEffect(TimedEffect):
-    def __init__(self, cow, arena, ...):
+    def __init__(self, cow, ...):
         self.owner_id = cow.id  # ✅ Store ID
         self.cow_size = cow.size  # ✅ Store if needed for drawing
         # ❌ self.cow = cow  # NEVER do this
     
     def update(self, delta_time: float, arena=None) -> bool:
-        if arena:
+        if arena is not None:
             cow = next((c for c in arena.characters if c.id == self.owner_id), None)
-            # Use cow here...
+            if cow:
+                self.location[0] = cow.location[0]
+                self.location[1] = cow.location[1]
+        return super().update(delta_time)
 ```
 
-**Reference**: See existing effects like `PyroShell`, `RadialEffect`, `ConeEffect` for correct patterns. See `GUIDE_Adding_Abilities.md` for detailed examples.
+**Reference**: See existing effects like `WaveProjectileEffect`, `RadialEffect`, `ConeEffect` for correct patterns. See `GUIDE_Adding_Abilities.md` for detailed examples.
 
 ## 🕹️ CHARACTER-DRIVEN ACTION SYSTEM
 **NEVER modify `server.py` or `BASE_game_client.py` to add new character abilities.**

@@ -76,7 +76,7 @@ Transform basic ideas into maximum-overdrive creative explosions:
 
 #### Damage & Power Guidelines
 - **Baseline Health Model**
-  - Standard character: **100 base HP** + size bonus (starting ~110 HP total).
+  - Standard character: **100 base HP** + size bonus (starting ~100 HP total).
   - Damage multiplier scales from 0.7x (size 9) to 1.5x (size 80); default 1.0x at size 30.
   - All damage values below are **base damage per hit** (before multiplier).
   - Game runs at **60 FPS** (60 ticks per second).
@@ -96,7 +96,7 @@ Transform basic ideas into maximum-overdrive creative explosions:
   - **Contact-based abilities**: Single-hit on contact (e.g., Horn Charge). Not DPS-based; specify total damage per contact. Balance by requiring positioning/skill to land hits.
 
 - **Balance Principles**
-  - **Time to Kill (TTK)**: Full-health cow (110 HP) should take 3.5–5.5 seconds of sustained damage from light weapons (20–30 DPS), 4.5–7.5 seconds from medium (15–25 DPS), 5.5–9 seconds from heavy (12–20 DPS), 2.5–4 seconds from ultimate (30–40 DPS).
+  - **Time to Kill (TTK)**: Full-health cow (100 HP) should take 3.3–5.0 seconds of sustained damage from light weapons (20–30 DPS), 4.0–6.7 seconds from medium (15–25 DPS), 5.0–8.3 seconds from heavy (12–20 DPS), 2.5–3.3 seconds from ultimate (30–40 DPS).
   - **DPS Consistency**: Calculate DPS for all persistent effects. Balance around DPS targets, not just per-hit damage.
   - **Charge Balance**: More charges = lower damage per charge. Total damage across all charges should be roughly balanced.
   - **Risk vs Reward**: High DPS must have lower charges, longer cooldowns, positioning requirements, or clear counterplay.

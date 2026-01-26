@@ -232,9 +232,9 @@ class GenericHandler:
             tool_call_results = []
 
             all_tools_success = True
-            regular_tools = [tc for tc in tool_calls if tc.name != "complete_task"]
-            complete_task_calls = [tc for tc in tool_calls if tc.name == "complete_task"]
-
+            # also include run_all_tests_tool
+            regular_tools = [tc for tc in tool_calls if tc.name != "complete_task" and tc.name != "run_all_tests_tool"]
+            complete_task_calls = [tc for tc in tool_calls if tc.name == "complete_task" or tc.name == "run_all_tests_tool"]
 
             """AUTO NUDGING"""
             append_warning_str = ""
@@ -264,7 +264,11 @@ class GenericHandler:
                         if name in self.client.tool_map:
                             if name == "complete_task" and not all_tools_success:
                                 print(f"DEBUG: complete_task was called but not all tools were successful, so we will not call it really", flush=True)
-                                result = {"error": "Error: Not all tools were successful this turn so completing task is not possible"}
+                                result = {"error": "Error: Not all tools were successful this turn so completing task is not possible."}
+                                result_str = result["error"]
+                            elif name == "run_all_tests_tool" and not all_tools_success:
+                                print(f"DEBUG: run_all_tests_tool was called but not all tools were successful, so we will not call it really", flush=True)
+                                result = {"error": "Error: Not all tools were successful this turn so running all tests is not possible, fix the application of the failed tools and then try again."}
                                 result_str = result["error"]
                             elif ((name == "complete_task" and all_tools_success) and (args.get("summary") is None or len(args.get("summary")) < 100)):
                                 print(f"DEBUG: complete_task was called but the summary is too short, so we will not call it really", flush=True)

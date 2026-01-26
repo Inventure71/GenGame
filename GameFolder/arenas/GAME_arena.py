@@ -1,3 +1,4 @@
+import inspect
 import math
 import random
 import pygame
@@ -66,8 +67,19 @@ class Arena(BaseArena):
             self.ui = None
 
     def _spawn_world(self):
+        max_margin = max(1, int(min(self.width, self.height) / 2) - 1)
+
+        def _clamped_rand(min_value: int, max_value: int):
+            capped_max = min(max_value, max_margin)
+            if capped_max < 1:
+                return None
+            capped_min = min(min_value, capped_max)
+            return random.randint(capped_min, capped_max)
+
         for _ in range(self.num_grass_fields):
-            radius = random.randint(20, 60)
+            radius = _clamped_rand(20, 60)
+            if radius is None:
+                break
             cx = random.randint(radius, self.width - radius)
             cy = random.randint(radius, self.height - radius)
             grass = GrassField(cx, cy, radius, max_food=10, arena_height=self.height)
@@ -75,7 +87,9 @@ class Arena(BaseArena):
             self.platforms.append(grass)
         
         for _ in range(self.num_slowing_obstacles):
-            size = random.randint(60, 140)
+            size = _clamped_rand(60, 140)
+            if size is None:
+                break
             cx = random.randint(size, self.width - size)
             cy = random.randint(size, self.height - size)
             obstacle = WorldObstacle(cx, cy, size, "slowing", self.height)
@@ -87,11 +101,13 @@ class Arena(BaseArena):
             # Small (50-70): 10% chance, Medium (71-95): 30% chance, Big (96-200): 60% chance
             rand = random.random()
             if rand < 0.1:  # 10% chance for small
-                size = random.randint(50, 70)
+                size = _clamped_rand(50, 70)
             elif rand < 0.4:  # 30% chance for medium
-                size = random.randint(71, 95)
+                size = _clamped_rand(71, 95)
             else:  # 60% chance for big
-                size = random.randint(96, 200)
+                size = _clamped_rand(96, 200)
+            if size is None:
+                break
             
             cx = random.randint(size, self.width - size)
             cy = random.randint(size, self.height - size)
@@ -147,6 +163,36 @@ class Arena(BaseArena):
         self.projectiles = self.effects + [self.zone_indicator]
 
         self._manage_pickups(delta_time)
+
+    def _effect_accepts_arena(self, effect) -> bool:
+        cached = getattr(effect, "_accepts_arena_update", None)
+        if cached is not None:
+            return cached
+        try:
+            sig = inspect.signature(effect.update)
+        except (TypeError, ValueError):
+            cached = False
+        else:
+            params = list(sig.parameters.values())
+            has_var = any(
+                p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD) for p in params
+            )
+            cached = has_var or len(params) >= 2
+        effect._accepts_arena_update = cached
+        return cached
+
+    def _update_effects(self, delta_time: float):
+        active = []
+        for effect in self.effects:
+            expired = False
+            if hasattr(effect, "update"):
+                if self._effect_accepts_arena(effect):
+                    expired = effect.update(delta_time, self)
+                else:
+                    expired = effect.update(delta_time)
+            if not expired:
+                active.append(effect)
+        self.effects = active
 
     def _manage_pickups(self, delta_time: float):
         self.ability_spawn_timer += delta_time

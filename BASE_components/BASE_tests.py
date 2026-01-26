@@ -684,8 +684,9 @@ def run_all_tests(
     Returns:
         TestSuite with all test results
     """
-    # DISABLED: clear_python_cache() causes thread safety issues and freezes
-    # The cache clearing was causing deadlocks when running from background threads
+    # Clear cache to ensure tests run against latest code
+    # clear_python_cache() is now thread-safe - it checks pygame initialization
+    # and skips gc.collect() from background threads to avoid deadlocks
     clear_python_cache()
 
     time.sleep(1)

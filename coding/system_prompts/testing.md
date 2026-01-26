@@ -96,6 +96,58 @@ assert char.primary_ability_name == pickup.ability_name
 **State transitions:** Beginning, middle, end, invalid transitions
 **Spatial:** Multiple positions, boundaries, owner IDs, hit symmetry
 **Resources:** No ammo, missing components, insufficient resources
+**Effect Drawing:** Color/alpha validation, serialization edge cases, pygame drawing arguments
+
+### Effect Drawing Tests (MANDATORY for effects with draw methods)
+
+**When testing effects that have `draw()` methods, you MUST test:**
+
+1. **Color validation:**
+   - Effect with valid color tuple `(r, g, b)` where each is 0-255 integer
+   - Effect with default color parameter
+   - Effect after serialization/deserialization (color might be corrupted)
+   - Edge case: color is None, wrong type, or wrong length tuple
+
+2. **Alpha calculation validation:**
+   - Alpha calculated from `age` and `lifetime` must be valid integer 0-255
+   - Test at effect start (age=0, alpha should be valid)
+   - Test at effect end (age=lifetime, alpha should be valid)
+   - Test with very small lifetime values
+   - Test with very large lifetime values
+   - Ensure alpha never goes negative or exceeds 255
+
+3. **Drawing method calls:**
+   - `draw()` method must not crash with any valid effect state
+   - Test drawing with `camera=None` and `camera=SomeCamera()`
+   - Test drawing when `_graphics_initialized=False` (should return early)
+   - Test drawing when effect is expired or at lifetime boundary
+
+4. **Serialization edge cases:**
+   - If effect is serialized/deserialized, verify all drawing attributes (color, radius, etc.) are preserved correctly
+   - Test that deserialized effects can be drawn without errors
+
+**Example test pattern:**
+```python
+def test_effect_drawing_with_edge_cases():
+    # Test valid color
+    effect = MyEffect(..., color=(255, 50, 0))
+    arena = setup_battle_arena(headless=True)
+    arena.add_effect(effect)
+    # Should not crash
+    screen = pygame.Surface((100, 100))
+    effect.draw(screen, arena.height)
+    
+    # Test after serialization (if applicable)
+    serialized = effect.serialize()
+    deserialized = MyEffect.deserialize(serialized)
+    deserialized.draw(screen, arena.height)  # Should not crash
+    
+    # Test at lifetime boundaries
+    effect.age = 0
+    effect.draw(screen, arena.height)  # Should work
+    effect.age = effect.lifetime
+    effect.draw(screen, arena.height)  # Should work
+```
 
 ---
 

@@ -25,7 +25,7 @@ This document is the API reference for the **lowest‑level** Core Conflict engi
 ## Coordinate System
 - **World Coordinates (Logic)**: Y‑axis points **UP**. `[0, 0]` is bottom‑left.
 - **Screen Coordinates (Pygame)**: Y‑axis points **DOWN**. `[0, 0]` is top‑left.
-- **Conversion Formula**: `screen_y = arena_height - world_y - object_height`
+- **Conversion (center-based)**: `screen_y_center = arena_height - world_y`, then rect origin is `screen_y_center - object_height / 2`
 
 Avoid hardcoding arena height; always use the current arena height when converting.
 
@@ -141,9 +141,11 @@ Low‑level effect primitives. No gameplay shapes or damage logic exist here.
 ### Base Classes
 - `BaseEffect`: network‑serializable object with `location`, `update`, `draw`
   - `update(delta_time)` → `bool`: Returns `True` if expired (default `False`)
+  - `update(delta_time, arena=None)` → `bool`: Optional signature; GAME_arena uses signature inspection to detect if the effect accepts an arena parameter, and if so, passes itself (the arena instance) when calling `update()`
   - `draw(screen, arena_height, camera)`: Override for rendering
 - `TimedEffect`: base effect with lifetime tracking
   - `update(delta_time)` → `bool`: Returns `True` when `age >= lifetime`
+  - `update(delta_time, arena=None)` → `bool`: Optional signature; same arena parameter support as `BaseEffect`
   - `remaining()` → `float`: Returns remaining lifetime
   - Attributes: `lifetime`, `age`
 
@@ -151,7 +153,7 @@ Low‑level effect primitives. No gameplay shapes or damage logic exist here.
 All effects inherit from `NetworkObject` (via `BaseEffect`). When implementing effects:
 - **Store only primitive data**: strings, numbers, lists, dicts
 - **Store `owner_id` (string)**, not character objects
-- **Look up entities in `update()`** when `arena` parameter is provided
+- **Effects may accept `update(delta_time, arena=None)`**; the MS2 Arena uses signature inspection to detect if the effect accepts an arena parameter, and if so, passes itself (the arena instance) when calling `update()`. The arena is never stored in the effect, only passed as a parameter.
 - See `GUIDE_Adding_Abilities.md` for detailed serialization patterns
 
 All concrete effects (cones, shockwaves, walls, etc.) should live in `GameFolder/effects/` in one class per file (for example `coneeffect.py`, `radialeffect.py`, `lineeffect.py`, `waveprojectileeffect.py`, `obstacleeffect.py`, `zoneindicator.py`).

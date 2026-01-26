@@ -121,44 +121,30 @@ When you create effects, the arena automatically handles collision detection:
 - Store derived values if needed for drawing: `self.cow_size = cow.size`
 - Store primitive types: strings, numbers, lists, tuples, dicts
 
-### ✅ DO Look Up Objects When Needed
-- In `update(delta_time, arena=None)`, look up the character by `owner_id`:
-  ```python
-  def update(self, delta_time: float, arena=None) -> bool:
-      if arena is None:
-          return True  # Can't update without arena
-      
-      cow = None
-      for char in arena.characters:
-          if char.id == self.owner_id:
-              cow = char
-              break
-      
-      if cow is None:
-          return True  # Owner not found, expire effect
-      
-      # Use cow here...
-  ```
+### ✅ Keep Effects Self-Contained
+- Effects **may** accept an optional arena: `update(delta_time, arena=None)`.
+- The MS2 `Arena` uses signature inspection to detect if the effect accepts an arena parameter, and if so, passes itself (the arena instance) when calling `update()`. The arena is never stored in the effect, only passed as a parameter.
+- If you need to track a character, store `owner_id` and look it up when `arena` is provided.
 
 ### Example: Correct Pattern
 ```python
 class MyEffect(TimedEffect):
-    def __init__(self, cow, arena, mouse_pos):
+    def __init__(self, cow, mouse_pos):
         super().__init__(list(cow.location), 1.0)
         self.owner_id = cow.id  # ✅ Store ID, not object
         self.cow_size = cow.size  # ✅ Store size if needed for drawing
         self.mouse_pos = mouse_pos  # ✅ Primitive data
         
         # ❌ DON'T: self.cow = cow
-        # ❌ DON'T: self.arena = arena
+        # ❌ DON'T: store arena or other complex objects
     
     def update(self, delta_time: float, arena=None) -> bool:
-        # Look up cow when needed
-        if arena:
+        if arena is not None:
             cow = next((c for c in arena.characters if c.id == self.owner_id), None)
-            if cow:
-                self.location[0] = cow.location[0]
-                # ... use cow ...
+            if cow is None:
+                return True  # Owner missing: expire effect
+            self.location[0] = cow.location[0]
+            self.location[1] = cow.location[1]
         return super().update(delta_time)
     
     def draw(self, screen, arena_height, camera=None):
@@ -170,4 +156,4 @@ class MyEffect(TimedEffect):
 ### Why This Matters
 When effects are serialized via `__getstate__()` and sent over the network, complex objects cannot be properly reconstructed on the client. The client will receive strings or broken references instead of objects, causing `AttributeError` crashes like `'str' object has no attribute 'size'`.
 
-**Reference**: See `PyroShell`, `PyroBurst`, `RadialEffect`, `ConeEffect` for examples of correct patterns.
+**Reference**: See `WaveProjectileEffect`, `RadialEffect`, `ConeEffect`, `LineEffect` for examples of correct patterns.

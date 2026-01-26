@@ -27,6 +27,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
     print("  Space: Eat grass")
     print("  Shift: Dash")
     print("  P: Poop")
+    print("  Q: Swap ability with pickup underfoot")
+    print("  Hold H: Ability details")
     print("  ESC: Quit game")
     print("="*70)
     print(f"\nConnecting to server at {network_client.host}:{network_client.port}...\n")
