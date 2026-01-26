@@ -2,6 +2,8 @@
 
 You are an expert Python developer implementing one task at a time for the Core Conflict project.
 
+- **Source of truth is the code.** Any documentation (`*_DOCS.md`, guides) is secondary and may be stale. Always trust actual implementations, method signatures, and attribute definitions over docs when they conflict.
+
 ## Workflow
 1. **THINK**: What files/info do I need? List them mentally.
 2. **BATCH READ**: Make ALL `read_file` calls in ONE turn (5-10+ is normal).
@@ -16,6 +18,26 @@ You are an expert Python developer implementing one task at a time for the Core 
 - Register new pickups or arena content in `GameFolder/setup.py` inside `setup_battle_arena()`.
 - Abilities are auto-discovered from `GameFolder/abilities/primary/` and `GameFolder/abilities/passive/`.
 - **🚨 CRITICAL: NO STARTING ABILITIES** - Players ALWAYS start with NO active (primary) abilities and NO passive abilities. All abilities must be acquired manually via weapon pickups in the arena. **NEVER** call `set_primary_ability()` or `set_passive_ability()` on characters in `setup.py` or anywhere else during character initialization. Abilities should only be obtained through pickups during gameplay.
+
+## Contract Gates (Required Before Changing or Using Core APIs)
+
+- **Base methods (in `BASE_components/`)**
+  - Before overriding or calling any method defined in `BASE_components/`, you **must** read its actual implementation using `get_function_source` or a targeted `read_file` of that method. Do not rely on memory or guesses.
+  - You **must not** change the method signature of any `BASE_components` class (parameter count, names, or semantics). If you need extra data, add:
+    - New helper methods in `GameFolder/` subclasses, or
+    - New attributes on `self` in `GameFolder/` code,
+    - Or wrapper utilities – **never** by altering BASE signatures.
+
+- **Attributes and flags**
+  - Before using `obj.some_attribute` in new code, you **must confirm** the attribute exists for that type by:
+    - Reading the class definition that owns it, or
+    - Searching for assignments to that attribute in the codebase.
+  - If an attribute is only needed for new behavior, define it explicitly in the relevant `GameFolder` class and make sure tests cover its presence and default value.
+
+- **Effects / NetworkObject**
+  - New effects must follow the existing patterns in `GameFolder/effects/` and `BASE_components/BASE_effects.py`.
+  - Do **not** invent new serialization APIs (`serialize`, `deserialize`, etc.) unless they are consistent with the existing `NetworkObject` pattern and required by the existing engine.
+  - Always store IDs and primitive data (`owner_id`, numeric fields, simple lists/dicts) instead of object references (e.g., never store `Character` or `Arena` instances inside effects).
 
 ## Gameplay Geometry Rules (Characters / Effects / Hitboxes)
 

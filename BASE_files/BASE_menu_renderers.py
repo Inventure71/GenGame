@@ -210,7 +210,8 @@ class MenuRenderers:
         # Simple read-only browser (reuse PatchBrowser component)
         ui.add(PatchBrowser(self.scale_x(150), self.scale_y(130), self.scale_x(1100), self.scale_y(450), self.menu))
 
-        ui.add(Button(center_x - self.scale_x(150), self.scale_y(620), self.scale_x(300), self.scale_y(60), "Back to Menu", button_font, self.menu.on_library_back_click))
+        ui.add(Button(center_x - self.scale_x(250), self.scale_y(620), self.scale_x(200), self.scale_y(60), "Delete Selected", button_font, self.menu.on_delete_patch_click))
+        ui.add(Button(center_x + self.scale_x(50), self.scale_y(620), self.scale_x(200), self.scale_y(60), "Back to Menu", button_font, self.menu.on_library_back_click))
 
     def _setup_agent_menu(self):
         ui = self.managers["agent"]

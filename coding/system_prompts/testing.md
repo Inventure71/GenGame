@@ -41,6 +41,23 @@ You are a QA engineer writing tests in `GameFolder/tests/` for new game features
 * Assertions must include messages
 * Always `headless=True`
 
+## Randomness & World Spawns (Determinism Required)
+
+- **Arena auto-spawn**:
+  - `Arena.__init__` and `_spawn_world()` may create random grass, obstacles, and pickups.
+  - **Tests must never rely on this randomness.**
+  - When a test needs a specific setup, always:
+    - Clear auto-generated collections relevant to the behavior under test (e.g., `arena.obstacles.clear()`, `arena.grass_fields.clear()`, `arena.weapon_pickups.clear()`), and
+    - Add exactly the entities you need manually with known positions and sizes.
+
+- **Random seeds in tests**:
+  - If randomness is part of the feature under test, you **must** set a deterministic seed inside the test (for example, `random.seed(12345)`) before constructing the arena or other random-driven entities.
+  - Do not write assertions that depend on specific random positions or counts that come from `_spawn_world()` unless the test itself sets the seed and explicitly documents that contract.
+
+- **Forbidden patterns**:
+  - Tests whose outcome depends on unseeded RNG or on the incidental contents of auto-spawned world state.
+  - Tests that assume a specific number or placement of auto-spawned objects without explicitly creating them.
+
 ---
 
 ## EXECUTION ORDER (CRITICAL)

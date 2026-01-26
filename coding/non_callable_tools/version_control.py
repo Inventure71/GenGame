@@ -80,7 +80,7 @@ class VersionControl:
         
         return original_setup_content, seed_modified
 
-    def save_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups"):
+    def save_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups", prompt_used: str = ""):
         """
         Saves a patch by comparing the current GameFolder against a base backup.
         This is the source of truth for all patches in the system.
@@ -124,11 +124,11 @@ class VersionControl:
         if len(changes) > 0:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump({"name_of_backup": name_of_backup, "changes": changes}, f, indent=2, ensure_ascii=False)
+                    json.dump({"name_of_backup": name_of_backup, "prompt_used": prompt_used, "changes": changes}, f, indent=2, ensure_ascii=False)
 
                 metadata_path = file_path.replace('.json', '_metadata.json')
                 with open(metadata_path, 'w', encoding='utf-8') as f:
-                    json.dump({"name_of_backup": name_of_backup, "metadata": metadata}, f, indent=2, ensure_ascii=False)
+                    json.dump({"name_of_backup": name_of_backup, "prompt_used": prompt_used, "metadata": metadata}, f, indent=2, ensure_ascii=False)
 
                 print(f"Successfully saved {len(changes)} changes to {file_path}")
                 
@@ -167,6 +167,7 @@ class VersionControl:
         content = open_file(file_path)
         data = json.loads(content)
         name_of_backup = data["name_of_backup"]
+        prompt_used = data.get("prompt_used", "") # this is necessary for backwords compatibility
         changes = data["changes"]
         if os.path.exists(file_path.replace('.json', '_metadata.json')):
             with open(file_path.replace('.json', '_metadata.json'), 'r') as f:
@@ -174,7 +175,7 @@ class VersionControl:
         else:
             print(f"No metadata file found for {file_path}")
             metadata = []
-        return name_of_backup, changes, metadata
+        return name_of_backup, changes, metadata, prompt_used
     
     def valid_apply(self, file_path: str, diff: str) -> bool:
         result = modify_file_inline(file_path=file_path, diff_text=diff)
@@ -186,7 +187,7 @@ class VersionControl:
     def apply_patches(self, file_containing_patches: str, keep_changes_on_failure: bool = False):
         success_count = 0
         any_fixed = False
-        name_of_backup, changes, metadata = self.load_from_extension_file(file_containing_patches)
+        name_of_backup, changes, metadata, prompt_used = self.load_from_extension_file(file_containing_patches)
         
         errors = {} # key: file_path, value: error_msg
         
@@ -258,7 +259,7 @@ class VersionControl:
         if any_fixed:
             print(f"Saving fixed patches to {file_containing_patches}...")
             with open(file_containing_patches, 'w') as f:
-                json.dump({"name_of_backup": name_of_backup, "changes": changes}, f)
+                json.dump({"name_of_backup": name_of_backup, "changes": changes, "prompt_used": prompt_used}, f)
 
         return success_count == len(changes), success_count, len(changes), errors
 
@@ -267,7 +268,7 @@ class VersionControl:
             print("ERROR: File containing patches is not provided")
             return False, "File containing patches is not provided"
 
-        name_of_backup, changes, metadata = self.load_from_extension_file(file_containing_patches)
+        name_of_backup, changes, metadata, prompt_used = self.load_from_extension_file(file_containing_patches)
 
         if needs_rebase:
             if path_to_BASE_backup is not None:
@@ -348,8 +349,10 @@ class VersionControl:
             output_path = "merged_patch.json"
         
         # Load both patches
-        name_a, changes_a, _ = self.load_from_extension_file(patch_a_path)
-        name_b, changes_b, _ = self.load_from_extension_file(patch_b_path)
+        name_a, changes_a, _, old_prompt_a = self.load_from_extension_file(patch_a_path)
+        name_b, changes_b, _, old_prompt_b = self.load_from_extension_file(patch_b_path)
+
+        combined_prompt = old_prompt_a + old_prompt_b
         
         # Verify both patches are from the same base
         if name_a != name_b:
@@ -422,7 +425,7 @@ class VersionControl:
         
         # Write output
         with open(output_path, 'w') as f:
-            json.dump({"name_of_backup": name_a, "changes": merged_changes}, f, indent=2)
+            json.dump({"name_of_backup": name_a, "changes": merged_changes, "prompt_used": combined_prompt}, f, indent=2)
         
         if conflicts_found:
             return False, f"Merged with {len(conflicts_found)} conflicts in: {conflicts_found}. Output: {output_path}"

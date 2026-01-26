@@ -868,7 +868,7 @@ class VisualLogger {
                     for (let j = i - 1; j >= 0 && groupIndices.length < numTools; j--) {
                         const prevEvent = events[j];
                         if (prevEvent.type === 'model_request') break; // stop at previous turn
-                        if (prevEvent.type === 'tool_call' && !parallelGroups.has(j)) {
+                        if (prevEvent.type === 'tool_call' && !parallelGroups.has(startIndex + j)) {
                             // unshift to preserve original order
                             groupIndices.unshift(j);
                         }
@@ -879,13 +879,13 @@ class VisualLogger {
                         for (let j = i + 1; j < events.length && groupIndices.length < numTools; j++) {
                             const nextEvent = events[j];
                             if (nextEvent.type === 'model_request') break; // next turn
-                            if (nextEvent.type === 'tool_call' && !parallelGroups.has(j)) {
+                            if (nextEvent.type === 'tool_call' && !parallelGroups.has(startIndex + j)) {
                                 groupIndices.push(j);
                             }
                         }
                     }
 
-                    groupIndices.forEach(gIdx => parallelGroups.set(gIdx, groupId));
+                    groupIndices.forEach(gIdx => parallelGroups.set(startIndex + gIdx, groupId));
                 }
             }
         }
@@ -906,8 +906,8 @@ class VisualLogger {
                 for (let j = i - 1; j >= 0 && foundTools < numTools; j--) {
                     const prevEvent = events[j];
                     if (prevEvent.type === 'model_request') break;
-                    if (prevEvent.type === 'tool_call' && !tokenMap.has(j)) {
-                        tokenMap.set(j, { input: inputTokens, output: outputTokens });
+                    if (prevEvent.type === 'tool_call' && !tokenMap.has(startIndex + j)) {
+                        tokenMap.set(startIndex + j, { input: inputTokens, output: outputTokens });
                         foundTools++;
                     }
                 }

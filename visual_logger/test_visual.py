@@ -254,18 +254,17 @@ def main():
         print("\n🔍 PHASE 2: Deep Codebase Analysis")
         simulate_model_thinking("I need to understand the weapon system thoroughly. Let me read multiple key files in parallel to get the complete picture.")
 
-        # Simulate model responding with MULTIPLE tool calls in ONE response
-        parallel_analysis = [
-            {"name": "read_file", "args": {"file_path": "BASE_components/BASE_weapon.py"}},
-            {"name": "read_file", "args": {"file_path": "GameFolder/weapons/GAME_weapon.py"}},
-            {"name": "get_tree_directory", "args": {"path": "GameFolder/weapons"}},
-            {"name": "get_file_outline", "args": {"file_path": "GameFolder/weapons/BlackHoleGun.py"}},
-        ]
-
-        simulate_model_response_with_tools(
-            "I'll analyze the weapon system by examining the base classes and existing implementations.",
-            parallel_analysis
-        )
+        # Simulate model responding with MULTIPLE tool calls in ONE response - LOOP for high volume
+        print("Generating 60 parallel tool groups...")
+        for i in range(60):
+            parallel_analysis = [
+                {"name": "read_file", "args": {"file_path": f"BASE_components/BASE_{i}.py"}},
+                {"name": "read_file", "args": {"file_path": f"GameFolder/weapons/GAME_{i}.py"}},
+            ]
+            simulate_model_response_with_tools(
+                f"Analyzing set {i}...",
+                parallel_analysis
+            )
 
         # More parallel analysis - model responds with text + more tool calls
         parallel_inspection = [
@@ -495,8 +494,10 @@ class PlasmaProjectile(Projectile):
         print("   • Complete process flow visualization")
 
         print("\n🌐 Check http://127.0.0.1:8765 for the complete interactive visualization!")
-        print("Press Enter to end the session...")
-        input()
+        print("\n🌐 Check http://127.0.0.1:8765 for the complete interactive visualization!")
+        print("Session kept alive for browser verification...")
+        while True:
+            time.sleep(1)
 
     except KeyboardInterrupt:
         print("\n⏹️  Session interrupted by user")

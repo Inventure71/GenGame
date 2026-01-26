@@ -204,3 +204,39 @@ class PatchManager:
         
         return True, None
 
+    def delete_patch(self, patch_index: int) -> bool:
+        """
+        Delete a patch file by index, including its metadata file if present.
+        Returns True if successful, False otherwise.
+        """
+        if patch_index < 0 or patch_index >= len(self.available_patches):
+            return False
+
+        patch = self.available_patches[patch_index]
+
+        try:
+            # Remove from selected patches if selected
+            if patch.selected and patch in self.selected_patches:
+                self.selected_patches.remove(patch)
+
+            # Delete the main patch file
+            if os.path.exists(patch.file_path):
+                os.remove(patch.file_path)
+                print(f"Deleted patch file: {patch.file_path}")
+
+            # Delete the metadata file if it exists
+            metadata_path = patch.file_path.replace(".json", "_metadata.json")
+            if os.path.exists(metadata_path):
+                os.remove(metadata_path)
+                print(f"Deleted patch metadata file: {metadata_path}")
+
+            # Remove from available patches
+            self.available_patches.pop(patch_index)
+
+            # Rescan to ensure consistency
+            self.scan_patches()
+
+            return True
+        except Exception as e:
+            print(f"Failed to delete patch {patch.name}: {e}")
+            return False

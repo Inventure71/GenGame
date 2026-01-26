@@ -627,7 +627,7 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
     print("Tests created")
     print("--------------------------------")
 
-def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
+def fix_system(prompt: str, modelHandler: GenericHandler, results: dict, old_prompt: str = ""):
     if len(modelHandler.chat_history) > 0:
         print("------ Cleaning up chat history after planning and before fixing ------")
         modelHandler.clean_chat_history()
@@ -667,6 +667,9 @@ def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
     ]
     if prompt:
         lines.append(f"## User Comment:\n{prompt}")
+    if old_prompt:
+        lines.append(f"## Original Implementation Goal:\n{old_prompt}\n")
+        lines.append("IMPORTANT: The above describes what SHOULD be implemented. Use this as context to understand the intended behavior when fixing tests.")
 
     full_prompt = "\n".join(lines)
 
@@ -677,7 +680,7 @@ def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
     modelHandler.ask_until_task_completed_V2(todo_list, current_index, full_prompt)
     return todo_list
 
-def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None, UI_called=False):
+def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None, UI_called=False, old_prompt: str = ""):
     """
     Main game creation loop that plans, implements, tests, and optionally fixes issues.
     
@@ -698,6 +701,7 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
 
         print("------ Enchanting prompt ------")
         prompt = enchancer_feature(prompt, modelHandler)
+        action_logger.prompt_used = prompt
     
         print("--------------------------------"*5)
         print("Enchanced prompt:")
@@ -711,9 +715,11 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
     
     else:
         print("------ Fixing system ------")
+        if not old_prompt:
+            old_prompt = getattr(action_logger, 'prompt_used', "")
         if results is None:
             results = run_all_tests_tool(explanation="Initial test run before fix cycle")
-        todo_list = fix_system(prompt, modelHandler, results)
+        todo_list = fix_system(prompt, modelHandler, results, old_prompt=old_prompt)
 
     results = run_all_tests_tool(explanation="Final test run after implementation/fix cycle")
     print("Tests results: ", results)
@@ -738,7 +744,7 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
             )
             if not UI_called:
                 # Recursive call for command-line fix mode
-                return full_loop(fix_prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results, UI_called=False)
+                return full_loop(fix_prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results, UI_called=False, old_prompt=action_logger.prompt_used)
             else:
                 # Return to menu with fix prompt
                 return False, modelHandler, todo_list, fix_prompt, backup_name
@@ -800,14 +806,16 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
             print(f"Failed to load patch: {errors}")
             return False, None, None, "", ""
         
-        backup_name, _, _ = vc.load_from_extension_file(patch_to_load)
+        backup_name, _, _, old_prompt = vc.load_from_extension_file(patch_to_load) # TODO: add old_prompt to fix system
+        action_logger.prompt_used = old_prompt
         print(f"Patch loaded successfully. Base backup: {backup_name}")
 
     elif patch_to_load and not needs_rebase:
         # We assume the UI already loaded the patch, but we still need the backup_name for saving
         from coding.non_callable_tools.version_control import VersionControl
         vc = VersionControl()
-        backup_name, _, _ = vc.load_from_extension_file(patch_to_load)
+        backup_name, _, _, old_prompt = vc.load_from_extension_file(patch_to_load)
+        action_logger.prompt_used = old_prompt
         print(f"Using already loaded patch context. Base backup: {backup_name}")
 
     elif start_from_base is None:
@@ -850,7 +858,8 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
         fix_mode=False, 
         backup_name=backup_name, 
         total_cleanup=True, 
-        UI_called=UI_called
+        UI_called=UI_called,
+        old_prompt=action_logger.prompt_used
     )
     
     # End session on success, or when not called from UI

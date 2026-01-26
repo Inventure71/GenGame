@@ -213,16 +213,16 @@ class GeminiHandler:
                 return response
             except Exception as e:
                 if "429" in str(e):
-                    print(f"Rate limit exceeded, retrying in 10s...")
+                    print(f"Rate limit exceeded, retrying in 10s...", flush=True)
                     delay = 10
                 if "500" in str(e) or "INTERNAL" in str(e) or "503" in str(e) or "504" in str(e):  # Server error
                     if attempt < max_retries - 1:
                         delay = (2 ** (attempt + 1))  # Exponential backoff: 2s, 4s, 8s
-                        print(f"Server error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...")
+                        print(f"Server error (attempt {attempt + 1}/{max_retries}), retrying in {delay}s...", flush=True)
                     else:
-                        print(f"Failed after {max_retries} attempts: {e}")
-                        print(f"The request was: {api_history}")
-                        print(f"The config was: {config}")
+                        print(f"Failed after {max_retries} attempts: {e}", flush=True)
+                        print(f"The request was: {api_history}", flush=True)
+                        print(f"The config was: {config}", flush=True)
                         raise e
                     
                     time.sleep(delay)

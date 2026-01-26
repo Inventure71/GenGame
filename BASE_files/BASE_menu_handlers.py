@@ -149,6 +149,21 @@ class MenuHandlers:
         print("Library Back clicked")
         self.menu.show_menu("main")
 
+    def on_delete_patch_click(self):
+        """Delete the first selected patch in the library."""
+        if not self.menu.patch_manager.selected_patches:
+            self.menu.show_error_message("No patch selected")
+            return
+        
+        patch = self.menu.patch_manager.selected_patches[0]
+        idx = self.menu.patch_manager.available_patches.index(patch)
+        
+        if self.menu.patch_manager.delete_patch(idx):
+            self.menu.show_error_message(f"Deleted: {patch.name}")
+            self.menu.patch_manager.clear_selections()
+        else:
+            self.menu.show_error_message(f"Failed to delete: {patch.name}")
+
     def on_agent_send_click(self):
         """Handle agent send button click."""
         print("Agent Send clicked")
@@ -211,7 +226,7 @@ class MenuHandlers:
 
         # Save the patch
         patch_path = os.path.join(patches_dir, f"{self.menu.patch_name}.json")
-        success = self.menu.action_logger.save_changes_to_extension_file(patch_path, name_of_backup=backup_name)
+        success = self.menu.action_logger.save_changes_to_extension_file(patch_path, name_of_backup=backup_name, prompt_used=self.menu.action_logger.prompt_used)
 
         if success:
             print(f"✓ Patch saved successfully: {patch_path}")
@@ -258,8 +273,9 @@ class MenuHandlers:
                 self.menu.agent_selected_patch_idx = patch_index
                 self.menu.agent_active_patch_path = patch.file_path
                 # Update the base working backup to match the patch's base
-                backup_name, _, _ = vc.load_from_extension_file(patch.file_path)
+                backup_name, _, _, old_prompt = vc.load_from_extension_file(patch.file_path)
                 self.menu.base_working_backup = backup_name
+                self.menu.action_logger.prompt_used = old_prompt
                 
                 # Run tests after loading to check for issues
                 print("Running tests on loaded patch...")
@@ -338,37 +354,3 @@ class MenuHandlers:
         """Handle settings back button click."""
         print("Settings Back clicked")
         self.menu.show_menu("main")
-
-    def on_save_current_state_click(self):
-        """Handle saving the current GameFolder state to a patch (even if failed)."""
-        if not self.menu.patch_name.strip():
-            self.menu.show_error_message("Please enter a patch name first")
-            # Components handle their own focus
-            return
-
-        print(f"Saving current state to patch: {self.menu.patch_name}")
-
-        patches_dir = "__patches"
-        if not os.path.exists(patches_dir):
-            os.makedirs(patches_dir)
-
-        # Use active backup (from loaded patch) or fallback to base working backup
-        backup_name = self.menu.base_working_backup
-        if not backup_name:
-            # If no backup is set, create a fresh one as the base
-            from coding.non_callable_tools.backup_handling import BackupHandler
-            handler = BackupHandler("__game_backups")
-            _, backup_name = handler.create_backup("GameFolder")
-            print(f"Created fresh backup for comparison: {backup_name}")
-
-        patch_path = os.path.join(patches_dir, f"{self.menu.patch_name}.json")
-        success = self.menu.action_logger.save_changes_to_extension_file(patch_path, name_of_backup=backup_name)
-
-        if success:
-            print(f"✓ State saved successfully: {patch_path}")
-            self.menu.patch_name = ""
-            # Refresh patch list
-            self.menu.patch_manager.scan_patches()
-            self.menu.show_error_message(f"Saved: {self.menu.patch_name}")
-        else:
-            self.menu.show_error_message("Failed to save current state")

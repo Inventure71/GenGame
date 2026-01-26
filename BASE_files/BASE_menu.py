@@ -248,6 +248,9 @@ class BaseMenu:
     def on_library_back_click(self):
         self.handlers.on_library_back_click()
 
+    def on_delete_patch_click(self):
+        self.handlers.on_delete_patch_click()
+
     def on_agent_send_click(self):
         self.handlers.on_agent_send_click()
 

@@ -52,7 +52,7 @@ def gather_context_enchancer():
     """Gathers context for the enchancer phase."""
     lines = [
         "## Context given:",
-        "Documentation of BASE game components:",
+        "Documentation of BASE game components (high-level; code is source of truth):",
         read_file(file_path='BASE_components/BASE_COMPONENTS_DOCS.md'),
     ]
     return "\n".join(lines)
@@ -67,9 +67,9 @@ def gather_context_planning():
         "## File Outlines (structure overview):",
         gather_all_file_outlines("GameFolder"),
         "",
-        "## Documentation of BASE components:",
+        "## Documentation of BASE components (high-level; verify against code):",
         read_file(file_path="BASE_components/BASE_COMPONENTS_DOCS.md"),
-        "## Guide for adding abilities:",
+        "## Guide for adding abilities (patterns only; verify against code):",
         open_file(file_path="coding/prompts/GUIDE_Adding_Abilities.md"),
     ]
     
@@ -111,6 +111,8 @@ def gather_context_coding():
         f"## File Outlines (structure overview - use get_file_outline for details):\n"
         f"{gather_all_file_outlines('GameFolder')}\n\n"
         f"Do NOT call get_tree_directory - use the paths above.\n\n"
+        f"Note: High-level docs (`*_DOCS.md`, guides) are not included here; the code itself is the source of truth. "
+        f"If you need conceptual background, you may read them explicitly, but always confirm behavior against real implementations.\n\n"
         f"=== END OF STARTING CONTEXT ===\n\n"
         f"⚡ REMINDER: Use tools in PARALLEL. If you need multiple files, read ALL of them in ONE response. ⚡"
     )
@@ -158,7 +160,7 @@ def gather_context_testing():
         "- `arena.handle_collisions(dt)` applies ALL effects each call (damage, knockback, recoil)",
         "- Effects ACCUMULATE across loop iterations",
         "",
-        "## Testing Guide:",
+        "## Testing Guide (patterns only; verify expectations against code):",
         open_file(file_path="coding/prompts/GUIDE_Testing.md"),
         "",
         "=== END OF TESTING CONTEXT ==="
@@ -177,6 +179,14 @@ def gather_context_fix(results: dict) -> str:
         "",
         "⚡ CRITICAL REMINDER: Batch tool calls in ONE turn (read_file, get_file_outline, get_function_source, etc.). 5-20+ parallel calls is expected. A second batch is allowed only if a NEW hypothesis appears. ⚡",
         "⚡ SANITY CHECK: If a numeric assertion is off by an exact factor (0.5x, 2x, 4x), suspect duplicate logic or double-application before changing constants. ⚡",
+        "",
+        "⚡ DETERMINISM RULE (CRITICAL): `Arena` auto-spawns random obstacles/grass/pickups in `__init__`/`_spawn_world()`. "
+        "Tests must not rely on this. For targeted tests, clear arena state immediately after creation "
+        "(e.g., `arena.obstacles.clear()`, `arena.grass_fields.clear()`, `arena.platforms.clear()`, `arena.weapon_pickups.clear()`, `arena.effects.clear()`) "
+        "and/or set a fixed `random.seed(...)` inside the test. ⚡",
+        "",
+        "⚡ TIME/COOLDOWN RULE: Abilities are gated by `arena.current_time` and cooldown fields (e.g., `last_primary_use`, `primary_use_cooldown`). "
+        "If a test expects an action to be usable again, advance time via `arena.update(dt)` (preferred) or set `arena.current_time` explicitly. ⚡",
         "",
         "## Execution Order Warning:",
         "If test fails with 'no collision' or 'entity not found' despite correct setup:",
