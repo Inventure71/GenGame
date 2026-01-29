@@ -8,7 +8,7 @@ from BASE_files.BASE_menu_helpers import decrypt_code
 from BASE_components.BASE_asset_handler import AssetHandler
 from BASE_files.BASE_ui_components import (
     UIManager, Button, TextField, Label, Panel,
-    ScrollableList, RoomStatusBar, PatchBrowser,
+    ScrollableList, RoomStatusBar, PatchBrowser, ServerPatchBrowser,
     AgentWorkspace, TextFieldWithPaste, NotificationOverlay
 )
 
@@ -68,7 +68,7 @@ class MenuRenderers:
 
     def _init_managers(self):
         """Initialize UIManagers for each menu state."""
-        for state in ["main", "join_room_code", "room", "library", "agent", "settings"]:
+        for state in ["main", "join_room_code", "room", "library", "server_library", "agent", "settings"]:
             self.managers[state] = UIManager(self.menu)
             # Add global notification overlay to every manager
             self.managers[state].add(NotificationOverlay(self.menu))
@@ -77,6 +77,7 @@ class MenuRenderers:
         self._setup_join_room_menu()
         self._setup_room_menu()
         self._setup_library_menu()
+        self._setup_server_library_menu()
         self._setup_agent_menu()
         self._setup_settings_menu()
 
@@ -160,6 +161,10 @@ class MenuRenderers:
         ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Patches Library", button_font, self.menu.on_library_click, style="normal"))
         button_y += button_spacing
 
+        # Server Patch Library
+        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Server Patch Library", button_font, self.menu.on_server_library_click, style="normal"))
+        button_y += button_spacing
+
         # Settings button (above quit)
         ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Settings", button_font, self.menu.on_settings_click, style="normal"))
         button_y += button_spacing
@@ -212,6 +217,38 @@ class MenuRenderers:
 
         ui.add(Button(center_x - self.scale_x(250), self.scale_y(620), self.scale_x(200), self.scale_y(60), "Delete Selected", button_font, self.menu.on_delete_patch_click))
         ui.add(Button(center_x + self.scale_x(50), self.scale_y(620), self.scale_x(200), self.scale_y(60), "Back to Menu", button_font, self.menu.on_library_back_click))
+
+    def _setup_server_library_menu(self):
+        ui = self.managers["server_library"]
+        center_x = self.screen_width // 2
+
+        menu_font, button_font, small_font = self._get_scaled_fonts()
+
+        ui.add(Label(center_x, self.scale_y(40), "Server Patch Library", menu_font, center=True))
+
+        # Search field
+        ui.add(TextFieldWithPaste(
+            center_x - self.scale_x(300),
+            self.scale_y(85),
+            self.scale_x(500),
+            self.scale_y(40),
+            self.menu,
+            button_font,
+            placeholder="Search by name or owner",
+            name="server_patch_search"
+        ))
+        ui.add(Button(center_x + self.scale_x(220), self.scale_y(85), self.scale_x(120), self.scale_y(40), "Search", button_font, self.menu.on_server_library_search_click))
+
+        # Server patch browser
+        ui.add(ServerPatchBrowser(self.scale_x(150), self.scale_y(130), self.scale_x(1100), self.scale_y(450), self.menu))
+
+        # Pagination buttons
+        ui.add(Button(center_x - self.scale_x(260), self.scale_y(620), self.scale_x(200), self.scale_y(60), "Prev Page", button_font, self.menu.on_server_library_prev_click))
+        ui.add(Button(center_x + self.scale_x(60), self.scale_y(620), self.scale_x(200), self.scale_y(60), "Next Page", button_font, self.menu.on_server_library_next_click))
+
+        # Download + back
+        ui.add(Button(center_x - self.scale_x(260), self.scale_y(700), self.scale_x(200), self.scale_y(60), "Download Selected", button_font, self.menu.on_server_library_download_click, style="primary"))
+        ui.add(Button(center_x + self.scale_x(60), self.scale_y(700), self.scale_x(200), self.scale_y(60), "Back to Menu", button_font, self.menu.on_server_library_back_click))
 
     def _setup_agent_menu(self):
         ui = self.managers["agent"]
@@ -308,6 +345,9 @@ class MenuRenderers:
             elif comp.name == "patch_name":
                 if not comp.focused: comp.text = self.menu.patch_name
                 else: self.menu.patch_name = comp.text
+            elif comp.name == "server_patch_search":
+                if not comp.focused: comp.text = self.menu.server_patch_search
+                else: self.menu.server_patch_search = comp.text
             elif comp.name == "ready_btn":
                 comp.text = "Ready!" if self.menu.patches_ready else "Mark as Ready"
             elif comp.name == "test_results":
@@ -380,6 +420,7 @@ class MenuRenderers:
     def render_join_room_code_menu(self): self.render()
     def render_room_menu(self): self.render()
     def render_library_menu(self): self.render()
+    def render_server_library_menu(self): self.render()
     def render_agent_menu(self): self.render()
     def render_settings_menu(self): self.render()
 

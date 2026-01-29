@@ -654,6 +654,24 @@ class GameServer:
                 print(f"{player_id} successfully received file: {message['file_path']}")
             else:
                 print(f"{player_id} failed to receive file {message['file_path']}: {error}")
+        elif msg_type == 'patch_library_request':
+            page = message.get('page', 0)
+            page_size = message.get('page_size', 50)
+            search = message.get('search', "")
+            items, total = self.sync_manager.get_server_patch_library_page(page, page_size, search)
+            response = {
+                'type': 'patch_library_page',
+                'page': page,
+                'page_size': page_size,
+                'total': total,
+                'items': items,
+                'search': search
+            }
+            self._send_message(player_id, response)
+        elif msg_type == 'patch_library_download':
+            patch_id = message.get('patch_id')
+            include_backup = message.get('include_backup', True)
+            self.sync_manager.send_patch_library_download(player_id, patch_id, include_backup=include_backup)
         elif msg_type == 'patches_selection':
             # Client sent their patch selection
             patches = message.get('patches', [])

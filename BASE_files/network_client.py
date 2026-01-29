@@ -26,6 +26,15 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from BASE_components.BASE_network import NetworkObject
+from BASE_files.transfer_manager import (
+    client_send_patch_file,
+    client_send_backup,
+    client_send_file,
+    client_handle_file_chunk,
+    client_handle_patch_file,
+    client_handle_patch_library_file,
+    client_handle_backup_download_chunk,
+)
 
 
 class NetworkClient:
@@ -59,6 +68,10 @@ class NetworkClient:
         self.on_patch_received = None  # New callback for when patch is received
         self.on_patch_sync_failed = None  # New callback for when patch sync fails
         self.on_patch_merge_failed = None  # New callback for when server merge fails
+        self.on_patch_library_page = None
+        self.on_patch_library_downloaded = None
+        self.on_patch_library_error = None
+        self.on_backup_downloaded = None
         self.on_game_start = None
         self.on_game_restarting = None
         self.on_server_restarted = None
@@ -70,6 +83,7 @@ class NetworkClient:
 
         # File transfer state
         self.file_transfers = {}  # file_path -> {'chunks': {}, 'total_chunks': 0, 'received_chunks': 0}
+        self.backup_download_transfers = {}  # backup_name -> transfer state for downloads
         
         # File sync tracking
         self.file_sync_complete = False  # Track if file sync has completed
@@ -231,43 +245,10 @@ class NetworkClient:
         # Mark as ready ONCE after all files sent
         self.mark_patches_ready()
 
-    def _queue_chunked_file(
-        self,
-        file_path: str,
-        message_factory: Callable[[int, int, bytes], dict],
-        on_chunk: Optional[Callable[[int, int, bytes], None]] = None,
-        chunk_size: int = 64 * 1024,
-        file_size: Optional[int] = None,
-    ) -> int:
-        """Queue a file for transfer in chunks and return total_chunks."""
-        if file_size is None:
-            file_size = os.path.getsize(file_path)
-        total_chunks = (file_size + chunk_size - 1) // chunk_size
-
-        with open(file_path, 'rb') as f:
-            for chunk_num in range(total_chunks):
-                chunk_data = f.read(chunk_size)
-                message = message_factory(chunk_num, total_chunks, chunk_data)
-                self.outgoing_queue.append(message)
-                if on_chunk:
-                    on_chunk(chunk_num, total_chunks, chunk_data)
-
-        return total_chunks
-    
     def _send_patch_file(self, file_path: str, patch_name: str):
         """Send a patch file to server in chunks."""
         try:
-            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
-                return {
-                    'type': 'patch_chunk',
-                    'patch_name': patch_name,
-                    'chunk_num': chunk_num,
-                    'total_chunks': total_chunks,
-                    'data': chunk_data,
-                    'player_id': self.player_id
-                }
-
-            total_chunks = self._queue_chunked_file(file_path, message_factory)
+            total_chunks = client_send_patch_file(self.outgoing_queue, file_path, patch_name, self.player_id)
             print(f"Sent patch file: {patch_name} ({total_chunks} chunks)")
             
         except Exception as e:
@@ -320,6 +301,33 @@ class NetworkClient:
         self.outgoing_queue.append(message)
         return True
 
+    def request_patch_library_page(self, page: int = 0, page_size: int = 50, search: str = "") -> bool:
+        """Request a page of patches from the server library."""
+        if not self.connected:
+            return False
+
+        message = {
+            'type': 'patch_library_request',
+            'page': max(0, int(page)),
+            'page_size': max(1, int(page_size)),
+            'search': search or ""
+        }
+        self.outgoing_queue.append(message)
+        return True
+
+    def request_patch_library_download(self, patch_id: str, include_backup: bool = True) -> bool:
+        """Request a patch (and optionally its backup) from the server library."""
+        if not self.connected:
+            return False
+
+        message = {
+            'type': 'patch_library_download',
+            'patch_id': patch_id,
+            'include_backup': bool(include_backup)
+        }
+        self.outgoing_queue.append(message)
+        return True
+
     def send_file(self, file_path: str, target_path: str = None) -> bool:
         """
         Send a file to the server.
@@ -335,30 +343,19 @@ class NetworkClient:
             return False
 
         try:
-            # Check if file exists and get its size
             if not os.path.exists(file_path):
                 print(f"File not found: {file_path}")
                 return False
 
             file_name = os.path.basename(file_path)
             target_path = target_path or file_name
-            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
-                return {
-                    'type': 'file_chunk',
-                    'file_path': target_path,
-                    'chunk_num': chunk_num,
-                    'total_chunks': total_chunks,
-                    'data': chunk_data,
-                    'player_id': self.player_id
-                }
-
-            def on_chunk(chunk_num: int, total_chunks: int, _chunk_data: bytes) -> None:
-                if self.on_file_transfer_progress:
-                    progress = (chunk_num + 1) / total_chunks
-                    self.on_file_transfer_progress(target_path, progress, 'sending')
-
-            self._queue_chunked_file(file_path, message_factory, on_chunk=on_chunk)
-            return True
+            return client_send_file(
+                self.outgoing_queue,
+                file_path,
+                target_path,
+                player_id=self.player_id,
+                on_progress=self.on_file_transfer_progress,
+            )
 
         except Exception as e:
             print(f"Failed to send file {file_path}: {e}")
@@ -601,6 +598,34 @@ class NetworkClient:
                 self.on_file_received(message['file_path'], message.get('success', True))
         elif msg_type == 'patch_file':
             self._handle_patch_file(message)
+        elif msg_type == 'patch_library_page':
+            if self.on_patch_library_page:
+                self.on_patch_library_page(
+                    message.get('items', []),
+                    message.get('page', 0),
+                    message.get('total', 0),
+                    message.get('page_size', 0),
+                    message.get('search', "")
+                )
+        elif msg_type == 'patch_library_file':
+            patch_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "__patches")
+            client_handle_patch_library_file(
+                message,
+                patch_dir,
+                on_saved=self._on_patch_library_saved,
+            )
+        elif msg_type == 'patch_library_error':
+            if self.on_patch_library_error:
+                self.on_patch_library_error(message.get('error', 'Unknown error'))
+        elif msg_type == 'backup_chunk':
+            client_handle_backup_download_chunk(
+                message,
+                self.backup_download_transfers,
+                on_complete=self._on_backup_download_complete,
+            )
+        elif msg_type == 'backup_download_failed':
+            if self.on_backup_downloaded:
+                self.on_backup_downloaded(message.get('backup_name'), False, message.get('error', 'Unknown error'))
         elif msg_type == 'patch_sync_failed':
             reason = message.get('reason', 'Unknown reason')
             failed_clients = message.get('failed_clients', [])
@@ -651,195 +676,43 @@ class NetworkClient:
             else:
                 print(f"[error] BACKUP REQUEST: Invalid backup request - no backup_name provided")
 
-    def _send_backup_to_server(self, backup_name: str):
-        """Send a backup folder to the server."""
-        try:
-            import os
-            cwd = os.getcwd()
-            print(f"📍 BACKUP SEND: Current working directory: {cwd}")
-
-            backup_path = f"__game_backups/{backup_name}"
-            abs_backup_path = os.path.abspath(backup_path)
-            print(f"📍 BACKUP SEND: Looking for backup at: {abs_backup_path}")
-
-            if not os.path.exists(backup_path):
-                print(f"[error] BACKUP SEND: Backup {backup_name} not found locally at {backup_path}")
-                print(f"[error] BACKUP SEND: Absolute path: {abs_backup_path}")
-                # List contents of __game_backups if it exists
-                game_backups_dir = "__game_backups"
-                if os.path.exists(game_backups_dir):
-                    contents = os.listdir(game_backups_dir)
-                    print(f"[error] BACKUP SEND: Contents of __game_backups: {contents}")
-                else:
-                    print(f"[error] BACKUP SEND: __game_backups directory does not exist")
-                return
-
-            print(f"[success] BACKUP SEND: Found backup '{backup_name}' at {backup_path}")
-            print(f"📤 BACKUP SEND: Starting to send backup '{backup_name}' from {backup_path}")
-
-            # Create a temporary compressed archive
-            import tempfile
-            import tarfile
-            import gzip
-
-            with tempfile.NamedTemporaryFile(suffix='.tar.gz', delete=False) as temp_file:
-                temp_path = temp_file.name
-
-            # Create compressed tar archive
-            with tarfile.open(temp_path, 'w:gz') as tar:
-                tar.add(backup_path, arcname=backup_name)
-
-            # Calculate total chunks BEFORE sending any chunks
-            chunk_size = 64 * 1024  # 64KB chunks
-            file_size = os.path.getsize(temp_path)
-            total_chunks = (file_size + chunk_size - 1) // chunk_size
-
-            print(f"📦 BACKUP SEND: Compressed '{backup_name}' to {file_size} bytes, will send in {total_chunks} chunks")
-
-            def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
-                return {
-                    'type': 'file_chunk',
-                    'backup_name': backup_name,
-                    'chunk_num': chunk_num,
-                    'total_chunks': total_chunks,
-                    'data': chunk_data,
-                    'is_backup': True
-                }
-
-            def on_chunk(chunk_num: int, total_chunks: int, chunk_data: bytes) -> None:
-                progress = (chunk_num + 1) / total_chunks * 100
-                if self.debug_logging:
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] 📤 BACKUP SEND: Queued chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' - data size: {len(chunk_data)} bytes")
-                    print(f"[{timestamp}] 🔍 DEBUG CLIENT: Outgoing queue now has {len(self.outgoing_queue)} messages")
-
-            self._queue_chunked_file(
-                temp_path,
-                message_factory,
-                on_chunk=on_chunk,
-                chunk_size=chunk_size,
-                file_size=file_size,
+    def _on_patch_library_saved(self, patch_path: str, message: dict):
+        if self.on_patch_library_downloaded:
+            self.on_patch_library_downloaded(
+                patch_path,
+                message.get('base_backup'),
+                message.get('patch_id')
             )
 
-            print(f"[success] BACKUP SEND: Successfully queued all {total_chunks} chunks for backup '{backup_name}' to server")
+    def _on_backup_download_complete(self, backup_name: str, success: bool, error: Optional[str]):
+        if self.on_backup_downloaded:
+            self.on_backup_downloaded(backup_name, success, error)
 
-            # Clean up temp file
-            os.unlink(temp_path)
-
-        except Exception as e:
-            print(f"[error] BACKUP SEND: Failed to send backup {backup_name}: {e}")
+    def _send_backup_to_server(self, backup_name: str):
+        """Send a backup folder to the server."""
+        client_send_backup(self.outgoing_queue, backup_name, debug_logging=self.debug_logging)
 
     def _handle_file_chunk(self, message: dict):
         """Handle incoming file chunk."""
-        file_path = message['file_path']
-        chunk_num = message['chunk_num']
-        total_chunks = message['total_chunks']
-        chunk_data = message['data']
+        client_handle_file_chunk(
+            message,
+            self.file_transfers,
+            self.outgoing_queue,
+            self.player_id,
+            on_file_received=self.on_file_received,
+            on_file_transfer_progress=self.on_file_transfer_progress,
+        )
 
-        # Initialize file transfer if this is the first chunk
-        if file_path not in self.file_transfers:
-            self.file_transfers[file_path] = {
-                'chunks': {},
-                'total_chunks': total_chunks,
-                'received_chunks': 0,
-                'start_time': time.time()
-            }
-
-        transfer = self.file_transfers[file_path]
-
-        # Store the chunk
-        if chunk_num not in transfer['chunks']:
-            transfer['chunks'][chunk_num] = chunk_data
-            transfer['received_chunks'] += 1
-
-            # Call progress callback if available
-            if self.on_file_transfer_progress:
-                progress = transfer['received_chunks'] / total_chunks
-                self.on_file_transfer_progress(file_path, progress, 'receiving')
-
-        # Check if file is complete
-        if transfer['received_chunks'] == total_chunks:
-            self._assemble_file(file_path)
-
-    def _queue_file_ack(self, file_path: str, success: bool, error: Optional[str] = None):
-        message = {
-            'type': 'file_ack',
-            'file_path': file_path,
-            'player_id': self.player_id,
-            'success': success
-        }
-        if error:
-            message['error'] = error
-        self.outgoing_queue.append(message)
-
-    def _assemble_file(self, file_path: str):
-        """Assemble received chunks into a complete file."""
-        transfer = self.file_transfers[file_path]
-
-        try:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-            # Write file by combining chunks in order
-            with open(file_path, 'wb') as f:
-                for chunk_num in range(transfer['total_chunks']):
-                    if chunk_num in transfer['chunks']:
-                        f.write(transfer['chunks'][chunk_num])
-                    else:
-                        raise ValueError(f"Missing chunk {chunk_num} for file {file_path}")
-
-            # Send acknowledgment to server
-            self._queue_file_ack(file_path, True)
-
-            # Call completion callback
-            if self.on_file_received:
-                self.on_file_received(file_path, True)
-
-            print(f"File received successfully: {file_path}")
-
-        except Exception as e:
-            print(f"Failed to assemble file {file_path}: {e}")
-
-            # Send failure acknowledgment
-            self._queue_file_ack(file_path, False, str(e))
-
-            # Call completion callback with failure
-            if self.on_file_received:
-                self.on_file_received(file_path, False)
-
-        finally:
-            # Clean up transfer state
-            if file_path in self.file_transfers:
-                del self.file_transfers[file_path]
-    
     def _handle_patch_file(self, message: dict):
         """Handle incoming patch file from server."""
-        filename = message.get('filename', 'merge_patch.json')
-        content = message.get('content', b'')
-
-        print(f"Received patch file: {filename} ({len(content)} bytes)")
-
-        # Save patch to local directory
         patch_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "__patches")
-        os.makedirs(patch_dir, exist_ok=True)
-
-        patch_path = os.path.join(patch_dir, filename)
-
-        try:
-            with open(patch_path, 'wb') as f:
-                f.write(content)
-            print(f"Saved patch to: {patch_path}")
-
-            # Send acknowledgment that patch was received
-            self._send_patch_received()
-
-            # Now apply the patch
-            if self.on_patch_received:
-                self.on_patch_received(patch_path)
-        except Exception as e:
-            print(f"Error saving patch file: {e}")
-            # Send failure acknowledgment
-            self.send_patch_applied(success=False, error_message=f"Failed to receive patch file: {str(e)}")
+        client_handle_patch_file(
+            message,
+            patch_dir,
+            self._send_patch_received,
+            self.send_patch_applied,
+            on_patch_received=self.on_patch_received,
+        )
 
     def _send_patch_received(self):
         """Send acknowledgment that patch file was received."""

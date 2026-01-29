@@ -670,6 +670,74 @@ class PatchBrowser(UIComponent):
 
         self.list.render(screen)
 
+class ServerPatchBrowser(UIComponent):
+    """Patch browser backed by server library pages."""
+    def __init__(self, x, y, width, height, menu, name=None):
+        super().__init__(x, y, width, height, name=name)
+        self.menu = menu
+        self.panel = Panel(x, y, width, height)
+        self.list = ScrollableList(x + 10, y + 50, width - 20, height - 60)
+        self.list.on_item_click = self._on_item_click
+        self.last_count = -1
+        self.last_selection = -1
+        self.last_page = -1
+        self.last_items_hash = 0
+
+    def _on_item_click(self, idx, item):
+        self.menu.server_patch_selected_index = idx
+
+    def _items_hash(self):
+        return hash(tuple(item.get('patch_id', '') for item in self.menu.server_patch_items))
+
+    def update(self, mouse_pos):
+        super().update(mouse_pos)
+        self.list.update(mouse_pos)
+
+        current_count = len(self.menu.server_patch_items)
+        current_selection = self.menu.server_patch_selected_index
+        current_page = self.menu.server_patch_page
+        current_hash = self._items_hash()
+
+        if (
+            current_count != self.last_count
+            or current_selection != self.last_selection
+            or current_page != self.last_page
+            or current_hash != self.last_items_hash
+        ):
+            self._sync_patches()
+            self.last_count = current_count
+            self.last_selection = current_selection
+            self.last_page = current_page
+            self.last_items_hash = current_hash
+
+    def _sync_patches(self):
+        self.list.clear_items()
+        for idx, patch in enumerate(self.menu.server_patch_items):
+            selected = idx == self.menu.server_patch_selected_index
+            checkbox = "[X]" if selected else "[ ]"
+            name = patch.get('name', 'Unknown')
+            owner = patch.get('player_id', 'Unknown')
+            base = patch.get('base_backup', 'Unknown')
+            changes = patch.get('num_changes', 0)
+            text = f"{checkbox} {name} (Owner: {owner}, Base: {base}, Changes: {changes})"
+            self.list.add_item(text, patch, selected)
+
+    def handle_event(self, event):
+        return self.list.handle_event(event)
+
+    def render(self, screen):
+        self.panel.render(screen)
+
+        page_size = max(1, getattr(self.menu, 'server_patch_page_size', 1))
+        total = max(0, getattr(self.menu, 'server_patch_total', 0))
+        current_page = max(0, getattr(self.menu, 'server_patch_page', 0))
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        header_text = f"Server Patches - Page {current_page + 1}/{total_pages} (Total: {total})"
+        surf = AssetHandler.render_text_from_font(header_text, self.menu.button_font, (255, 255, 255))
+        screen.blit(surf, (self.rect.x + 10, self.rect.y + 10))
+
+        self.list.render(screen)
+
 class AgentWorkspace(UIComponent):
     """Composite for agent controls: prompt, buttons, and monitor link."""
     def __init__(self, x, y, width, height, menu, name=None):

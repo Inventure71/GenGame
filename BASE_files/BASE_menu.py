@@ -113,6 +113,15 @@ class BaseMenu:
         self.patch_manager.scan_patches()  # Initial scan
         self.patches_ready = False  # Track if player marked patches as ready
 
+        # Server patch library state
+        self.server_patch_items = []
+        self.server_patch_selected_index = -1
+        self.server_patch_page = 0
+        self.server_patch_page_size = 50
+        self.server_patch_total = 0
+        self.server_patch_search = ""
+        self.server_patch_loading = False
+
         # Initialize component classes
         self.network = MenuNetwork(self)
         self.handlers = MenuHandlers(self)
@@ -147,6 +156,11 @@ class BaseMenu:
                 for comp in room_ui.components:
                     if hasattr(comp, 'reset_cache'):
                         comp.reset_cache()
+        elif menu_name == "server_library":
+            self.server_patch_page = 0
+            self.server_patch_selected_index = -1
+            self.server_patch_items = []
+            self.request_server_patch_page(0)
         else:
             self.in_room = False
 
@@ -224,6 +238,9 @@ class BaseMenu:
     def on_library_click(self):
         self.handlers.on_library_click()
 
+    def on_server_library_click(self):
+        self.handlers.on_server_library_click()
+
     def on_agent_content_click(self):
         self.handlers.on_agent_content_click()
 
@@ -247,6 +264,21 @@ class BaseMenu:
 
     def on_library_back_click(self):
         self.handlers.on_library_back_click()
+
+    def on_server_library_back_click(self):
+        self.handlers.on_server_library_back_click()
+
+    def on_server_library_prev_click(self):
+        self.handlers.on_server_library_prev_click()
+
+    def on_server_library_next_click(self):
+        self.handlers.on_server_library_next_click()
+
+    def on_server_library_download_click(self):
+        self.handlers.on_server_library_download_click()
+
+    def on_server_library_search_click(self):
+        self.handlers.on_server_library_search_click()
 
     def on_delete_patch_click(self):
         self.handlers.on_delete_patch_click()
@@ -508,6 +540,36 @@ class BaseMenu:
             self.patch_to_apply = new_path
         else:
             print(f"✗ Failed to receive file: {file_path}")
+
+    def request_server_patch_page(self, page: int = 0):
+        if self.client and self.client.connected:
+            self.server_patch_loading = True
+            self.server_patch_items = []
+            self.server_patch_selected_index = -1
+            self.client.request_patch_library_page(page, self.server_patch_page_size, self.server_patch_search)
+
+    def patch_library_page_callback(self, items: list, page: int, total: int, page_size: int, search: str):
+        self.server_patch_items = items or []
+        self.server_patch_page = max(0, int(page))
+        self.server_patch_total = max(0, int(total))
+        if page_size:
+            self.server_patch_page_size = int(page_size)
+        self.server_patch_search = search or self.server_patch_search
+        self.server_patch_selected_index = -1
+        self.server_patch_loading = False
+
+    def patch_library_downloaded_callback(self, patch_path: str, base_backup: str, patch_id: str):
+        self.show_error_message(f"Downloaded patch: {os.path.basename(patch_path)}")
+        self.patch_manager.scan_patches()
+
+    def patch_library_error_callback(self, error: str):
+        self.show_error_message(f"Server patch library error: {error}")
+
+    def backup_downloaded_callback(self, backup_name: str, success: bool, error: str):
+        if success:
+            self.show_error_message(f"Downloaded backup: {backup_name}")
+        else:
+            self.show_error_message(f"Backup download failed: {backup_name} ({error})")
 
     def name_rejected_callback(self, reason: str):
         """Callback when player name is rejected by server."""

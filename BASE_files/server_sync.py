@@ -9,12 +9,25 @@ import glob
 import importlib
 import sys
 import os
+import json
 import threading
 import time
 from datetime import datetime
 from typing import Dict, List, Optional
 
 from BASE_files.BASE_menu_helpers import reload_game_code, load_settings
+from BASE_files.transfer_manager import (
+    server_request_backup_from_client,
+    server_send_patch_file,
+    server_send_file_chunks,
+    server_send_backup_archive,
+    server_handle_patch_chunk,
+    server_handle_file_chunk,
+    server_handle_backup_chunk,
+    server_assemble_patch_file,
+    server_assemble_client_backup,
+    server_assemble_client_file,
+)
 from coding.non_callable_tools.version_control import VersionControl
 from coding.tools.conflict_resolution import get_all_conflicts
 from agent import auto_fix_conflicts
@@ -94,12 +107,7 @@ class ServerSyncManager:
 
     def request_backup_from_client(self, player_id: str, backup_name: str):
         """Request backup transfer from client."""
-        message = {
-            'type': 'request_backup',
-            'backup_name': backup_name
-        }
-        self.server._send_message_to_client(player_id, message)
-        print(f"📨 BACKUP REQUEST: Server sent backup request to client '{player_id}' for backup '{backup_name}'")
+        server_request_backup_from_client(self.server, player_id, backup_name)
 
     def initiate_game_start_with_patch_sync(self, patch_path: Optional[str] = None):
         """Generate and send merge patch to all clients, then wait for them to apply."""
@@ -150,21 +158,7 @@ class ServerSyncManager:
 
     def send_patch_file(self, player_id: str, patch_file_path: str):
         """Send a patch file to a specific client."""
-        try:
-            with open(patch_file_path, 'rb') as f:
-                patch_content = f.read()
-
-            message = {
-                'type': 'patch_file',
-                'filename': 'merge_patch.json',
-                'content': patch_content,
-                'size': len(patch_content)
-            }
-
-            self.server._send_message_to_client(player_id, message)
-            print(f"Sent merge patch to {player_id} ({len(patch_content)} bytes)")
-        except Exception as e:
-            print(f"Failed to send patch to {player_id}: {e}")
+        server_send_patch_file(self.server, player_id, patch_file_path)
 
     def notify_all_clients_game_start(self):
         """Notify all connected clients to start the game."""
@@ -259,342 +253,156 @@ class ServerSyncManager:
             self.server._send_message_to_client(player_id, response)
             return
 
+        server_send_file_chunks(self.server, player_id, file_path, full_path)
+
+    def get_server_patch_library_page(self, page: int, page_size: int, search: str = "") -> tuple[list, int]:
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        base_dir = self.server.server_patches_dir
+        if not os.path.isabs(base_dir):
+            base_dir = os.path.join(project_root, base_dir)
+
+        if not os.path.exists(base_dir):
+            return [], 0
+
+        search_term = (search or "").strip().lower()
+        entries = []
+
+        for root, _dirs, files in os.walk(base_dir):
+            for file_name in files:
+                if not file_name.endswith(".json"):
+                    continue
+                if file_name == "merged_patch.json":
+                    continue
+                full_path = os.path.join(root, file_name)
+                rel_path = os.path.relpath(full_path, base_dir)
+                parts = rel_path.split(os.sep)
+                player_id = parts[0] if len(parts) > 1 else "unknown"
+                patch_name = os.path.splitext(file_name)[0]
+
+                if search_term:
+                    if search_term not in patch_name.lower() and search_term not in player_id.lower():
+                        continue
+
+                try:
+                    mtime = os.path.getmtime(full_path)
+                except OSError:
+                    mtime = 0.0
+
+                entries.append((mtime, player_id, patch_name, full_path))
+
+        entries.sort(key=lambda item: item[0], reverse=True)
+        total = len(entries)
+        start = max(0, page) * max(1, page_size)
+        end = start + max(1, page_size)
+        page_entries = entries[start:end]
+
+        items = []
+        for _mtime, player_id, patch_name, full_path in page_entries:
+            base_backup = "Unknown"
+            num_changes = 0
+            try:
+                with open(full_path, 'r') as f:
+                    data = json.load(f)
+                base_backup = data.get('name_of_backup', 'Unknown')
+                changes = data.get('changes', [])
+                num_changes = len(changes) if isinstance(changes, list) else 0
+            except Exception:
+                pass
+
+            patch_id = f"{player_id}/{patch_name}"
+            items.append({
+                'patch_id': patch_id,
+                'name': patch_name,
+                'player_id': player_id,
+                'base_backup': base_backup,
+                'num_changes': num_changes
+            })
+
+        return items, total
+
+    def send_patch_library_download(self, player_id: str, patch_id: str, include_backup: bool = True) -> None:
+        if not patch_id:
+            self.server._send_message_to_client(player_id, {
+                'type': 'patch_library_error',
+                'error': 'Missing patch_id'
+            })
+            return
+
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        base_dir = self.server.server_patches_dir
+        if not os.path.isabs(base_dir):
+            base_dir = os.path.join(project_root, base_dir)
+        base_dir = os.path.abspath(base_dir)
+        normalized = os.path.normpath(os.path.join(base_dir, patch_id))
+        if not normalized.startswith(base_dir):
+            self.server._send_message_to_client(player_id, {
+                'type': 'patch_library_error',
+                'error': 'Invalid patch_id'
+            })
+            return
+
+        if not normalized.endswith(".json"):
+            normalized = f"{normalized}.json"
+
+        if not os.path.exists(normalized):
+            self.server._send_message_to_client(player_id, {
+                'type': 'patch_library_error',
+                'error': f'Patch not found: {patch_id}'
+            })
+            return
+
         try:
-            file_size = os.path.getsize(full_path)
-            chunk_size = 64 * 1024
-            total_chunks = (file_size + chunk_size - 1) // chunk_size
+            with open(normalized, 'rb') as f:
+                patch_content = f.read()
 
-            with open(full_path, 'rb') as f:
-                for chunk_num in range(total_chunks):
-                    chunk_data = f.read(chunk_size)
+            base_backup = "Unknown"
+            try:
+                with open(normalized, 'r') as f_text:
+                    data = json.load(f_text)
+                base_backup = data.get('name_of_backup', 'Unknown')
+            except Exception:
+                pass
 
-                    chunk_message = {
-                        'type': 'file_chunk',
-                        'file_path': file_path,
-                        'chunk_num': chunk_num,
-                        'total_chunks': total_chunks,
-                        'data': chunk_data
-                    }
-
-                    self.server._send_message_to_client(player_id, chunk_message)
-
-            print(f"Sent file {file_path} to {player_id} ({total_chunks} chunks)")
-
-        except Exception as e:
-            print(f"Failed to send file {file_path} to {player_id}: {e}")
-            response = {
-                'type': 'file_complete',
-                'file_path': file_path,
-                'success': False,
-                'error': str(e)
+            message = {
+                'type': 'patch_library_file',
+                'filename': os.path.basename(normalized),
+                'content': patch_content,
+                'patch_id': patch_id,
+                'base_backup': base_backup
             }
-            self.server._send_message_to_client(player_id, response)
+            self.server._send_message_to_client(player_id, message)
+
+            if include_backup and base_backup and base_backup != "Unknown":
+                server_send_backup_archive(self.server, player_id, base_backup)
+        except Exception as e:
+            self.server._send_message_to_client(player_id, {
+                'type': 'patch_library_error',
+                'error': f'Failed to send patch: {e}'
+            })
 
     def handle_file_chunk(self, player_id: str, message: dict):
         """Handle a file chunk received from a client."""
-        file_path = message.get('file_path')
-        chunk_num = message.get('chunk_num')
-        total_chunks = message.get('total_chunks')
-        chunk_data = message.get('data')
-        is_backup = message.get('is_backup', False)
-
-        if not all([file_path, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
-            print(f"Invalid file chunk from {player_id}")
-            return
-
-        if is_backup:
-            self.handle_backup_chunk(player_id, message)
-            return
-
-        if not hasattr(self.server, 'client_file_transfers'):
-            self.server.client_file_transfers = {}
-
-        client_key = f"{player_id}:{file_path}"
-        if client_key not in self.server.client_file_transfers:
-            self.server.client_file_transfers[client_key] = {
-                'chunks': {},
-                'total_chunks': total_chunks,
-                'received_chunks': 0
-            }
-
-        transfer = self.server.client_file_transfers[client_key]
-
-        if chunk_num not in transfer['chunks']:
-            transfer['chunks'][chunk_num] = chunk_data
-            transfer['received_chunks'] += 1
-
-        if transfer['received_chunks'] == total_chunks:
-            self.assemble_client_file(player_id, file_path)
+        server_handle_file_chunk(self.server, player_id, message)
 
     def handle_backup_chunk(self, player_id: str, message: dict):
         """Handle a backup file chunk received from a client."""
-        backup_name = message.get('backup_name')
-        chunk_num = message.get('chunk_num')
-        total_chunks = message.get('total_chunks')
-        chunk_data = message.get('data')
-
-        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        print(f"[{timestamp}] 📦 BACKUP CHUNK: Received chunk {chunk_num+1 if isinstance(chunk_num, int) else '?'} from {player_id} for '{backup_name}'")
-        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        print(f"[{timestamp}] 🔍 DEBUG: Message details - backup: {backup_name}, chunk: {chunk_num}/{total_chunks}, data_size: {len(chunk_data) if chunk_data else 0} bytes")
-        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        print(f"[{timestamp}] 🔍 DEBUG: Current transfer state - in_progress: {getattr(self.server, 'backup_transfer_in_progress', False)}, expected_backup: {getattr(self.server, 'backup_transfer_name', 'None')}")
-
-        if not all([backup_name, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
-            print(f"[error] BACKUP CHUNK: Invalid backup chunk from {player_id}: missing or invalid fields")
-            return
-
-        if total_chunks <= 0:
-            print(f"[error] BACKUP CHUNK: Invalid total_chunks {total_chunks} from {player_id}")
-            return
-
-        if chunk_num < 0 or chunk_num >= total_chunks:
-            print(f"[error] BACKUP CHUNK: Invalid chunk_num {chunk_num} (should be 0-{total_chunks-1}) from {player_id}")
-            return
-
-        if not hasattr(self.server, 'client_backup_transfers'):
-            self.server.client_backup_transfers = {}
-
-        client_key = f"{player_id}:{backup_name}"
-        if client_key not in self.server.client_backup_transfers:
-            print(f"📁 BACKUP CHUNK: Starting new transfer for '{backup_name}' from {player_id} ({total_chunks} chunks total)")
-            self.server.client_backup_transfers[client_key] = {
-                'chunks': {},
-                'total_chunks': total_chunks,
-                'received_chunks': 0
-            }
-
-        transfer = self.server.client_backup_transfers[client_key]
-
-        if chunk_num not in transfer['chunks']:
-            transfer['chunks'][chunk_num] = chunk_data
-            transfer['received_chunks'] += 1
-            progress = transfer['received_chunks'] / total_chunks * 100
-            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-            print(f"[{timestamp}] [success] BACKUP CHUNK: Stored chunk {chunk_num+1}/{total_chunks} ({progress:.1f}%) for '{backup_name}' from {player_id}")
-            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-            print(f"[{timestamp}] 📊 DEBUG: Chunk received - backup: {backup_name}, received: {transfer['received_chunks']}/{total_chunks}")
-        else:
-            print(f"[warning] BACKUP CHUNK: Duplicate chunk {chunk_num} for '{backup_name}' from {player_id}")
-
-        if transfer['received_chunks'] == total_chunks:
-            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-            print(f"[{timestamp}] 🎯 BACKUP CHUNK: All {total_chunks} chunks received for '{backup_name}' from {player_id}, starting assembly...")
-            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-            print(f"[{timestamp}] 🔄 DEBUG: Starting backup assembly for {backup_name}")
-            success = self.assemble_client_backup(player_id, backup_name)
-            if success:
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] [success] DEBUG: Backup assembly successful for {backup_name}")
-                if hasattr(self.server, 'backup_transfer_in_progress') and self.server.backup_transfer_in_progress:
-                    if backup_name == getattr(self.server, 'backup_transfer_name', None):
-                        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                        print(f"[{timestamp}] 🎉 BACKUP TRANSFER: Successfully completed transfer of '{backup_name}'")
-                        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                        print(f"[{timestamp}] 🚩 DEBUG: Setting backup_transfer_complete_event for {backup_name}")
-                        self.server.backup_transfer_in_progress = False
-                        if hasattr(self.server, 'backup_transfer_complete_event'):
-                            self.server.backup_transfer_complete_event.set()
-                            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                            print(f"[{timestamp}] 🎯 DEBUG: backup_transfer_complete_event.set() called")
-                        else:
-                            timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                            print(f"[{timestamp}] [warning] DEBUG: backup_transfer_complete_event not found!")
-            else:
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] 💥 BACKUP TRANSFER: Assembly failed for '{backup_name}' from {player_id}")
-                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                print(f"[{timestamp}] [error] DEBUG: Backup assembly failed - setting event anyway")
-                if hasattr(self.server, 'backup_transfer_complete_event'):
-                    self.server.backup_transfer_complete_event.set()
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] 🎯 DEBUG: backup_transfer_complete_event.set() called (failure)")
-                else:
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    print(f"[{timestamp}] [warning] DEBUG: backup_transfer_complete_event not found on failure!")
+        server_handle_backup_chunk(self.server, player_id, message)
 
     def assemble_client_backup(self, player_id: str, backup_name: str) -> bool:
         """Assemble a complete backup from client chunks and extract it."""
-        client_key = f"{player_id}:{backup_name}"
-        if client_key not in self.server.client_backup_transfers:
-            print(f"[error] BACKUP ASSEMBLY: No transfer data found for '{backup_name}' from {player_id}")
-            return False
-
-        transfer = self.server.client_backup_transfers[client_key]
-        print(f"🔧 BACKUP ASSEMBLY: Starting assembly of '{backup_name}' from {player_id} ({transfer['total_chunks']} chunks)")
-
-        try:
-            backup_data = b''
-            for i in range(transfer['total_chunks']):
-                if i not in transfer['chunks']:
-                    print(f"[error] BACKUP ASSEMBLY: Missing chunk {i} for backup {backup_name}")
-                    return False
-                backup_data += transfer['chunks'][i]
-
-            print(f"📦 BACKUP ASSEMBLY: Assembled {len(backup_data)} bytes of compressed data for '{backup_name}'")
-
-            backup_dir = "__game_backups"
-            os.makedirs(backup_dir, exist_ok=True)
-
-            import tarfile
-            import io
-
-            print(f"📂 BACKUP ASSEMBLY: Extracting '{backup_name}' to {backup_dir}/")
-            with io.BytesIO(backup_data) as bio:
-                with tarfile.open(fileobj=bio, mode='r:gz') as tar:
-                    tar.extractall(path=backup_dir)
-
-            print(f"[success] BACKUP ASSEMBLY: Successfully extracted backup '{backup_name}' from {player_id}")
-
-            extracted_backup_path = os.path.join(backup_dir, backup_name)
-            if os.path.exists(extracted_backup_path):
-                from coding.non_callable_tools.backup_handling import BackupHandler
-                backup_handler = BackupHandler()
-                computed_hash = backup_handler.compute_directory_hash(extracted_backup_path, debug=True)
-                if computed_hash != backup_name:
-                    print(f"[error] BACKUP ASSEMBLY: Hash verification FAILED for '{backup_name}' from {player_id}")
-                    print(f"   Expected hash: {backup_name}")
-                    print(f"   Computed hash: {computed_hash}")
-
-                    import shutil
-                    if os.path.isdir(extracted_backup_path):
-                        shutil.rmtree(extracted_backup_path)
-                    elif os.path.isfile(extracted_backup_path):
-                        os.remove(extracted_backup_path)
-
-                    error_message = {
-                        'type': 'backup_transfer_failed',
-                        'backup_name': backup_name,
-                        'error': f'Hash verification failed: expected {backup_name}, got {computed_hash}'
-                    }
-                    self.server._send_message_to_client(player_id, error_message)
-                    print(f"📤 BACKUP ASSEMBLY: Sent hash verification failure acknowledgment to {player_id}")
-                    return False
-                print(f"[success] BACKUP ASSEMBLY: Hash verification PASSED for '{backup_name}' from {player_id}")
-
-            del self.server.client_backup_transfers[client_key]
-
-            ack_message = {
-                'type': 'backup_transfer_success',
-                'backup_name': backup_name
-            }
-            self.server._send_message_to_client(player_id, ack_message)
-            print(f"📤 BACKUP ASSEMBLY: Sent success acknowledgment to {player_id} for '{backup_name}'")
-
-            return True
-
-        except Exception as e:
-            print(f"[error] BACKUP ASSEMBLY: Failed to assemble backup {backup_name} from {player_id}: {e}")
-
-            error_message = {
-                'type': 'backup_transfer_failed',
-                'backup_name': backup_name,
-                'error': str(e)
-            }
-            self.server._send_message_to_client(player_id, error_message)
-            print(f"📤 BACKUP ASSEMBLY: Sent failure acknowledgment to {player_id} for '{backup_name}': {e}")
-
-            return False
+        return server_assemble_client_backup(self.server, player_id, backup_name)
 
     def assemble_client_file(self, player_id: str, file_path: str):
         """Assemble a complete file from client chunks."""
-        client_key = f"{player_id}:{file_path}"
-        transfer = self.server.client_file_transfers[client_key]
-
-        try:
-            allowed_dirs = ['uploads', 'temp']
-            target_dir = allowed_dirs[0] if 'uploads' in allowed_dirs else 'temp'
-
-            project_root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-            full_dir = os.path.join(project_root, target_dir)
-            os.makedirs(full_dir, exist_ok=True)
-
-            safe_filename = os.path.basename(file_path).replace('..', '').replace('/', '_').replace('\\', '_')
-            full_path = os.path.join(full_dir, f"{player_id}_{safe_filename}")
-
-            with open(full_path, 'wb') as f:
-                for chunk_num in range(transfer['total_chunks']):
-                    if chunk_num in transfer['chunks']:
-                        f.write(transfer['chunks'][chunk_num])
-                    else:
-                        raise ValueError(f"Missing chunk {chunk_num}")
-
-            response = {
-                'type': 'file_complete',
-                'file_path': file_path,
-                'success': True,
-                'saved_path': full_path
-            }
-            self.server._send_message_to_client(player_id, response)
-
-            print(f"Received and saved file from {player_id}: {full_path}")
-
-        except Exception as e:
-            print(f"Failed to assemble file from {player_id}: {e}")
-            response = {
-                'type': 'file_complete',
-                'file_path': file_path,
-                'success': False,
-                'error': str(e)
-            }
-            self.server._send_message_to_client(player_id, response)
-
-        finally:
-            if client_key in self.server.client_file_transfers:
-                del self.server.client_file_transfers[client_key]
+        server_assemble_client_file(self.server, player_id, file_path)
 
     def handle_patch_chunk(self, player_id: str, message: dict):
         """Handle incoming patch file chunk from client."""
-        patch_name = message.get('patch_name')
-        chunk_num = message.get('chunk_num')
-        total_chunks = message.get('total_chunks')
-        chunk_data = message.get('data')
-
-        if not all([patch_name, isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
-            print(f"Invalid patch chunk from {player_id}")
-            return
-
-        key = f"{player_id}:{patch_name}"
-
-        if key not in self.server.client_patch_files:
-            self.server.client_patch_files[key] = {
-                'chunks': {},
-                'total': total_chunks,
-                'received': 0
-            }
-
-        transfer = self.server.client_patch_files[key]
-
-        if chunk_num not in transfer['chunks']:
-            transfer['chunks'][chunk_num] = chunk_data
-            transfer['received'] += 1
-
-        if transfer['received'] == total_chunks:
-            self.assemble_patch_file(player_id, patch_name)
+        server_handle_patch_chunk(self.server, player_id, message)
 
     def assemble_patch_file(self, player_id: str, patch_name: str):
         """Assemble complete patch file from chunks."""
-        key = f"{player_id}:{patch_name}"
-        transfer = self.server.client_patch_files[key]
-
-        try:
-            player_patch_dir = os.path.join(self.server.server_patches_dir, player_id)
-            os.makedirs(player_patch_dir, mode=0o755, exist_ok=True)
-
-            patch_path = os.path.join(player_patch_dir, f"{patch_name}.json")
-            with open(patch_path, 'wb') as f:
-                for chunk_num in range(transfer['total']):
-                    if chunk_num in transfer['chunks']:
-                        f.write(transfer['chunks'][chunk_num])
-                    else:
-                        raise ValueError(f"Missing chunk {chunk_num}")
-
-            print(f"[success] Received complete patch from {player_id}: {patch_name}")
-
-            del self.server.client_patch_files[key]
-
-        except Exception as e:
-            print(f"Failed to assemble patch from {player_id}: {e}")
+        server_assemble_patch_file(self.server, player_id, patch_name)
 
     def merge_and_distribute_patches(self):
         """

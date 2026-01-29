@@ -5,7 +5,7 @@ These methods handle user interactions and menu navigation.
 
 import os
 import threading
-from BASE_files.BASE_menu_helpers import encrypt_api_key, decrypt_api_key
+from BASE_files.BASE_menu_helpers import encrypt_api_key, decrypt_api_key, REMOTE_DOMAIN
 
 
 class MenuHandlers:
@@ -84,6 +84,18 @@ class MenuHandlers:
         print("Library clicked")
         self.menu.show_menu("library")
 
+    def on_server_library_click(self):
+        """Handle server patch library button click."""
+        print("Server Patch Library clicked")
+        if not (self.menu.client and self.menu.client.connected):
+            if not self.menu.player_id.strip():
+                self.menu.show_error_message("Error: Please enter a Player ID before connecting")
+                return
+            if not self.menu.network.connect_to_server(REMOTE_DOMAIN, self.menu.network.server_port):
+                self.menu.show_error_message("Failed to connect to public server")
+                return
+        self.menu.show_menu("server_library")
+
     def on_agent_content_click(self):
         """Handle agent content button click."""
         print("Agent Content clicked")
@@ -148,6 +160,50 @@ class MenuHandlers:
         """Handle library back button click."""
         print("Library Back clicked")
         self.menu.show_menu("main")
+
+    def on_server_library_back_click(self):
+        """Handle server library back button click."""
+        print("Server Library Back clicked")
+        self.menu.show_menu("main")
+
+    def on_server_library_prev_click(self):
+        """Go to previous server patch page."""
+        if self.menu.server_patch_page <= 0:
+            return
+        self.menu.server_patch_page -= 1
+        self.menu.request_server_patch_page(self.menu.server_patch_page)
+
+    def on_server_library_next_click(self):
+        """Go to next server patch page."""
+        if self.menu.server_patch_total <= 0:
+            return
+        max_page = max(0, (self.menu.server_patch_total - 1) // max(1, self.menu.server_patch_page_size))
+        if self.menu.server_patch_page >= max_page:
+            return
+        self.menu.server_patch_page += 1
+        self.menu.request_server_patch_page(self.menu.server_patch_page)
+
+    def on_server_library_download_click(self):
+        """Download the selected server patch (and its backup)."""
+        idx = self.menu.server_patch_selected_index
+        if idx < 0 or idx >= len(self.menu.server_patch_items):
+            self.menu.show_error_message("No patch selected")
+            return
+        if not (self.menu.client and self.menu.client.connected):
+            self.menu.show_error_message("Not connected to server")
+            return
+        patch = self.menu.server_patch_items[idx]
+        patch_id = patch.get('patch_id')
+        if not patch_id:
+            self.menu.show_error_message("Invalid patch selection")
+            return
+        self.menu.client.request_patch_library_download(patch_id, include_backup=True)
+        self.menu.show_error_message(f"Downloading patch: {patch.get('name', patch_id)}")
+
+    def on_server_library_search_click(self):
+        """Search server patch library."""
+        self.menu.server_patch_page = 0
+        self.menu.request_server_patch_page(0)
 
     def on_delete_patch_click(self):
         """Delete the first selected patch in the library."""

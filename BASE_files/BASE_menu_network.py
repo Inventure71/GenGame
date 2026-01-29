@@ -72,6 +72,10 @@ class MenuNetwork:
         self.client.on_patch_received = self.menu.patch_received_callback
         self.client.on_patch_sync_failed = self.menu.patch_sync_failed_callback
         self.client.on_patch_merge_failed = self.menu.patch_merge_failed_callback
+        self.client.on_patch_library_page = self.menu.patch_library_page_callback
+        self.client.on_patch_library_downloaded = self.menu.patch_library_downloaded_callback
+        self.client.on_patch_library_error = self.menu.patch_library_error_callback
+        self.client.on_backup_downloaded = self.menu.backup_downloaded_callback
         self.client.on_game_restarting = self.menu.game_restarting_callback
         self.client.on_server_restarted = self.menu.server_restarted_callback
         self.client.on_disconnected = self.menu.disconnected_callback
