@@ -431,7 +431,9 @@ class ServerSyncManager:
         print("STARTING PATCH MERGE PROCESS")
         print("="*60)
 
-        all_patches_info = list(self.server.client_patches.values())
+        # Snapshot so merge is not affected if client_patches is cleared elsewhere (e.g. reset)
+        client_patches_snapshot = {str(pid): list(patches) for pid, patches in self.server.client_patches.items()}
+        all_patches_info = list(client_patches_snapshot.values())
         compatible, error = self.validate_base_backup_compatibility(all_patches_info)
 
         if not compatible:
@@ -494,19 +496,22 @@ class ServerSyncManager:
 
         all_patch_paths = []
         temp_patch_files = [] # Track files we create from DB to clean up later
-        
-        for player_id, patches_info in self.server.client_patches.items():
+
+        for player_id, patches_info in client_patches_snapshot.items():
+            creator = str(player_id)  # DB stores creator as string
             for patch_info in patches_info:
-                patch_name = patch_info['name']
-                player_patch_dir = os.path.join(self.server.server_patches_dir, player_id)
+                patch_name = patch_info.get('name')
+                if not patch_name:
+                    continue
+                player_patch_dir = os.path.join(self.server.server_patches_dir, creator)
                 os.makedirs(player_patch_dir, exist_ok=True)
                 patch_path = os.path.join(player_patch_dir, f"{patch_name}.json")
-                
+
                 # Check if file exists, if not try to recreate from DB
                 if not os.path.exists(patch_path):
                     if hasattr(self.server, 'patch_db'):
                         # Find patch in DB by creator and name
-                        found_patch = self.server.patch_db.get_patch_by_name_and_creator(patch_name, player_id)
+                        found_patch = self.server.patch_db.get_patch_by_name_and_creator(patch_name, creator)
                         
                         if found_patch:
                             print(f"    Recreating patch file from DB: {patch_path}")
@@ -616,18 +621,29 @@ class ServerSyncManager:
         print("Distributing to clients")
 
         self.initiate_game_start_with_patch_sync(output_path)
-        
-        # Cleanup temporary patch files created from DB
+
+        # Cleanup: remove patch files used for merge (from disk and any recreated from DB)
+        for patch_path in all_patch_paths:
+            try:
+                if os.path.exists(patch_path):
+                    os.remove(patch_path)
+                d = os.path.dirname(patch_path)
+                if d and os.path.isdir(d) and not os.listdir(d):
+                    try:
+                        os.rmdir(d)
+                    except OSError:
+                        pass
+            except OSError:
+                pass
         for temp_file in temp_patch_files:
             try:
                 if os.path.exists(temp_file):
                     os.remove(temp_file)
-                    # Try to remove player directory if empty
                     try:
                         os.rmdir(os.path.dirname(temp_file))
-                    except:
+                    except OSError:
                         pass
-            except:
+            except OSError:
                 pass
 
     def _normalize_seed_in_merged_patch(self, patch_path: str) -> bool:

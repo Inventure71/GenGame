@@ -659,9 +659,7 @@ def server_assemble_patch_file(server, player_id: str, patch_name: str) -> None:
                 patch_db_id = server.patch_db.add_patch(patch_data, player_id, patch_hash, name=patch_name)
                 print(f"    ✓ Stored in DB (ID: {patch_db_id})")
                 
-                # We can delete the file now, as we'll recreate it when needed for merging
-                os.remove(patch_path)
-                print(f"    ✓ Deleted temporary patch file: {patch_path}")
+                # Keep file on disk so merge can find it; server_sync cleans up after merge
             except Exception as db_err:
                 print(f"    [error] Failed to store patch in DB: {db_err}")
 

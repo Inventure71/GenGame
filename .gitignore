@@ -27,5 +27,4 @@ AGENTS.md
 _debug_testing.py
 _migrate_patches.py
 _export_patches.py
-server_patches.db
 GameFolder/assets/

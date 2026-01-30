@@ -109,11 +109,10 @@ class BaseMenu:
         # Patch saving state
         self.patch_name = ""
 
-        # Patch manager (loads from database when server_patches.db exists, else from __patches)
+        # Patch manager (DB path default: __patches/server_patches.db; creates dir and DB if missing)
         _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         _patches_dir = os.path.join(_project_root, "__patches")
-        _db_path = os.path.join(_project_root, "server_patches.db")
-        self.patch_manager = PatchManager(patches_directory=_patches_dir, db_path=_db_path)
+        self.patch_manager = PatchManager(patches_directory=_patches_dir)
         self.patch_manager.scan_patches()  # Initial scan
         self.patches_ready = False  # Track if player marked patches as ready
 
@@ -691,6 +690,8 @@ class BaseMenu:
                 print("All changes applied successfully")
                 from BASE_files.BASE_menu_helpers import reload_game_code
                 reload_game_code()
+                # Delete temp single-patch .json files used to send to server; merged patch is now applied
+                self.patch_manager.cleanup_temp_patch_files()
                 self.client.send_patch_applied(success=True)
             else:
                 print("-----    FAILED    -----")

@@ -1,11 +1,13 @@
 """
 Patch Manager - Handles patch metadata and selection for multiplayer games.
-Loads patches from the database when db_path is set, otherwise from __patches files.
+Uses the database for storage; patch files are only used for transmission (e.g. to server).
 """
 import os
 import json
 import tempfile
 from typing import List, Dict, Optional, Tuple
+
+from BASE_files.patch_database import DEFAULT_DB_FILENAME, PatchDatabase
 
 
 class PatchInfo:
@@ -23,33 +25,34 @@ class PatchInfo:
 
 
 class PatchManager:
-    """Manages patch discovery, metadata extraction, and selection."""
-    
+    """Manages patch discovery, metadata extraction, and selection. Uses database for storage."""
+
     def __init__(self, patches_directory: str = "__patches", db_path: Optional[str] = None):
-        self.patches_directory = patches_directory
+        self.patches_directory = os.path.abspath(patches_directory)
         self.available_patches: List[PatchInfo] = []
         self.selected_patches: List[PatchInfo] = []
         self.max_selections = 1
         self._patch_db = None
-        if db_path and os.path.isfile(db_path):
-            try:
-                from BASE_files.patch_database import PatchDatabase
-                self._patch_db = PatchDatabase(db_path)
-            except Exception as e:
-                print(f"PatchManager: could not open database {db_path}: {e}")
+        # Default: database lives inside patches directory (same default as PatchDatabase)
+        resolved_db_path = db_path if db_path else os.path.join(self.patches_directory, DEFAULT_DB_FILENAME)
+        try:
+            db_dir = os.path.dirname(resolved_db_path)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
+            self._patch_db = PatchDatabase(resolved_db_path)  # creates file and tables if missing
+        except Exception as e:
+            print(f"PatchManager: could not open database {resolved_db_path}: {e}")
         
     def scan_patches(self) -> List[PatchInfo]:
         """
-        Load patches from the database (if set) or from the patches directory.
+        Load patches from the database (or from directory if DB not configured).
         Returns list of PatchInfo objects.
         """
         self.available_patches = []
-        
         if self._patch_db:
             self._scan_patches_from_db()
         else:
             self._scan_patches_from_directory()
-        
         print(f"Found {len(self.available_patches)} patches")
         return self.available_patches
     
@@ -205,8 +208,24 @@ class PatchManager:
             self._temp_patch_files.extend(temp_files)
         else:
             self._temp_patch_files = temp_files
-        
+
         return updated_patches
+
+    def cleanup_temp_patch_files(self) -> None:
+        """
+        Delete temporary .json files created for sending patches to the server.
+        Call this after the client has applied the merged patch from the server,
+        so the single-patch files sent earlier are no longer needed.
+        """
+        if not getattr(self, '_temp_patch_files', None):
+            return
+        for path in self._temp_patch_files:
+            try:
+                if path and os.path.isfile(path):
+                    os.remove(path)
+            except OSError:
+                pass
+        self._temp_patch_files.clear()
         
     def validate_patch_compatibility(self, patches_info_list: List[List[Dict]]) -> Tuple[bool, Optional[str]]:
         """

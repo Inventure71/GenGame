@@ -1,10 +1,27 @@
+import os
 import sqlite3
 import json
 import time
 from typing import List, Dict, Tuple, Optional
 
+# Default DB path: inside __patches so it can live on an external volume (single source of truth)
+DEFAULT_PATCHES_DIR = "__patches"
+DEFAULT_DB_FILENAME = "server_patches.db"
+
+
+def get_default_db_path() -> str:
+    """Return the default patch database path and ensure its directory exists."""
+    path = os.path.join(DEFAULT_PATCHES_DIR, DEFAULT_DB_FILENAME)
+    dir_path = os.path.dirname(path)
+    if dir_path:
+        os.makedirs(dir_path, mode=0o755, exist_ok=True)
+    return os.path.abspath(path)
+
+
 class PatchDatabase:
-    def __init__(self, db_path: str = "server_patches.db"):
+    def __init__(self, db_path: Optional[str] = None):
+        if db_path is None or db_path == "":
+            db_path = get_default_db_path()
         self.db_path = db_path
         self._init_db()
 

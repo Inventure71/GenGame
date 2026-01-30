@@ -3,7 +3,10 @@ Click handlers for the BaseMenu class.
 These methods handle user interactions and menu navigation.
 """
 
+import hashlib
+import json
 import os
+import tempfile
 import threading
 from BASE_files.BASE_menu_helpers import encrypt_api_key, decrypt_api_key, REMOTE_DOMAIN
 
@@ -343,31 +346,72 @@ class MenuHandlers:
                         break
 
     def on_agent_save_patch_click(self):
-        """Handle agent save patch button click."""
+        """Handle agent save patch button click. Saves to database only; no final .json in __patches."""
         print(f"Agent Save Patch clicked: {self.menu.patch_name}")
 
-        # Save the current changes as a patch
-        patches_dir = "__patches"
-        if not os.path.exists(patches_dir):
-            os.makedirs(patches_dir)
+        if not (self.menu.patch_name and self.menu.patch_name.strip()):
+            self.menu.show_error_message("Enter a patch name before saving")
+            return
 
         # Use current backup name from agent results if available, else from menu base
         backup_name = self.menu.base_working_backup
         if self.menu.agent_values and "backup_name" in self.menu.agent_values:
             backup_name = self.menu.agent_values["backup_name"]
 
-        # Save the patch
-        patch_path = os.path.join(patches_dir, f"{self.menu.patch_name}.json")
-        success = self.menu.action_logger.save_changes_to_extension_file(patch_path, name_of_backup=backup_name, prompt_used=self.menu.action_logger.prompt_used)
+        patch_manager = self.menu.patch_manager
+        db = getattr(patch_manager, "_patch_db", None)
+        if not db:
+            self.menu.show_error_message("Patch database not available")
+            print("✗ Patch database not available")
+            return
 
-        if success:
-            print(f"✓ Patch saved successfully: {patch_path}")
-            # Clear the patch name field
+        # Save to database only: use a temp file for the extension-file format, then insert into DB and remove temp file
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+                temp_path = tmp.name
+            success = self.menu.action_logger.save_changes_to_extension_file(
+                temp_path, name_of_backup=backup_name, prompt_used=self.menu.action_logger.prompt_used
+            )
+            if not success:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+                print("✗ Failed to save patch")
+                return
+            with open(temp_path, "r", encoding="utf-8") as f:
+                patch_data = json.load(f)
+            changes_str = json.dumps(patch_data.get("changes", []), sort_keys=True)
+            patch_hash = hashlib.sha256(changes_str.encode("utf-8")).hexdigest()
+            creator = (self.menu.player_id or "").strip() or "Unknown"
+            db.add_patch(
+                patch_data,
+                creator_name=creator,
+                patch_hash=patch_hash,
+                name=self.menu.patch_name.strip(),
+            )
+            try:
+                os.remove(temp_path)
+            except OSError as e:
+                print(f"Could not remove temp patch file: {e}")
+            metadata_path = temp_path.replace(".json", "_metadata.json")
+            if os.path.exists(metadata_path):
+                try:
+                    os.remove(metadata_path)
+                except OSError:
+                    pass
+            print(f"✓ Patch saved to database: {self.menu.patch_name}")
             self.menu.patch_name = ""
-            # Refresh patch list
-            self.menu.patch_manager.scan_patches()
-        else:
-            print("✗ Failed to save patch")
+            patch_manager.scan_patches()
+        except Exception as e:
+            print(f"✗ Failed to save patch to database: {e}")
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def on_agent_back_click(self):
         """Handle agent back button click."""
