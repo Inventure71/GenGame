@@ -9,7 +9,7 @@ from BASE_components.BASE_asset_handler import AssetHandler
 from BASE_files.BASE_ui_components import (
     UIManager, Button, TextField, Label, Panel,
     ScrollableList, RoomStatusBar, PatchBrowser, ServerPatchBrowser,
-    AgentWorkspace, TextFieldWithPaste, NotificationOverlay
+    AgentWorkspace, TextFieldWithPaste, NotificationOverlay, LoadingOverlay, THEME
 )
 
 class MenuRenderers:
@@ -70,8 +70,9 @@ class MenuRenderers:
         """Initialize UIManagers for each menu state."""
         for state in ["main", "join_room_code", "room", "library", "server_library", "agent", "settings"]:
             self.managers[state] = UIManager(self.menu)
-            # Add global notification overlay to every manager
+            # Add global notification and loading overlay to every manager
             self.managers[state].add(NotificationOverlay(self.menu))
+            self.managers[state].add(LoadingOverlay(self.menu))
 
         self._setup_main_menu()
         self._setup_join_room_menu()
@@ -120,57 +121,57 @@ class MenuRenderers:
         # Get scaled fonts
         menu_font, button_font, small_font = self._get_scaled_fonts()
 
-        # Player ID Field (top center, scaled)
+        # Title (Centered, large)
+        ui.add(Label(self.screen_width // 2, self.scale_y(60), "CORE CONFLICT", menu_font, center=True))
+        ui.add(Label(self.screen_width // 2, self.scale_y(110), "Multiplayer Gaming Platform", small_font, center=True, color=THEME["primary"]))
+
+        # Player ID Field (Centered below title)
         player_id_width = self.scale_x(300)
-        player_id_height = self.scale_y(40)
-        ui.add(TextField(self.scale_x(550), self.scale_y(30), player_id_width, player_id_height, button_font, placeholder="Enter Player ID", name="player_id"))
+        player_id_height = self.scale_y(45)
+        ui.add(TextField(
+            (self.screen_width - player_id_width) // 2, 
+            self.scale_y(150), 
+            player_id_width, 
+            player_id_height, 
+            button_font, 
+            placeholder="Enter Player ID", 
+            name="player_id"
+        ))
 
-        # Title (left side, scaled)
-        ui.add(Label(self.scale_x(200), self.scale_y(90), "CORE CONFLICT", menu_font))
-        ui.add(Label(self.scale_x(200), self.scale_y(150), "Multiplayer Gaming Platform", small_font))
+        # Grid Layout for Buttons
+        # 2 Columns
+        col1_x = self.screen_width // 2 - self.scale_x(310)
+        col2_x = self.screen_width // 2 + self.scale_x(10)
+        btn_width = self.scale_x(300)
+        btn_height = self.scale_y(60)
+        start_y = self.scale_y(240)
+        spacing_y = self.scale_y(100) # Increased spacing to prevent overlap
 
-        # Buttons layout (scaled)
-        button_y = self.scale_y(200)
-        button_spacing = self.scale_y(65)
-        button_height = self.scale_y(55)
-        button_width = self.scale_x(300)
-        dual_button_width = self.scale_x(250)
+        # Row 1: Online
+        ui.add(Label(col1_x, start_y - 25, "ONLINE PLAY", small_font, color=THEME["text_dim"]))
+        ui.add(Button(col1_x, start_y, btn_width, btn_height, "Public Lobby", button_font, self.menu.on_create_remote_room_click, style="primary"))
+        ui.add(Button(col2_x, start_y, btn_width, btn_height, "Join Room", button_font, self.menu.on_join_room_click, style="primary"))
+        
+        # Row 2: Local
+        y2 = start_y + spacing_y
+        ui.add(Label(col1_x, y2 - 25, "LOCAL PLAY", small_font, color=THEME["text_dim"]))
+        ui.add(Button(col1_x, y2, btn_width, btn_height, "Create Local Room", button_font, self.menu.on_create_local_room_click))
+        ui.add(Button(col2_x, y2, btn_width, btn_height, "Practice Mode", button_font, self.menu.on_practice_mode_click))
 
-        # Public Lobby (was "Remote Public Game")
-        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Public Lobby", button_font, self.menu.on_create_remote_room_click, style="normal"))
-        button_y += button_spacing
+        # Row 3: Creation & Library
+        y3 = y2 + spacing_y + 20 # Extra gap
+        ui.add(Label(col1_x, y3 - 25, "CREATION & MODS", small_font, color=THEME["text_dim"]))
+        ui.add(Button(col1_x, y3, btn_width, btn_height, "Creator Agent", button_font, self.menu.on_agent_content_click, style="accent"))
+        ui.add(Button(col2_x, y3, btn_width, btn_height, "Community Patches", button_font, self.menu.on_server_library_click, style="primary"))
+        
+        # Row 4: Server & Settings
+        y4 = y3 + spacing_y
+        ui.add(Button(col1_x, y4, btn_width, btn_height, "My Patches", button_font, self.menu.on_library_click))
+        ui.add(Button(col2_x, y4, btn_width, btn_height, "Settings", button_font, self.menu.on_settings_click))
 
-        # Create Local Room and Practice Mode on same line (symmetric around screen center)
-        center_x = self.screen_width // 2
-        left_dual_x = center_x - dual_button_width - 5
-        right_dual_x = center_x + 5
-
-        ui.add(Button(left_dual_x, button_y, dual_button_width, button_height, "Create Local Room", button_font, self.menu.on_create_local_room_click, style="normal"))
-        ui.add(Button(right_dual_x, button_y, dual_button_width, button_height, "Practice Mode", button_font, self.menu.on_practice_mode_click, style="normal"))
-        button_y += button_spacing
-
-        # Join Room
-        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Join Room", button_font, self.menu.on_join_room_click, style="normal"))
-        button_y += button_spacing
-
-        # Creator Agent (was "Agent Content")
-        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Creator Agent", button_font, self.menu.on_agent_content_click, style="normal"))
-        button_y += button_spacing
-
-        # Patches Library (was "Game Library")
-        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Patches Library", button_font, self.menu.on_library_click, style="normal"))
-        button_y += button_spacing
-
-        # Server Patch Library
-        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Server Patch Library", button_font, self.menu.on_server_library_click, style="normal"))
-        button_y += button_spacing
-
-        # Settings button (above quit)
-        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Settings", button_font, self.menu.on_settings_click, style="normal"))
-        button_y += button_spacing
-
-        # Quit
-        ui.add(Button(self.scale_x(550), button_y, button_width, button_height, "Quit", button_font, self.menu.on_quit_click, style="danger"))
+        # Row 5: Quit (Centered at bottom)
+        quit_width = self.scale_x(200)
+        ui.add(Button((self.screen_width - quit_width) // 2, self.screen_height - self.scale_y(80), quit_width, self.scale_y(50), "Quit Game", button_font, self.menu.on_quit_click, style="danger"))
 
     def _setup_join_room_menu(self):
         ui = self.managers["join_room_code"]
@@ -195,12 +196,15 @@ class MenuRenderers:
         menu_font, button_font, small_font = self._get_scaled_fonts()
 
         ui.add(Label(center_x, self.scale_y(40), "Game Room", menu_font, center=True))
-        ui.add(RoomStatusBar(self.menu))
-
+        
+        # Add components that should be below the status bar first
         ui.add(PatchBrowser(self.scale_x(150), self.scale_y(130), self.scale_x(1100), self.scale_y(450), self.menu, name="patch_browser"))
 
         ui.add(Button(center_x - self.scale_x(150), self.scale_y(620), self.scale_x(300), self.scale_y(60), "Mark as Ready", button_font, self.menu.on_ready_click, name="ready_btn"))
         ui.add(Button(center_x - self.scale_x(150), self.scale_y(700), self.scale_x(300), self.scale_y(60), "Back to Menu", button_font, self.menu.on_back_to_menu_click))
+
+        # Add RoomStatusBar LAST so it renders ON TOP of other components
+        ui.add(RoomStatusBar(self.menu))
 
     def _setup_library_menu(self):
         ui = self.managers["library"]
@@ -209,7 +213,7 @@ class MenuRenderers:
         # Get scaled fonts
         menu_font, button_font, small_font = self._get_scaled_fonts()
 
-        ui.add(Label(center_x, self.scale_y(40), "Game Library", menu_font, center=True))
+        ui.add(Label(center_x, self.scale_y(40), "My Patches", menu_font, center=True))
         ui.add(Label(center_x, self.scale_y(90), "Available Patches", small_font, center=True))
 
         # Simple read-only browser (reuse PatchBrowser component)
@@ -224,7 +228,7 @@ class MenuRenderers:
 
         menu_font, button_font, small_font = self._get_scaled_fonts()
 
-        ui.add(Label(center_x, self.scale_y(40), "Server Patch Library", menu_font, center=True))
+        ui.add(Label(center_x, self.scale_y(40), "Community Patches", menu_font, center=True))
 
         # Search field
         ui.add(TextFieldWithPaste(
@@ -260,7 +264,7 @@ class MenuRenderers:
         center_x = main_x + self.scale_x(450)  # Center of the area to the right of sidebar
 
         # Sidebar Panel
-        ui.add(Panel(0, 0, self.scale_x(380), self.screen_height, color=(30, 30, 45)))
+        ui.add(Panel(0, 0, self.scale_x(380), self.screen_height, color=THEME["surface"]))
         ui.add(Label(self.scale_x(190), self.scale_y(40), "Available Patches", button_font, center=True))
 
         patch_list = ui.add(ScrollableList(self.scale_x(10), self.scale_y(80), self.scale_x(360), self.scale_y(700), name="sidebar_patches"))
@@ -268,20 +272,20 @@ class MenuRenderers:
 
         # Main Workspace (Prompt and Start Agent)
         ui.add(Label(center_x, self.scale_y(40), "Agent Control Center", menu_font, center=True))
-        ui.add(AgentWorkspace(main_x, self.scale_y(90), self.scale_x(900), self.scale_y(380), self.menu, name="agent_workspace"))
+        ui.add(AgentWorkspace(main_x, self.scale_y(90), self.scale_x(900), self.scale_y(320), self.menu, name="agent_workspace"))
         
         # --- Bottom Section organized into sections ---
 
         # 1. Test Results Section
-        test_y = self.scale_y(500)
-        ui.add(Panel(main_x - self.scale_x(10), test_y - self.scale_y(10), self.scale_x(920), self.scale_y(120), color=(35, 35, 50), border_width=1))
+        test_y = self.scale_y(440)
+        ui.add(Panel(main_x - self.scale_x(10), test_y - self.scale_y(10), self.scale_x(920), self.scale_y(120), color=THEME["surface"], border_width=1))
         ui.add(Label(center_x, test_y + self.scale_y(5), "Test Results", button_font, center=True))
         ui.add(Label(center_x, test_y + self.scale_y(30), "Results: Pending...", button_font, center=True, name="test_results"))
         ui.add(Button(center_x - self.scale_x(150), test_y + self.scale_y(50), self.scale_x(300), self.scale_y(50), "Fix Issues", button_font, self.menu.on_agent_fix_click, name="fix_btn"))
 
         # 2. Section to save current state as a patch
-        save_y = self.scale_y(620)
-        ui.add(Panel(main_x - self.scale_x(10), save_y - self.scale_y(10), self.scale_x(920), self.scale_y(90), color=(35, 35, 50), border_width=1))
+        save_y = self.scale_y(580)
+        ui.add(Panel(main_x - self.scale_x(10), save_y - self.scale_y(10), self.scale_x(920), self.scale_y(90), color=THEME["surface"], border_width=1))
         ui.add(Label(center_x, save_y + self.scale_y(5), "Save Current State as Patch", button_font, center=True))
         ui.add(Label(main_x, save_y + self.scale_y(30), "Patch Name:", button_font))
         ui.add(TextField(main_x + self.scale_x(150), save_y + self.scale_y(25), self.scale_x(300), self.scale_y(45), button_font, name="patch_name"))
@@ -289,13 +293,13 @@ class MenuRenderers:
         ui.add(Button(main_x + self.scale_x(570), save_y + self.scale_y(25), self.scale_x(140), self.scale_y(45), "Save Patch", button_font, self.menu.on_agent_save_patch_click))
 
         # 3. Big button to rebase to default state (remove patches from game folder)
-        rebase_y = self.scale_y(740)
-        ui.add(Panel(main_x - self.scale_x(10), rebase_y - self.scale_y(10), self.scale_x(920), self.scale_y(100), color=(45, 35, 35), border_width=2))
+        rebase_y = self.scale_y(690)
+        ui.add(Panel(main_x - self.scale_x(10), rebase_y - self.scale_y(10), self.scale_x(920), self.scale_y(100), color=THEME["surface"], border_width=2))
         ui.add(Button(center_x - self.scale_x(200), rebase_y, self.scale_x(400), self.scale_y(60), "Rebase to Default State", button_font, self.menu.handlers.on_reset_to_base_click, style="danger"))
         ui.add(Label(center_x, rebase_y + self.scale_y(70), "Remove patches from game folder", small_font, center=True))
 
         # 4. Navigation
-        ui.add(Button(center_x - self.scale_x(150), self.scale_y(860), self.scale_x(300), self.scale_y(55), "Back to Main Menu", button_font, self.menu.on_agent_back_click))
+        ui.add(Button(center_x - self.scale_x(150), self.scale_y(810), self.scale_x(300), self.scale_y(55), "Back to Main Menu", button_font, self.menu.on_agent_back_click))
 
     def _get_current_ui(self):
         return self.managers.get(self.menu.current_menu)
@@ -303,7 +307,7 @@ class MenuRenderers:
     def render(self):
         """Render the current menu state."""
         # Always clear the screen first to prevent artifacts from previous frames
-        self.menu.screen.fill((20, 20, 30))
+        self.menu.screen.fill(THEME["background"])
 
         ui = self._get_current_ui()
         if ui:
@@ -349,13 +353,29 @@ class MenuRenderers:
                 if not comp.focused: comp.text = self.menu.server_patch_search
                 else: self.menu.server_patch_search = comp.text
             elif comp.name == "ready_btn":
-                comp.text = "Ready!" if self.menu.patches_ready else "Mark as Ready"
+                if self.menu.patches_ready:
+                     comp.text = "Ready!"
+                     comp.style = "primary"
+                elif getattr(self.menu, 'game_active', False):
+                     # Game is active
+                     active_players = getattr(self.menu, 'active_players', [])
+                     if self.menu.player_id in active_players:
+                         comp.text = "Rejoin Game"
+                         comp.style = "accent"
+                         comp.enabled = True
+                     else:
+                         comp.text = "Game in Progress"
+                         comp.style = "danger"
+                         # comp.enabled = False # Keep enabled so click shows error message explaining why
+                else:
+                     comp.text = "Mark as Ready"
+                     comp.style = "normal"
             elif comp.name == "test_results":
                 if self.menu.agent_results:
                     passed = self.menu.agent_results['passed']
                     total = self.menu.agent_results['total']
                     comp.text = f"Tests: {passed}/{total} Passed"
-                    comp.color = (100, 255, 100) if passed == total else (255, 100, 100)
+                    comp.color = THEME["accent"] if passed == total else THEME["danger"]
             elif comp.name == "fix_btn":
                 comp.visible = bool(self.menu.agent_results and self.menu.agent_results['passed'] < self.menu.agent_results['total'])
                 comp.enabled = not self.menu.agent_running
@@ -408,13 +428,13 @@ class MenuRenderers:
                     try:
                         patch = self.menu.patch_manager.available_patches[self.menu.agent_selected_patch_idx]
                         comp.text = f"Loaded: {patch.name}"
-                        comp.color = (100, 200, 255)  # Blue for loaded
+                        comp.color = THEME["primary"]
                     except (IndexError, AttributeError):
                         comp.text = "No patch loaded"
-                        comp.color = (150, 150, 150)
+                        comp.color = THEME["text_dim"]
                 else:
                     comp.text = "No patch loaded"
-                    comp.color = (150, 150, 150)
+                    comp.color = THEME["text_dim"]
 
     def render_main_menu(self): self.render()
     def render_join_room_code_menu(self): self.render()

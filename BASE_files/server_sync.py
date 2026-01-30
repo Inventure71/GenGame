@@ -91,6 +91,9 @@ class ServerSyncManager:
                 if os.path.exists(merged_patch_path):
                     os.remove(merged_patch_path)
                     print("[success] Cleared old merged_patch.json file")
+                
+                # Broadcast updated status (now that game is reset)
+                self.server._broadcast_room_status()
             else:
                 print(f"[warning] Failed to restore GameFolder to base backup: {base_backup}")
         except Exception as e:

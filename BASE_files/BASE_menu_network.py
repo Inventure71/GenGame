@@ -79,6 +79,7 @@ class MenuNetwork:
         self.client.on_game_restarting = self.menu.game_restarting_callback
         self.client.on_server_restarted = self.menu.server_restarted_callback
         self.client.on_disconnected = self.menu.disconnected_callback
+        self.client.on_room_status = self.menu.on_game_in_progress_callback  # Wire up new callback
 
         return True
 

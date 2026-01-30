@@ -95,17 +95,20 @@ ABILITY = {
 
 ## Effect Collision Detection
 
-**CRITICAL**: All effect collision detection accounts for cow size/radius, not just center points.
+**CRITICAL**: All effect collision detection accounts for cow size/radius, not just center points. **All interaction detection MUST use the `arena.spatial_grid` for high performance.**
 
-When you create effects, the arena automatically handles collision detection:
-- **RadialEffect**: Uses `_circle_intersects_circle()` - checks if cow's circle intersects effect's circle
-- **ConeEffect**: Uses `_circle_intersects_triangle()` - checks if cow's circle intersects triangle
-- **LineEffect**: Uses `_circle_intersects_line()` - checks if cow's circle intersects line segment
-- **WaveProjectileEffect**: Uses `rect.colliderect()` - rectangle-based collision
+The arena automatically handles collision detection using spatial partitioning:
+- **Spatial Optimization**: The arena uses a `SpatialGrid` to narrow down checks. Only objects returned by `spatial_grid.get_nearby()` are considered.
+- **Physics vs. Interaction**:
+  - **Standard Obstacles**: Only collide with objects where `obstacle_type == 'blocking'`.
+  - **Interactive Objects**: Grass, Pickups, and non-blocking Effects are added to the grid but do NOT trigger rigid body collisions.
+- **Geometric Shapes**:
+  - **RadialEffect**: Uses `_circle_intersects_circle()`
+  - **ConeEffect**: Uses `_circle_intersects_triangle()`
+  - **LineEffect**: Uses `_circle_intersects_line()`
+  - **WaveProjectileEffect**: Uses `rect.colliderect()`
 
-**Why this matters**: Cows have a size (`cow.size`), so collision detection uses `cow.size / 2` as the radius. This means effects will hit even when the cow's center is slightly outside the effect area, as long as part of the cow's body overlaps.
-
-**Common mistake**: Don't implement your own point-based collision checks - the arena handles this automatically. Just create the effect with the right parameters (location, radius, angle, length, width, etc.).
+**Why this matters**: Full-map iteration (e.g., `for obj in self.all_objects:`) is prohibited in high-frequency loops. Always use the `spatial_grid` to query for nearby entities.
 
 ## Network Serialization Requirements (CRITICAL)
 

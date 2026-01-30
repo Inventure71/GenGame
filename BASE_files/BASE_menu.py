@@ -698,6 +698,14 @@ class BaseMenu:
         self.error_message = None
         self.error_message_time = 0
 
+    def on_game_in_progress_callback(self, in_progress: bool, active_players: list):
+        """Callback when receiving room status about game progress."""
+        self.game_active = in_progress
+        self.active_players = active_players
+        # Force UI update if in room
+        if self.current_menu == "room":
+            self.renderers._sync_state_to_components(self.renderers.managers["room"])
+
     def server_restarted_callback(self, message: str):
         """Callback when the server has restarted and is ready for new games."""
         print(f"🔄 {message}")

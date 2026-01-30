@@ -31,7 +31,9 @@ def queue_chunked_file(
     """Queue a file for transfer in chunks and return total_chunks."""
     if file_size is None:
         file_size = os.path.getsize(file_path)
-    total_chunks = (file_size + chunk_size - 1) // chunk_size
+    
+    # Ensure at least 1 chunk is sent even for empty files to trigger file creation on server
+    total_chunks = max(1, (file_size + chunk_size - 1) // chunk_size)
 
     with open(file_path, 'rb') as f:
         for chunk_num in range(total_chunks):

@@ -39,12 +39,27 @@ class MenuHandlers:
             self.menu.show_error_message("Error: Please enter a Player ID before creating a room")
             print("Error: Please enter a Player ID before creating a room")
             return
+        
         print("Remote Public Game clicked")
-        if self.menu.network.create_remote_room():
-            self.menu.show_menu("room")
-        else:
-            self.menu.show_error_message("Failed to connect to remote server")
-            print("Failed to connect to remote server")
+        self.menu.loading_message = "Connecting to Public Lobby..."
+        
+        def connect_task():
+            try:
+                success = self.menu.network.create_remote_room()
+                if success:
+                    # In a real app we might need a thread-safe queue for UI changes, 
+                    # but simple string/bool flags are usually fine in python/pygame
+                    self.menu.show_menu("room")
+                else:
+                    self.menu.show_error_message("Failed to connect to remote server")
+                    print("Failed to connect to remote server")
+            except Exception as e:
+                print(f"Error in connection thread: {e}")
+                self.menu.show_error_message(f"Connection error: {e}")
+            finally:
+                self.menu.loading_message = None
+
+        threading.Thread(target=connect_task, daemon=True).start()
 
     def on_join_room_click(self):
         """Handle join room button click."""
@@ -87,14 +102,31 @@ class MenuHandlers:
     def on_server_library_click(self):
         """Handle server patch library button click."""
         print("Server Patch Library clicked")
-        if not (self.menu.client and self.menu.client.connected):
-            if not self.menu.player_id.strip():
-                self.menu.show_error_message("Error: Please enter a Player ID before connecting")
-                return
-            if not self.menu.network.connect_to_server(REMOTE_DOMAIN, self.menu.network.server_port):
-                self.menu.show_error_message("Failed to connect to public server")
-                return
-        self.menu.show_menu("server_library")
+        
+        # If already connected, just go there
+        if self.menu.client and self.menu.client.connected:
+            self.menu.show_menu("server_library")
+            return
+
+        if not self.menu.player_id.strip():
+            self.menu.show_error_message("Error: Please enter a Player ID before connecting")
+            return
+
+        self.menu.loading_message = "Connecting to Server Library..."
+
+        def connect_library_task():
+            try:
+                if self.menu.network.connect_to_server(REMOTE_DOMAIN, self.menu.network.server_port):
+                    self.menu.show_menu("server_library")
+                else:
+                    self.menu.show_error_message("Failed to connect to public server")
+            except Exception as e:
+                print(f"Error connecting to library: {e}")
+                self.menu.show_error_message(f"Connection error: {e}")
+            finally:
+                self.menu.loading_message = None
+
+        threading.Thread(target=connect_library_task, daemon=True).start()
 
     def on_agent_content_click(self):
         """Handle agent content button click."""
@@ -118,6 +150,18 @@ class MenuHandlers:
         """Handle ready button click - sends patches to server."""
         print("Ready clicked - sending patches to server")
         if self.menu.client and self.menu.client.connected:
+            # Check if game is already active
+            if getattr(self.menu, 'game_active', False):
+                # Check if player is in active players list
+                active_players = getattr(self.menu, 'active_players', [])
+                if self.menu.player_id in active_players:
+                    print("Rejoining active game...")
+                    self.menu.game_start_callback()
+                    return
+                else:
+                    self.menu.show_error_message("Game in progress. Cannot join mid-game.")
+                    return
+
             # Mark as ready
             self.menu.patches_ready = True
 

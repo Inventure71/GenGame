@@ -199,18 +199,26 @@ class Character(BaseCharacter):
 
     def try_swap_ability(self, arena):
         """
-        Swap the cow's current ability with the pickup you're standing on.
-
-        - If the relevant slot is empty, behaves like a normal pickup (assign + remove pickup).
-        - Otherwise, exchanges the cow's ability with the pickup's stored ability.
+        Swap the cow's current ability with the closest pickup you're standing on.
+        Optimized using spatial grid.
         """
         cow_rect = self.get_rect(arena.height)
-        for pickup in getattr(arena, "weapon_pickups", [])[:]:
-            if not getattr(pickup, "is_active", False):
-                continue
+        from GameFolder.pickups.GAME_pickups import AbilityPickup
+        
+        def is_valid_pickup(obj):
+            return isinstance(obj, AbilityPickup) and getattr(obj, "is_active", False)
+
+        pickup, dist = arena.spatial_grid.get_closest(
+            self.location[0], 
+            self.location[1], 
+            self.size + 100, 
+            filter_func=is_valid_pickup
+        )
+        
+        if pickup:
             pickup_rect = pickup.get_pickup_rect(arena.height)
             if not cow_rect.colliderect(pickup_rect):
-                continue
+                return
 
             if pickup.ability_type == "primary":
                 if self.primary_ability_name is None:
@@ -318,7 +326,15 @@ class Character(BaseCharacter):
     def try_eat(self, arena):
         if self.eat_cooldown > 0:
             return
-        for field in arena.grass_fields:
+        
+        # Optimized eating check: find closest grass field
+        from GameFolder.world.GAME_world_objects import GrassField
+        def is_grass(obj):
+            return isinstance(obj, GrassField)
+
+        field, dist = arena.spatial_grid.get_closest(self.location[0], self.location[1], self.size / 2 + 50, filter_func=is_grass)
+
+        if field:
             if field.can_eat(self.location[0], self.location[1], self.size / 2):
                 if field.eat():
                     self.size += self.eat_increase

@@ -4,6 +4,8 @@ import random
 import pygame
 from BASE_components.BASE_arena import Arena as BaseArena, WORLD_WIDTH, WORLD_HEIGHT
 from BASE_components.BASE_asset_handler import AssetHandler
+from BASE_components.BASE_spatial import SpatialGrid
+from BASE_components.BASE_character import BaseCharacter
 from GameFolder.effects.coneeffect import ConeEffect
 from GameFolder.effects.radialeffect import RadialEffect
 from GameFolder.effects.lineeffect import LineEffect
@@ -42,13 +44,22 @@ class Arena(BaseArena):
         self.num_slowing_obstacles = 50
         self.num_grass_fields = 30
 
+        # Initialize spatial grid for server-side collision optimization
+        # Must be initialized BEFORE spawning pickups, as they check for obstacles
+        self.spatial_grid = SpatialGrid(cell_size=250)
+
         self._spawn_world()
+        
+        # Update spatial grid with world obstacles so pickups can avoid them
+        self._update_spatial_grid()
+        
         self._spawn_initial_pickups()
 
         # Load random background image from category if available
         self.background_tile = None
         self.background_tile_size = None
         self.background_variant = None
+        
         if not self.headless:
             self.ui = GameUI(self.screen, self.width, self.height)
             # Try to load random background from background category (at original size for tiling)
@@ -139,8 +150,13 @@ class Arena(BaseArena):
         for _ in range(12):
             x = random.uniform(60, self.width - 60)
             y = random.uniform(60, self.height - 60)
+            
+            # Optimized check using spatial grid
+            nearby_obstacles = self.spatial_grid.get_nearby(x, y, 150)
             blocked = False
-            for obstacle in self.obstacles:
+            for obstacle in nearby_obstacles:
+                if not isinstance(obstacle, WorldObstacle):
+                    continue
                 dx = x - obstacle.world_center[0]
                 dy = y - obstacle.world_center[1]
                 distance_sq = dx * dx + dy * dy
@@ -153,11 +169,34 @@ class Arena(BaseArena):
             self.weapon_pickups.append(pickup)
             return
 
+    def _update_spatial_grid(self):
+        """Rebuild spatial grid with all interactive objects."""
+        self.spatial_grid.clear()
+        
+        # Add everything that can be interacted with
+        for obstacle in self.obstacles:
+            self.spatial_grid.add(obstacle)
+        for grass in self.grass_fields:
+            self.spatial_grid.add(grass)
+        for pickup in self.weapon_pickups:
+            if pickup.is_active:
+                self.spatial_grid.add(pickup)
+        for effect in self.effects:
+            self.spatial_grid.add(effect)
+        for cow in self.characters:
+            if cow.is_alive:
+                self.spatial_grid.add(cow)
+
     def update(self, delta_time: float):
         for grass in self.grass_fields:
             grass.regrow(delta_time)
 
         super().update(delta_time)
+        
+        # Update spatial grid every frame since obstacles might move (or be destroyed)
+        # Note: If obstacles are static, we could do this less often or only when they move.
+        # But for dynamic environments, per-frame update is safer.
+        self._update_spatial_grid()
 
         self.zone_indicator.update_from_safe_zone(self.safe_zone.center[:], self.safe_zone.radius)
         self.projectiles = self.effects + [self.zone_indicator]
@@ -209,137 +248,135 @@ class Arena(BaseArena):
             self._spawn_ability_pickup("passive")
 
     def handle_collisions(self):
+        """Main collision and interaction pass using spatial grid."""
+        # Rebuild grid to catch any movement from this frame
+        self._update_spatial_grid()
+
         for cow in self.characters:
             if not cow.is_alive:
                 continue
             cow.is_slowed = False
+            
+            cow_radius = cow.size / 2
+            # Get nearby objects for this specific cow (generous radius)
+            nearby = self.spatial_grid.get_nearby(cow.location[0], cow.location[1], cow_radius + 150)
 
-            self._resolve_obstacle_collisions(cow)
-            self._resolve_poops(cow)
-            self._apply_effects(cow)
+            self._resolve_nearby_collisions(cow, nearby)
+            self._resolve_nearby_pickups(cow, nearby)
 
-        self._resolve_cow_collisions()
+        self._resolve_nearby_cow_collisions()
 
-        for pickup in self.weapon_pickups[:]:
-            if not pickup.is_active:
-                continue
-            pickup_rect = pickup.get_pickup_rect(self.height)
-            for cow in self.characters:
-                if not cow.is_alive:
+    def _resolve_nearby_collisions(self, cow, nearby):
+        """Resolve collisions with obstacles, poops, and effects using a pre-filtered list."""
+        cow_radius = cow.size / 2
+        
+        for obj in nearby:
+            # 1. Obstacles (Explicitly check type to avoid GrassField collision)
+            if isinstance(obj, WorldObstacle):
+                obstacle_radius = obj.size / 2
+                dx = cow.location[0] - obj.world_center[0]
+                dy = cow.location[1] - obj.world_center[1]
+                distance_sq = dx * dx + dy * dy
+                radius_sum = cow_radius + obstacle_radius
+                
+                if distance_sq < radius_sum * radius_sum:
+                    if obj.obstacle_type == "slowing":
+                        cow.is_slowed = True
+                    else:
+                        distance = math.sqrt(distance_sq)
+                        if distance == 0:
+                            angle = random.uniform(0, 2 * math.pi)
+                            dx, dy = math.cos(angle), math.sin(angle)
+                            distance = 1.0
+                        else:
+                            dx /= distance
+                            dy /= distance
+                        overlap = radius_sum - distance
+                        cow.location[0] += dx * overlap
+                        cow.location[1] += dy * overlap
+
+            # 2. Poops (ObstacleEffect)
+            elif isinstance(obj, ObstacleEffect):
+                if obj.owner_id == cow.id:
                     continue
                 cow_rect = cow.get_rect(self.height)
+                poop_rect = obj.get_rect(self.height)
+                if cow_rect.colliderect(poop_rect):
+                    if obj.mine:
+                        cow.take_damage(obj.size / 3)
+                        if obj in self.effects:
+                            self.effects.remove(obj)
+                    elif obj.wall:
+                        self._push_out_of_rect(cow, poop_rect)
+
+            # 3. Other Effects (including ZoneIndicator)
+            elif isinstance(obj, (ConeEffect, RadialEffect, LineEffect, WaveProjectileEffect, ZoneIndicator)):
+                # Ensure weapon owner filtering is robust
+                if hasattr(obj, "owner_id") and obj.owner_id == cow.id:
+                    continue
+
+                hit = False
+                if isinstance(obj, ZoneIndicator):
+                    # Damage logic is handled in _apply_safe_zone_damage, but we could add it here
+                    continue
+
+                if isinstance(obj, ConeEffect):
+                    hit = self._circle_intersects_triangle(cow.location, cow_radius, obj.get_triangle_points())
+                    if hit: cow.is_slowed = True
+                elif isinstance(obj, RadialEffect):
+                    hit = self._circle_intersects_circle(cow.location, cow_radius, obj.location, obj.radius)
+                elif isinstance(obj, LineEffect):
+                    hit = self._circle_intersects_line(cow.location, cow_radius, obj.location, obj.angle, obj.length, obj.width)
+                elif isinstance(obj, WaveProjectileEffect):
+                    hit = cow.get_rect(self.height).colliderect(obj.get_rect(self.height))
+
+                if hit:
+                    key = (obj.network_id, cow.id)
+                    last_hit = self.effect_hit_times.get(key, 0.0)
+                    cooldown = getattr(obj, "damage_cooldown", 0.4)
+                    if last_hit == 0.0 or self.current_time - last_hit >= cooldown:
+                        damage = getattr(obj, "damage", 0.0)
+                        if damage > 0: cow.take_damage(damage)
+                        self.effect_hit_times[key] = self.current_time
+                        knockback = getattr(obj, "knockback_distance", 0.0)
+                        if knockback > 0: self._apply_knockback(cow, obj.location, knockback)
+
+    def _resolve_nearby_pickups(self, cow, nearby):
+        """Check for pickups using the nearby list."""
+        cow_rect = cow.get_rect(self.height)
+        for obj in nearby:
+            if isinstance(obj, AbilityPickup) and obj.is_active:
+                pickup_rect = obj.get_pickup_rect(self.height)
                 if cow_rect.colliderect(pickup_rect):
-                    if pickup.ability_type == "primary":
+                    if obj.ability_type == "primary":
                         if cow.primary_ability_name is None:
-                            cow.set_primary_ability(pickup.ability_name, from_pickup=True)
-                        else:
-                            continue
+                            cow.set_primary_ability(obj.ability_name, from_pickup=True)
+                        else: continue
                     else:
                         if cow.passive_ability_name is None:
-                            cow.set_passive_ability(pickup.ability_name)
-                        else:
-                            continue
-                    pickup.pickup()
-                    if pickup in self.weapon_pickups:
-                        self.weapon_pickups.remove(pickup)
+                            cow.set_passive_ability(obj.ability_name)
+                        else: continue
+                    obj.pickup()
+                    if obj in self.weapon_pickups:
+                        self.weapon_pickups.remove(obj)
                     break
 
-    def _resolve_obstacle_collisions(self, cow):
-        cow_radius = cow.size / 2
-        for obstacle in self.obstacles:
-            obstacle_radius = obstacle.size / 2
-            dx = cow.location[0] - obstacle.world_center[0]
-            dy = cow.location[1] - obstacle.world_center[1]
-            distance_sq = dx * dx + dy * dy
-            radius_sum = cow_radius + obstacle_radius
+    def _resolve_nearby_cow_collisions(self):
+        """Optimized cow-to-cow collision checking."""
+        for cow_a in self.characters:
+            if not cow_a.is_alive: continue
             
-            # Check if circles overlap
-            if distance_sq < radius_sum * radius_sum:
-                if obstacle.obstacle_type == "slowing":
-                    cow.is_slowed = True
+            # Only check cows near cow_a
+            nearby = self.spatial_grid.get_nearby(cow_a.location[0], cow_a.location[1], cow_a.size * 2)
+            for obj in nearby:
+                if obj == cow_a or not isinstance(obj, BaseCharacter) or not obj.is_alive:
                     continue
                 
-                # Push cow out along the line connecting centers
-                distance = math.sqrt(distance_sq)
-                if distance == 0:
-                    # Handle exact overlap by pushing in a random direction
-                    angle = random.uniform(0, 2 * math.pi)
-                    dx = math.cos(angle)
-                    dy = math.sin(angle)
-                    distance = 1.0
-                else:
-                    dx /= distance
-                    dy /= distance
-                
-                # Move cow to just outside the obstacle
-                overlap = radius_sum - distance
-                cow.location[0] += dx * overlap
-                cow.location[1] += dy * overlap
-
-    def _resolve_poops(self, cow):
-        for effect in self.effects[:]:
-            if not isinstance(effect, ObstacleEffect):
-                continue
-            if effect.owner_id == cow.id:
-                continue
-            cow_rect = cow.get_rect(self.height)
-            poop_rect = effect.get_rect(self.height)
-            if cow_rect.colliderect(poop_rect):
-                if effect.mine:
-                    cow.take_damage(effect.size / 3)
-                    if effect in self.effects:
-                        self.effects.remove(effect)
-                elif effect.wall:
-                    self._push_out_of_rect(cow, poop_rect)
-
-    def _apply_effects(self, cow):
-        for effect in self.effects:
-            if isinstance(effect, ObstacleEffect):
-                continue
-            if hasattr(effect, "owner_id") and effect.owner_id == cow.id:
-                continue
-
-            hit = False
-            cow_radius = cow.size / 2
-            if isinstance(effect, ConeEffect):
-                hit = self._circle_intersects_triangle(cow.location, cow_radius, effect.get_triangle_points())
-                if hit:
-                    cow.is_slowed = True
-            elif isinstance(effect, RadialEffect):
-                hit = self._circle_intersects_circle(cow.location, cow_radius, effect.location, effect.radius)
-            elif isinstance(effect, LineEffect):
-                hit = self._circle_intersects_line(cow.location, cow_radius, effect.location, effect.angle, effect.length, effect.width)
-            elif isinstance(effect, WaveProjectileEffect):
-                cow_rect = cow.get_rect(self.height)
-                hit = cow_rect.colliderect(effect.get_rect(self.height))
-
-            if not hit:
-                continue
-
-            key = (effect.network_id, cow.id)
-            last_hit = self.effect_hit_times.get(key, 0.0)
-            cooldown = getattr(effect, "damage_cooldown", 0.4)
-            # Allow first hit (last_hit == 0.0 means never hit before)
-            # For subsequent hits, check cooldown
-            if last_hit > 0.0 and self.current_time - last_hit < cooldown:
-                continue
-
-            damage = getattr(effect, "damage", 0.0)
-            if damage > 0:
-                cow.take_damage(damage)
-            self.effect_hit_times[key] = self.current_time
-
-            knockback = getattr(effect, "knockback_distance", 0.0)
-            if knockback > 0:
-                self._apply_knockback(cow, effect.location, knockback)
-
-    def _resolve_cow_collisions(self):
-        for i in range(len(self.characters)):
-            for j in range(i + 1, len(self.characters)):
-                cow_a = self.characters[i]
-                cow_b = self.characters[j]
-                if not cow_a.is_alive or not cow_b.is_alive:
+                cow_b = obj
+                # Ensure we only check each pair once
+                if id(cow_a) >= id(cow_b):
                     continue
+
                 rect_a = cow_a.get_rect(self.height)
                 rect_b = cow_b.get_rect(self.height)
                 if not rect_a.colliderect(rect_b):
@@ -356,6 +393,12 @@ class Arena(BaseArena):
                 elif cow_b.is_attacking and not cow_a.is_attacking:
                     cow_a.take_damage(cow_b.primary_damage * cow_b.damage_multiplier)
                     self.cow_hit_times[pair_key] = self.current_time
+
+    # Placeholder for old methods
+    def _resolve_obstacle_collisions(self, cow): pass
+    def _resolve_poops(self, cow): pass
+    def _apply_effects(self, cow): pass
+    def _resolve_cow_collisions(self): pass
 
     def render(self):
         if self.headless:

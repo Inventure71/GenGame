@@ -5,9 +5,125 @@ import traceback
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
 from BASE_components.BASE_camera import BaseCamera
 from BASE_components.BASE_asset_handler import AssetHandler
+from BASE_components.BASE_spatial import SpatialGrid
 
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
+
+class ClientArena:
+    """Mock arena for client-side prediction."""
+    def __init__(self, width, height, entity_manager=None):
+        self.width = width
+        self.height = height
+        self.entity_manager = entity_manager
+        self.grass_fields = []
+        self.weapon_pickups = []
+        self.projectiles = []
+        self.effects = []
+        self.current_time = time.time()
+        self.headless = False
+        
+        # Spatial partitioning for optimized collision
+        self.spatial_grid = SpatialGrid(cell_size=250)
+
+    def update_spatial_grid(self):
+        """Rebuild spatial grid with all relevant objects for prediction."""
+        if not self.entity_manager:
+            self.spatial_grid.clear()
+            return
+            
+        self.spatial_grid.clear()
+        
+        # We need to import these to check instances, but do it locally to avoid import cycles
+        from GameFolder.world.GAME_world_objects import GrassField, WorldObstacle
+        from GameFolder.pickups.GAME_pickups import AbilityPickup
+
+        # 1. Platforms (Grass, Obstacles)
+        for platform in self.entity_manager.platforms.values():
+            # Add obstacles (checking obstacle_type is good, but isinstance is safer for WorldObstacle)
+            if hasattr(platform, 'obstacle_type') or isinstance(platform, WorldObstacle):
+                self.spatial_grid.add(platform)
+            # Add grass fields (CRITICAL for eating to work on client)
+            elif isinstance(platform, GrassField):
+                self.spatial_grid.add(platform)
+        
+        # 2. Entities (Pickups, Effects, Poop Walls)
+        for entity in self.entity_manager.entities.values():
+            # Pickups (CRITICAL for swapping abilities)
+            if isinstance(entity, AbilityPickup):
+                if getattr(entity, 'is_active', True):
+                    self.spatial_grid.add(entity)
+            
+            # Effects / Obstacles
+            elif hasattr(entity, 'obstacle_type') or hasattr(entity, 'wall'):
+                self.spatial_grid.add(entity)
+
+    def add_effect(self, effect):
+        pass
+        
+    def handle_collisions(self, cow):
+        """Perform client-side collision resolution for prediction."""
+        if not cow:
+            return
+
+        # Basic boundary check
+        margin = cow.size / 2 if hasattr(cow, 'size') else 15
+        cow.location[0] = max(margin, min(self.width - margin, cow.location[0]))
+        cow.location[1] = max(margin, min(self.height - margin, cow.location[1]))
+
+        # Get nearby objects from spatial grid (optimized)
+        cow_radius = margin
+        nearby = self.spatial_grid.get_nearby(cow.location[0], cow.location[1], cow_radius + 50)
+
+        # Obstacle collision (Circle-Circle or Rect)
+        for obstacle in nearby:
+            # 1. Standard Obstacles (WorldObstacle)
+            # Only collide if explicitly blocking. GrassField has no obstacle_type.
+            if hasattr(obstacle, 'obstacle_type'):
+                if obstacle.obstacle_type != 'blocking':
+                    continue
+            # 2. Poop Walls (ObstacleEffect)
+            elif hasattr(obstacle, 'wall'):
+                if not obstacle.wall:
+                    continue
+            # 3. Skip everything else (Grass, Pickups, non-wall Effects)
+            else:
+                continue
+                
+            obs_size = getattr(obstacle, 'size', getattr(obstacle, 'width', 0))
+            obstacle_radius = obs_size / 2
+            
+            # Position resolution (optimized coordinate fetching)
+            ox, oy = 0, 0
+            if hasattr(obstacle, 'world_center'):
+                ox, oy = obstacle.world_center
+            elif hasattr(obstacle, 'location'):
+                ox, oy = obstacle.location
+            elif hasattr(obstacle, 'rect'):
+                ox, oy = obstacle.rect.centerx, obstacle.rect.centery
+            elif hasattr(obstacle, 'float_x'):
+                ox = obstacle.float_x + getattr(obstacle, 'width', 0) / 2
+                oy = obstacle.float_y + getattr(obstacle, 'height', 0) / 2
+            else: continue
+
+            dx = cow.location[0] - ox
+            dy = cow.location[1] - oy
+            distance_sq = dx * dx + dy * dy
+            radius_sum = cow_radius + obstacle_radius
+            
+            if distance_sq < radius_sum * radius_sum:
+                import math
+                distance = math.sqrt(distance_sq)
+                if distance == 0:
+                    dx, dy = 1, 0
+                    distance = 1.0
+                else:
+                    dx /= distance
+                    dy /= distance
+                
+                overlap = radius_sum - distance
+                cow.location[0] += dx * overlap
+                cow.location[1] += dy * overlap
 
 def run_client(network_client: NetworkClient, player_id: str = ""):
     print("="*70)
@@ -54,7 +170,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         print("[warning]  IMPORTANT: Click on the game window to enable keyboard input for movement!")
 
         # Initialize network client and entity manager
-        entity_manager = EntityManager()
+        entity_manager = EntityManager(network_client)
 
         # Set up network callbacks
         assigned_character = player_id or None
@@ -260,6 +376,9 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
         running = True
         last_input_time = 0.0
+        
+        # Client-side prediction arena
+        client_arena = ClientArena(world_width, world_height, entity_manager)
 
         print("Connected! Waiting for game to start...\n")
 
@@ -271,6 +390,14 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
             frame_count += 1
             frame_delta = clock.tick(60) / 1000.0
             current_time = time.time()
+            
+            # Update client arena time
+            client_arena.current_time = current_time
+            # Update dimensions in case they changed (reloaded)
+            client_arena.width = world_width
+            client_arena.height = world_height
+            # Cache everything for this frame to optimize prediction
+            client_arena.update_spatial_grid()
 
             # Handle events
             for event in pygame.event.get():
@@ -311,6 +438,17 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                 input_data.setdefault('held_keys', sorted(list(held_keys)))
                 input_data.setdefault('mouse_buttons', list(mouse_pressed))
 
+                # Client-Side Prediction: Apply input locally immediately
+                local_entity = None
+                if entity_manager.local_player_id:
+                    local_entity = entity_manager.get_entity(entity_manager.local_player_id)
+                
+                if local_entity and hasattr(local_entity, 'process_input'):
+                    # Save state before prediction for reconciliation check (optional, skipping for now)
+                    local_entity.process_input(input_data, client_arena)
+                    # Apply collision resolution immediately after movement
+                    client_arena.handle_collisions(local_entity)
+
                 # Always send input (at least mouse position)
                 network_client.send_input(input_data, entity_manager)
 
@@ -318,6 +456,45 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
 
             # Update network client
             network_client.update()
+            
+            # Reconciliation: Check if server state arrived and corrects us
+            if entity_manager.local_player_id:
+                local_entity = entity_manager.get_entity(entity_manager.local_player_id)
+                if local_entity and hasattr(local_entity, 'server_location') and hasattr(local_entity, 'last_server_input_id'):
+                    # Server state is authoritative.
+                    # 1. Snap to server location
+                    # Only snap if the error is significant to avoid micro-jitters from floating point
+                    # or if we want perfect sync. For fluid movement, snapping + replay is standard.
+                    
+                    # Store current predicted pos to check error (debug)
+                    # pred_x, pred_y = local_entity.location
+                    
+                    # Snap
+                    local_entity.location = list(local_entity.server_location)
+                    
+                    # 2. Replay all inputs that happened AFTER the server's last processed input
+                    inputs_to_replay = entity_manager.prediction.reconcile_with_server({
+                        'last_input_id': local_entity.last_server_input_id
+                    })
+                    
+                    if inputs_to_replay:
+                        for inp in inputs_to_replay:
+                            if hasattr(local_entity, 'process_input'):
+                                local_entity.process_input(inp, client_arena)
+                                # Apply collision resolution during replay too
+                                client_arena.handle_collisions(local_entity)
+                    
+                    # Clear server state flags to avoid re-reconciling same state
+                    # Actually, we should keep them until new state arrives?
+                    # No, update_from_server sets them. If we process them once, we shouldn't process again
+                    # unless they change. But update_from_server is called asynchronously.
+                    # Ideally, network_client.update() populates the queue, and we process it.
+                    # But entity_manager.update_from_server updates the entity directly.
+                    # So we just reconcile every frame? No, that would be wasteful.
+                    # Ideally only when new state arrives.
+                    # But here we are in the main loop.
+                    # Let's consume the reconciliation trigger.
+                    delattr(local_entity, 'server_location')
             
             # Update entities for client-side animation (characters need to update animation frames)
             for entity in entity_manager.entities.values():

@@ -282,7 +282,7 @@ class ServerStateManager:
         message, raw_size, compressed_size = self._encode_game_state_message(payload, 1, serialization, compress)
         data = pickle.dumps(message, protocol=4)
         length_bytes = len(data).to_bytes(4, byteorder='big')
-        self.server._send_data_safe(client_socket, length_bytes + data)
+        self.server._send_data_safe(client_socket, length_bytes + data, timeout=0.005)
 
         self._record_state_stats(1, raw_size, compressed_size)
         self.server.client_class_registry[player_id] = class_registry
@@ -304,7 +304,7 @@ class ServerStateManager:
         message, raw_size, compressed_size = self._encode_game_state_message(payload, 0, serialization, compress)
         data = pickle.dumps(message, protocol=4)
         length_bytes = len(data).to_bytes(4, byteorder='big')
-        self.server._send_data_safe(client_socket, length_bytes + data)
+        self.server._send_data_safe(client_socket, length_bytes + data, timeout=0.005)
 
         self._record_state_stats(0, raw_size, compressed_size)
         self._update_client_state_cache(player_id, current_map, removed_ids, static_update, 0)
@@ -313,7 +313,15 @@ class ServerStateManager:
         if not self.server.arena or not self.server.clients:
             return
 
-        if not set(self.server.clients.keys()).issubset(self.server.clients_file_sync_ack):
+        # Only broadcast to clients who have finished file sync
+        # Filter the client list to avoid sending to initializing clients (which causes buffer bloat and freezes)
+        target_clients = {
+            pid: sock for pid, sock in self.server.clients.items() 
+            if pid in self.server.clients_file_sync_ack
+        }
+        
+        # If no one is ready, we can skip broadcast
+        if not target_clients:
             return
 
         if self.server.arena.game_over and not self.server.waiting_for_restart:
@@ -335,13 +343,13 @@ class ServerStateManager:
 
             for player_id, client_socket in self.server.clients.items():
                 try:
-                    self.server._send_data_safe(client_socket, length_bytes + data)
+                    self.server._send_data_safe(client_socket, length_bytes + data, timeout=2.0)
                 except Exception as e:
                     print(f"Failed to send restart notification to {player_id}: {e}")
 
         current_lists = self._collect_current_entity_states()
         current_map = self._build_entity_map(current_lists)
-        self.server.frame_counter += 1
+        # self.server.frame_counter += 1  <-- REMOVED! Incremented in server.py now
 
         game_over = self.server.arena.game_over
         winner_id = None
@@ -351,7 +359,7 @@ class ServerStateManager:
         static_update = (self.server.frame_counter % self.server.static_update_interval == 0)
 
         disconnected_clients = []
-        for player_id, client_socket in list(self.server.clients.items()):
+        for player_id, client_socket in list(target_clients.items()):
             try:
                 if not self._client_supports_delta(player_id):
                     legacy_state = {

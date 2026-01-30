@@ -25,6 +25,31 @@ class NetworkObject:
         self.module_path = module_path
         self.class_name = class_name
 
+    def set_location(self, x: float, y: float):
+        """
+        Universal method to update object location.
+        Ensures consistency across different object types (world_center vs location).
+        """
+        if hasattr(self, 'world_center'):
+            self.world_center[0] = x
+            self.world_center[1] = y
+        
+        # Always update self.location if it exists
+        if hasattr(self, 'location'):
+            if isinstance(self.location, list):
+                self.location[0] = x
+                self.location[1] = y
+            else:
+                self.location = [x, y]
+        
+        # Update float_x/y for platforms
+        if hasattr(self, 'float_x'):
+            self.float_x = x - getattr(self, 'width', 0) / 2
+            self.float_y = y - getattr(self, 'height', 0) / 2
+            if hasattr(self, 'rect') and self.rect:
+                self.rect.x = int(self.float_x)
+                self.rect.y = int(self.float_y)
+
     def init_graphics(self):
         """
         Initialize graphics resources (images, rects, sounds, etc.).

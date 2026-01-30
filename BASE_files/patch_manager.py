@@ -163,13 +163,8 @@ class PatchManager:
                 })
             except Exception as e:
                 print(f"Error preparing patch {patch.name} for sending: {e}")
-                # Still include original file path if modification fails
-                updated_patches.append({
-                    'name': patch.name,
-                    'base_backup': patch.base_backup,
-                    'file_path': patch.file_path,
-                    'num_changes': patch.num_changes
-                })
+                # Do NOT include the patch if it failed to prepare - it likely has issues that will crash the server
+                print(f"Skipping patch {patch.name} due to preparation error to prevent server instability.")
         
         # Store temp files for cleanup (you might want to clean them up after sending)
         # For now, we'll rely on the OS to clean them up, or you can add cleanup logic

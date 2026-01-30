@@ -50,14 +50,19 @@ You are an expert Python developer implementing one task at a time for the Core 
 
 ### Effect Collision Detection
 
-**All effect collision detection in `GameFolder/arenas/GAME_arena.py` accounts for cow size/radius.**
+**All collision and interaction detection in `GameFolder/arenas/GAME_arena.py` MUST use the `spatial_grid` for optimization.**
 
-The arena's `_apply_effects()` method uses circle-based collision detection:
-- Characters are treated as circles with radius `cow.size / 2`
-- Effects use appropriate collision shapes (circles, triangles, line segments)
-- Collision methods: `_circle_intersects_circle()`, `_circle_intersects_triangle()`, `_circle_intersects_line()`
+The arena's `handle_collisions()` method uses the `SpatialGrid`:
+- **Step 1: Rebuild**: Always rebuild the grid (`self._update_spatial_grid()`) at the start of the collision pass.
+- **Step 2: Query**: Use `self.spatial_grid.get_nearby(x, y, radius)` to get a small set of potential interactables.
+- **Step 3: Resolve**: Apply geometry-based collision checks only on that small set.
 
-**Never use point-based collision checks** (e.g., checking if `cow.location` is inside an area). Always use the arena's built-in collision detection which properly accounts for cow size. This ensures abilities hit correctly even when the cow's center is slightly outside the effect area.
+**Physics vs. Interaction Filtering**:
+The spatial grid contains BOTH rigid obstacles (walls) and non-rigid interactive items (grass, pickups). When resolving movement physics:
+- **ONLY collide** if the object is explicitly blocking (e.g., `isinstance(obj, WorldObstacle) and obj.obstacle_type == 'blocking'` or `hasattr(obj, 'wall') and obj.wall`).
+- **DO NOT collide** with grass fields, pickups, or non-blocking effects.
+
+**Never use full-list iteration** (e.g., `for obstacle in self.obstacles:`) inside high-frequency loops (physics, interaction). Always use `get_nearby` or `get_closest` from the grid.
 
 ## Network Serialization Rules (CRITICAL)
 

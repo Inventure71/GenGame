@@ -158,6 +158,45 @@ class GameServer:
             # Remote room - use the host as domain
             self.room_code = encrypt_code(host, port, "REMOTE")
 
+    def _send_room_status(self, player_id: str):
+        """Send room status (game active, player list) to a client."""
+        if not self.arena:
+            in_progress = False
+            active_players = []
+        else:
+            in_progress = not self.arena.game_over
+            active_players = [char.id for char in self.arena.characters]
+
+        message = {
+            'type': 'room_status',
+            'in_progress': in_progress,
+            'active_players': active_players
+        }
+        self._send_message_to_client(player_id, message)
+
+    def _broadcast_room_status(self):
+        """Broadcast room status to all clients."""
+        if not self.arena:
+            in_progress = False
+            active_players = []
+        else:
+            in_progress = not self.arena.game_over
+            active_players = [char.id for char in self.arena.characters]
+
+        message = {
+            'type': 'room_status',
+            'in_progress': in_progress,
+            'active_players': active_players
+        }
+        data = pickle.dumps(message)
+        length_bytes = len(data).to_bytes(4, byteorder='big')
+
+        for client_socket in self.clients.values():
+            try:
+                self._send_data_safe(client_socket, length_bytes + data, timeout=1.0)
+            except:
+                pass
+
     def start(self):
         """Start the server."""
         self.running = True
@@ -189,14 +228,47 @@ class GameServer:
                 pass
         print("Server stopped.")
 
-    def _send_data_safe(self, client_socket: socket.socket, data: bytes):
-        """Send data safely to a non-blocking socket by temporarily making it blocking."""
-        was_blocking = client_socket.gettimeout() is not None
+    def _send_data_safe(self, client_socket: socket.socket, data: bytes, timeout: float = 2.0):
+        """
+        Send data safely to a socket.
+        
+        Args:
+            client_socket: The socket to send to.
+            data: The bytes to send.
+            timeout: Maximum time to wait/block. 
+                     Use >0 for reliable control messages (prevent EAGAIN on large sends).
+                     Use 0 for fire-and-forget/fail-fast (game states).
+        """
         try:
-            client_socket.setblocking(True)
-            client_socket.sendall(data)
-        finally:
-            client_socket.setblocking(False)
+            if client_socket.fileno() == -1:
+                return
+
+            # Store previous timeout to restore later
+            prev_timeout = client_socket.gettimeout()
+            
+            try:
+                # Temporarily set timeout for this operation
+                client_socket.settimeout(timeout)
+                client_socket.sendall(data)
+            except (socket.timeout, BlockingIOError) as e:
+                # If it's a timeout (blocking) or EAGAIN (non-blocking)
+                # For critical messages (timeout>0), this is a failure.
+                # For game updates (timeout=0), this is expected congestion.
+                if timeout > 0:
+                    print(f"[warning] Send timed out/blocked for {client_socket.fileno()} (len={len(data)}, timeout={timeout})")
+                raise e
+            finally:
+                # Restore original timeout (usually None or 0.0)
+                try:
+                    client_socket.settimeout(prev_timeout)
+                except OSError:
+                    pass # Socket might be closed
+
+        except (BrokenPipeError, ConnectionResetError):
+            raise
+        except Exception as e:
+            # print(f"[error] Send failed: {e}") # Caller handles logging to avoid spam
+            raise e
 
     def _network_loop(self):
         """Handle network connections and client communication."""
@@ -439,10 +511,32 @@ class GameServer:
             self.requested_full_state.discard(player_id)
             
             print(f"Client {player_id} disconnected")
+            self._broadcast_room_status()
 
-            # Check if server is now empty
-            if len(self.clients) == 0 and not self.waiting_for_clients:
-                print(f"Server is now empty. Will reset to lobby in {self.empty_server_timeout} seconds if no one joins...")
+            # Check if we should start the empty/abandoned timer
+            should_wait = False
+            
+            # Case 1: Server is completely empty
+            if len(self.clients) == 0:
+                print("Server is now empty.")
+                should_wait = True
+            # Case 2: Game is running but no active players are connected (Zombie Game)
+            elif self.arena:
+                # Check if any remaining connected client is actually in the game
+                arena_player_ids = [c.id for c in self.arena.characters]
+                active_connected = False
+                for pid in self.clients:
+                    char_id = self.player_id_to_character.get(pid)
+                    if char_id and char_id in arena_player_ids:
+                        active_connected = True
+                        break
+                
+                if not active_connected:
+                    print("Game in progress but no active players connected (Abandoned).")
+                    should_wait = True
+
+            if should_wait and not self.waiting_for_clients:
+                print(f"Will reset server in {self.empty_server_timeout} seconds if no players rejoin...")
                 self.last_client_disconnect_time = time.time()
                 self.waiting_for_clients = True
 
@@ -528,6 +622,7 @@ class GameServer:
                     self.clients_patch_ready.clear()
                     self._recreate_arena_with_players()  # CRITICAL: Recreate arena with NEW classes
                     self.sync_manager.notify_all_clients_game_start()
+                    self._broadcast_room_status() # Update status to "in progress"
                 else:
                     print("[error] Cannot start game - patch application failed on some clients:")
                     for failed_player, error in self.clients_patch_failed.items():
@@ -597,9 +692,32 @@ class GameServer:
                     if client_socket in self.pending_capabilities:
                         self.client_capabilities[actual_player_id] = self.pending_capabilities.pop(client_socket)
 
-                    # Cancel empty server timeout since we now have clients
-                    if self.waiting_for_clients:
-                        print("Client joined - canceling empty server timeout")
+                    # Send room status immediately so they know if game is running
+                    self._send_room_status(actual_player_id)
+                    # Broadcast update to others (player list changed)
+                    self._broadcast_room_status()
+
+                    # Cancel empty server timeout ONLY if:
+                    # 1. Game is NOT in progress (Lobby mode - any join cancels reset)
+                    # 2. Game IS in progress AND this player is rejoining (Game not abandoned)
+                    cancel_timeout = False
+                    
+                    if not self.arena:
+                        # Lobby mode - any join keeps server alive
+                        cancel_timeout = True
+                    else:
+                        # Game mode - only cancel if rejoining
+                        arena_player_ids = [c.id for c in self.arena.characters]
+                        # The player ID might be the requested name or assigned ID. 
+                        # logic above sets actual_player_id = requested_name for new joins.
+                        if actual_player_id in arena_player_ids:
+                             print(f"Player {actual_player_id} rejoining active game - canceling abandonment timer")
+                             cancel_timeout = True
+                        else:
+                             print(f"Player {actual_player_id} joining lobby during abandoned game - timer continues")
+
+                    if self.waiting_for_clients and cancel_timeout:
+                        print("Client joined/rejoined - canceling empty server timeout")
                         self.waiting_for_clients = False
                         self.last_client_disconnect_time = 0.0
 
@@ -718,7 +836,11 @@ class GameServer:
         try:
             data = pickle.dumps(message)
             length_bytes = len(data).to_bytes(4, byteorder='big')
-            self._send_data_safe(self.clients[player_id], length_bytes + data)
+            
+            # Use a robust timeout for control messages to ensure they get through
+            # (especially large ones like file_sync)
+            self._send_data_safe(self.clients[player_id], length_bytes + data, timeout=5.0)
+            
             print(f"📤 MSG SEND: Successfully sent '{message.get('type', 'unknown')}' message to {player_id}")
         except Exception as e:
             print(f"[error] MSG SEND: Failed to send '{message.get('type', 'unknown')}' message to {player_id}: {e}")
@@ -777,8 +899,8 @@ class GameServer:
                     except Exception as e:
                         print(f"Failed to send restart notification to {player_id}: {e}")
 
-            # Check if server has been empty too long
-            if self.waiting_for_clients and len(self.clients) == 0:
+            # Check if server needs reset (empty or abandoned game)
+            if self.waiting_for_clients:
                 if current_time - self.last_client_disconnect_time >= self.empty_server_timeout:
                     self._reset_empty_server()
                     continue
@@ -786,7 +908,13 @@ class GameServer:
             # Fixed timestep game update
             if current_time - self.last_tick_time >= self.tick_interval:
                 self._update_simulation(self.tick_interval)
-                self._broadcast_game_state()
+                self.frame_counter += 1 # Increment every tick regardless of broadcast
+                
+                # Broadcast at 30 FPS (every 2nd tick) to reduce bandwidth
+                # Simulation runs at 60 FPS for fluid physics
+                if self.frame_counter % 2 == 0:
+                    self._broadcast_game_state()
+                
                 self.last_tick_time = current_time
 
             # Sleep to prevent busy waiting

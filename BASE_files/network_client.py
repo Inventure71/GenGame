@@ -56,6 +56,7 @@ class NetworkClient:
         # Message queues
         self.incoming_queue = deque()
         self.outgoing_queue = deque()
+        self.input_timestamps = {}  # input_id -> timestamp sent
 
         # Callbacks
         self.on_file_sync_received = None
@@ -75,6 +76,7 @@ class NetworkClient:
         self.on_game_start = None
         self.on_game_restarting = None
         self.on_server_restarted = None
+        self.on_room_status = None
         self.last_character_assignment = None
 
         # Lag compensation
@@ -111,6 +113,7 @@ class NetworkClient:
     def connect(self, player_id: str) -> bool:
         """Connect to the server."""
         try:
+            self.reset()  # Reset state before connecting
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
             self.socket.setblocking(False)
@@ -138,6 +141,22 @@ class NetworkClient:
             print(f"Failed to connect: {e}")
             return False
 
+    def reset(self):
+        """Reset network client state."""
+        self.incoming_queue.clear()
+        self.outgoing_queue.clear()
+        self.input_timestamps.clear()
+        self.file_transfers.clear()
+        self.backup_download_transfers.clear()
+        # Clear packet stats but keep structure
+        self.packet_stats['total_received'] = 0
+        self.packet_stats['total_sent'] = 0
+        self.packet_stats['received_timestamps'].clear()
+        self.packet_stats['sent_timestamps'].clear()
+        
+        self.latency = 0.0
+        self.last_server_time = 0.0
+
     def disconnect(self):
         """Disconnect from the server."""
         self.running = False
@@ -146,6 +165,9 @@ class NetworkClient:
         # Reset file sync flags on disconnect
         self.file_sync_complete = False
         self.file_sync_requested = False
+        
+        # Thoroughly reset state to prevent stale data on rejoin
+        self.reset()
 
         if self.socket:
             try:
@@ -174,6 +196,7 @@ class NetworkClient:
         if entity_manager and hasattr(entity_manager, 'prediction'):
             input_id = entity_manager.prediction.add_input(input_data)
             message['input_id'] = input_id
+            self.input_timestamps[input_id] = time.time()
 
         self.outgoing_queue.append(message)
 
@@ -375,20 +398,30 @@ class NetworkClient:
     def _recv_exact(self, size: int) -> Optional[bytes]:
         """Receive exactly size bytes from non-blocking socket."""
         data = b''
+        start_time = time.time()
+        timeout = 30.0 # Increased timeout for large file syncs
+        
         while len(data) < size and self.running and self.connected:
+            if time.time() - start_time > timeout:
+                print(f"Timeout receiving data ({len(data)}/{size} bytes)")
+                return None
+
             try:
-                # Wait up to 5 seconds for data
-                ready, _, _ = select.select([self.socket], [], [], 5.0)
+                # Wait for data
+                ready, _, _ = select.select([self.socket], [], [], 1.0)
                 if ready:
-                    chunk = self.socket.recv(size - len(data))
+                    # Receive chunk
+                    chunk_size = min(4096, size - len(data))
+                    chunk = self.socket.recv(chunk_size)
                     if not chunk:
                         return None # Disconnected
                     data += chunk
+                    # Reset timeout on successful read
+                    start_time = time.time() 
                 else:
-                    # Timeout waiting for data chunk
+                    # No data yet, loop again
                     continue
             except BlockingIOError:
-                # Resource temporarily unavailable, try again
                 continue
             except Exception as e:
                 print(f"Error in _recv_exact: {e}")
@@ -649,6 +682,11 @@ class NetworkClient:
             print(f"🔄 {msg}")
             if self.on_game_restarting:
                 self.on_game_restarting(winner, restart_delay, msg)
+        elif msg_type == 'room_status':
+            in_progress = message.get('in_progress', False)
+            active_players = message.get('active_players', [])
+            if hasattr(self, 'on_room_status') and self.on_room_status:
+                self.on_room_status(in_progress, active_players)
         elif msg_type == 'server_restarted':
             msg = message.get('message', 'Server has restarted.')
             print(f"🔄 {msg}")
@@ -756,13 +794,13 @@ class NetworkClient:
             'received_last_second': received_last_second,
             'total_received': self.packet_stats['total_received'],
             'total_sent': self.packet_stats['total_sent'],
-            'packets_lost': max(0, self.packet_stats['total_sent'] - self.packet_stats['total_received'])
+            'packets_lost': 0  # Metric deprecated due to decoupled send/receive rates
         }
 
 
 class ClientPrediction:
     """
-    Minimal prediction system for input ID tracking only.
+    Prediction system for input ID tracking and reconciliation.
     """
 
     def __init__(self):
@@ -782,13 +820,30 @@ class ClientPrediction:
 
         return input_id
 
-    def reconcile_with_server(self, server_entity_data: dict):
-        """Clean up acknowledged inputs to prevent memory buildup."""
+    def reconcile_with_server(self, server_entity_data: dict) -> List[dict]:
+        """
+        Clean up acknowledged inputs and return inputs that need replaying.
+        
+        Args:
+            server_entity_data: The entity data received from server
+            
+        Returns:
+            List of input dicts that need to be replayed (those after the acknowledged ID)
+        """
         last_acknowledged_id = server_entity_data.get('last_input_id', 0)
-        self.pending_inputs = [
-            inp for inp in self.pending_inputs
-            if inp['id'] > last_acknowledged_id
-        ]
+        
+        # Remove inputs that have been processed by the server
+        # Keep only inputs that happened AFTER the server's last processed input
+        remaining_inputs = []
+        inputs_to_replay = []
+        
+        for inp in self.pending_inputs:
+            if inp['id'] > last_acknowledged_id:
+                remaining_inputs.append(inp)
+                inputs_to_replay.append(inp['data'])
+                
+        self.pending_inputs = remaining_inputs
+        return inputs_to_replay
 
     def get_predicted_state(self) -> dict:
         """Get current state (minimal implementation)."""
@@ -800,7 +855,8 @@ class EntityManager:
     Manages the lifecycle of ghost objects (network-synchronized entities).
     """
 
-    def __init__(self):
+    def __init__(self, network_client: 'NetworkClient' = None):
+        self.network_client = network_client
         self.entities: Dict[str, Any] = {}  # network_id -> entity instance
         self.platforms: Dict[str, Any] = {}  # network_id -> platform instance
         self.local_player_id = None
@@ -809,7 +865,7 @@ class EntityManager:
 
         # Interpolation buffers for smooth movement
         self.interpolation_buffers: Dict[str, deque] = {}
-        self.max_buffer_size = 3  # Keep last 3 snapshots for interpolation
+        self.max_buffer_size = 20  # Increased buffer size for smoother history
 
         # Client-side prediction
         self.prediction = ClientPrediction()
@@ -823,8 +879,35 @@ class EntityManager:
         Update entities from server game state.
         Creates new entities, updates existing ones, and removes missing ones.
         """
+        # Update latency if we have a local player involved
+        if self.local_player_id and self.network_client:
+            # Find local player data to get last_input_id
+            local_data = None
+            for char in game_state.get('characters', []):
+                if char.get('network_id') == self.local_player_id:
+                    local_data = char
+                    break
+            
+            if local_data:
+                last_input_id = local_data.get('last_input_id', 0)
+                if last_input_id > 0 and last_input_id in self.network_client.input_timestamps:
+                    sent_time = self.network_client.input_timestamps.pop(last_input_id, None)
+                    if sent_time:
+                        rtt = time.time() - sent_time
+                        # Weighted moving average for smoother latency
+                        if self.network_client.latency == 0:
+                            self.network_client.latency = rtt
+                        else:
+                            self.network_client.latency = self.network_client.latency * 0.9 + rtt * 0.1
+                        
+                        # Cleanup old timestamps
+                        to_remove = [k for k in self.network_client.input_timestamps if k < last_input_id]
+                        for k in to_remove:
+                            self.network_client.input_timestamps.pop(k, None)
+
         message_type = game_state.get('_message_type', game_state.get('message_type', 1))
         class_registry = game_state.get('class_registry')
+
         if class_registry:
             self.class_registry = class_registry
 
@@ -981,13 +1064,27 @@ class EntityManager:
             'timestamp': time.time()
         })
 
-        # For local player, use direct server state (no prediction to avoid jitter)
+        # For local player, check reconciliation
         # For remote entities, apply interpolation for smooth movement
         if network_id == self.local_player_id:
-            # Direct application of server state for local player
+            # We trust client-side prediction, BUT we must reconcile if server says we are far off.
+            # We apply non-spatial updates (health, etc) immediately.
+            # Spatial updates (location) are checked against prediction.
+            
+            # 1. Apply non-spatial data
             for key, value in entity_data.items():
-                if hasattr(entity, key) and key not in ['network_id', 'module_path', 'class_name', '_graphics_initialized']:
-                    setattr(entity, key, value)
+                if key not in ['location', 'network_id', 'module_path', 'class_name', '_graphics_initialized', 'last_input_id']:
+                    if hasattr(entity, key):
+                        setattr(entity, key, value)
+            
+            # 2. Reconcile position if we have input tracking
+            # The actual reconciliation (snap + replay) needs to happen in the game loop 
+            # where we have access to the physics/move function.
+            # Here we just store the authoritative server state on the entity for the game loop to use.
+            if 'location' in entity_data:
+                entity.server_location = entity_data['location']
+                entity.last_server_input_id = entity_data.get('last_input_id', 0)
+                
         else:
             self._interpolate_entity(entity, entity_data)
 
@@ -1001,38 +1098,93 @@ class EntityManager:
                     setattr(entity, key, value)
             return
 
-        # Get the two most recent snapshots
-        snapshots = list(buffer)[-2:]
-        older_snapshot = snapshots[0]
-        newer_snapshot = snapshots[1]
+        # Adaptive interpolation delay based on latency
+        # Default to 100ms (0.1s) buffer, or 1.5x latency if higher
+        base_delay = 0.1
+        if self.network_client and self.network_client.latency > 0:
+             base_delay = max(0.05, self.network_client.latency * 1.5)
+        
+        render_time = time.time() - base_delay
 
-        # Calculate interpolation factor (we want to be slightly behind for smoothness)
-        time_diff = newer_snapshot['timestamp'] - older_snapshot['timestamp']
-        if time_diff > 0:
-            # Interpolate to a point 50ms in the past for smoothness
-            interpolation_time = time.time() - 0.05
-            t = min(1.0, max(0.0, (interpolation_time - older_snapshot['timestamp']) / time_diff))
+        # Find the two snapshots surrounding render_time
+        # Buffer is ordered oldest to newest
+        older_snapshot = None
+        newer_snapshot = None
+        
+        for i in range(len(buffer) - 1):
+            if buffer[i]['timestamp'] <= render_time <= buffer[i+1]['timestamp']:
+                older_snapshot = buffer[i]
+                newer_snapshot = buffer[i+1]
+                break
+        
+        if older_snapshot and newer_snapshot:
+            # Interpolate
+            time_diff = newer_snapshot['timestamp'] - older_snapshot['timestamp']
+            if time_diff > 0:
+                t = (render_time - older_snapshot['timestamp']) / time_diff
+                
+                # Interpolate position
+                if 'location' in older_snapshot['data'] and 'location' in newer_snapshot['data']:
+                    old_pos = older_snapshot['data']['location']
+                    new_pos = newer_snapshot['data']['location']
+                    interpolated_pos = [
+                        old_pos[0] + (new_pos[0] - old_pos[0]) * t,
+                        old_pos[1] + (new_pos[1] - old_pos[1]) * t
+                    ]
+                    entity.location = interpolated_pos
 
-            # Interpolate position
-            if 'location' in older_snapshot['data'] and 'location' in newer_snapshot['data']:
-                old_pos = older_snapshot['data']['location']
-                new_pos = newer_snapshot['data']['location']
-                interpolated_pos = [
-                    old_pos[0] + (new_pos[0] - old_pos[0]) * t,
-                    old_pos[1] + (new_pos[1] - old_pos[1]) * t
-                ]
-                entity.location = interpolated_pos
+                # Interpolate radius (for safe zone / effects)
+                if 'radius' in older_snapshot['data'] and 'radius' in newer_snapshot['data']:
+                    old_rad = float(older_snapshot['data']['radius'])
+                    new_rad = float(newer_snapshot['data']['radius'])
+                    entity.radius = old_rad + (new_rad - old_rad) * t
 
-            # For other properties, use the newer snapshot
-            for key, value in newer_snapshot['data'].items():
-                if key not in ['network_id', 'module_path', 'class_name', '_graphics_initialized', 'location']:
-                    if hasattr(entity, key):
-                        setattr(entity, key, value)
-        else:
-            # Fallback to direct application
-            for key, value in target_data.items():
-                if hasattr(entity, key) and key not in ['network_id', 'module_path', 'class_name', '_graphics_initialized']:
-                    setattr(entity, key, value)
+                # Interpolate angle (if present)
+                if 'angle' in older_snapshot['data'] and 'angle' in newer_snapshot['data']:
+                    # Simple linear interpolation for angle (assuming no wrapping issues for small deltas)
+                    old_ang = float(older_snapshot['data']['angle'])
+                    new_ang = float(newer_snapshot['data']['angle'])
+                    entity.angle = old_ang + (new_ang - old_ang) * t
+
+                # Apply other properties from older snapshot (to avoid popping)
+                for key, value in older_snapshot['data'].items():
+                     if key not in ['network_id', 'module_path', 'class_name', '_graphics_initialized', 'location', 'radius', 'angle']:
+                        if hasattr(entity, key):
+                            setattr(entity, key, value)
+        
+        elif buffer:
+            # Extrapolation (Dead Reckoning)
+            # If we are past the newest snapshot, guess where entity is going
+            newest = buffer[-1]
+            if render_time > newest['timestamp']:
+                # Calculate velocity from last 2 frames if possible
+                velocity = [0, 0]
+                if len(buffer) >= 2:
+                    prev = buffer[-2]
+                    dt = newest['timestamp'] - prev['timestamp']
+                    if dt > 0 and 'location' in newest['data'] and 'location' in prev['data']:
+                        p1 = newest['data']['location']
+                        p0 = prev['data']['location']
+                        velocity = [(p1[0] - p0[0])/dt, (p1[1] - p0[1])/dt]
+                
+                # Extrapolate for a max of 0.2s to prevent overshooting
+                extrap_time = min(0.2, render_time - newest['timestamp'])
+                
+                if 'location' in newest['data']:
+                    start_pos = newest['data']['location']
+                    entity.location = [
+                        start_pos[0] + velocity[0] * extrap_time,
+                        start_pos[1] + velocity[1] * extrap_time
+                    ]
+                
+                # Apply newest properties
+                for key, value in newest['data'].items():
+                    if key not in ['network_id', 'module_path', 'class_name', '_graphics_initialized', 'location']:
+                        if hasattr(entity, key):
+                            setattr(entity, key, value)
+            else:
+                 # Should be covered by finding older/newer, but fallback
+                 pass
 
     def _remove_entity(self, network_id: str):
         """Remove an entity that no longer exists."""

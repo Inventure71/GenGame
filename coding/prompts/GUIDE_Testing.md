@@ -155,3 +155,25 @@ Per feature: Unit tests, integration tests, registration test
 - `'held_keys': [keycodes...]` (list for serialization)
 - `'mouse_buttons': [left, middle, right]`
 - Optional: `'eat'`, `'dash'`, `'poop'`, `'swap'`, `'primary'`
+
+---
+
+## 12. SPATIAL GRID (GRAPH) TESTING
+
+**CRITICAL**: The collision system now uses a `SpatialGrid` for optimization. 
+
+- **Rebuild Requirement**: If you move entities manually in a test (e.g., `char.location = [100, 100]`), the `spatial_grid` will NOT know about the move until `arena._update_spatial_grid()` or `arena.handle_collisions()` is called.
+- **Query Verification**: When testing if an object is "reachable" or "collidable," ensure it has been added to the grid. The `Arena` class handles this automatically in its update loop, but manual tests may need to trigger a rebuild.
+- **Filtering**: If a test fails to find an object, check if the `filter_func` in `get_nearby` or `get_closest` is correctly identifying the target class.
+
+**Pattern for Manual Collision Testing:**
+```python
+char.location = [spawn_x, spawn_y]
+arena.add_character(char)
+# Trigger rebuild so the grid knows where the character is
+arena._update_spatial_grid() 
+
+# Now queries will work
+nearby = arena.spatial_grid.get_nearby(spawn_x, spawn_y, 100)
+assert char in nearby
+```

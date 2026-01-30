@@ -100,6 +100,7 @@ Immutable game loop and safe‑zone management. Override in GameFolder for gamep
 - `self.safe_zone`: `SafeZone` instance
 - `self.enable_safe_zone`: If True, applies safe‑zone damage
 - `self.current_time`: Elapsed game time
+- `self.spatial_grid`: `SpatialGrid` instance for optimized collision/interaction lookup
 - `self.tick_accumulator` / `self.tick_interval`: Fixed timestep accumulator and interval (internal)
 - `self.safe_damage_times`: Dict tracking last damage time per character
 - `self.safe_damage_interval`: Damage interval (default 1.0s)
@@ -362,6 +363,25 @@ frames, loaded, variant = AssetHandler.get_animation_from_category(
 # Legacy flat file (backward compatibility)
 image, loaded = AssetHandler.get_image("ERBA.png", size=(100, 100))
 ```
+
+---
+
+## 10. Spatial Grid (`SpatialGrid`)
+**File**: `BASE_components/BASE_spatial.py`
+
+### Purpose
+Shared spatial partitioning engine for high-performance collision and interaction queries. Used by both client (prediction) and server (authoritative logic).
+
+### Key Methods
+- `clear()`: Wipes the grid (called before rebuild)
+- `add(obj)`: Adds an object to all cells it overlaps. Supports `WorldObstacle`, `GrassField`, `AbilityPickup`, `Character`, and `Effect` types.
+- `get_nearby(x, y, radius, filter_func=None)`: Returns a `set` of objects within cells overlapping the search circle.
+- `get_closest(x, y, radius, filter_func=None)`: Returns `(object, distance)` for the single closest item matching the criteria.
+
+### Best Practices
+- **Rebuild Frequency**: The grid is typically rebuilt once per frame at the start of the collision pass to ensure move-heavy frames are perfectly accurate.
+- **Filtering**: Use `filter_func` to narrow down results (e.g., `lambda o: isinstance(o, GrassField)`) instead of filtering the returned set manually.
+- **Opt-in Collisions**: When using `get_nearby` for physics, always check for specific blocking types (e.g., `obstacle_type == 'blocking'`) to avoid colliding with non-physical interactive objects like grass.
 
 ---
 

@@ -176,18 +176,59 @@ def reload_game_code() -> types.ModuleType:
 
         # 2. Reload all dependencies first (but skip arena - we'll reload it after ability names are updated)
     arena_module = None
+    modules_to_reload = []
+    
+    # Sort modules to respect dependencies (simple heuristic: reload deeper packages first if possible, 
+    # but Python's reload is tricky with circular deps. Let's just do a best effort.)
+    # We'll reload all GameFolder modules except setup and arena first.
     for name, module in game_modules:
         if name == 'GameFolder.setup':
             continue
         if name == 'GameFolder.arenas.GAME_arena':
-            # Save arena module to reload later, after ability names are updated
             arena_module = module
             continue
-        try:
-            importlib.reload(module)
-        except Exception as e:
-            print(f"[error] Failed to reload {name}: {e}")
-            traceback.print_exc()
+        modules_to_reload.append((name, module))
+    
+    # Reload loop with retry for dependency issues
+    max_retries = 3
+    failed_modules = []
+    
+    for _ in range(max_retries):
+        current_failed = []
+        for name, module in modules_to_reload:
+            try:
+                importlib.reload(module)
+            except (ModuleNotFoundError, ImportError) as e:
+                # If spec is missing, it might be a deleted file or a weird state. 
+                # Try to invalidate cache and re-import
+                if "spec not found" in str(e):
+                    try:
+                        importlib.invalidate_caches()
+                        # If module is in sys.modules but has no spec, it's a zombie. Remove it.
+                        if name in sys.modules:
+                            del sys.modules[name]
+                        # Try fresh import
+                        __import__(name)
+                        # Update reference in our list if needed
+                        module = sys.modules[name]
+                        # And reload again to be sure
+                        importlib.reload(module)
+                    except Exception as e2:
+                        current_failed.append((name, module))
+                        # print(f"[warning] Retry reload failed for {name}: {e2}")
+                else:
+                    current_failed.append((name, module))
+            except Exception as e:
+                # print(f"[warning] Reload failed for {name}: {e}")
+                current_failed.append((name, module))
+        
+        if not current_failed:
+            break
+        modules_to_reload = current_failed # Retry only failed ones
+        failed_modules = current_failed
+
+    if failed_modules:
+        print(f"[warning] {len(failed_modules)} modules failed to reload after retries (might be expected if files were deleted)")
    
     import os
     game_folder_path = os.path.join(os.path.dirname(__file__), '..', 'GameFolder')
