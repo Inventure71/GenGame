@@ -1,4 +1,5 @@
 import os
+import json
 import ctypes
 
 # Set video driver BEFORE importing pygame
@@ -108,8 +109,11 @@ class BaseMenu:
         # Patch saving state
         self.patch_name = ""
 
-        # Patch manager
-        self.patch_manager = PatchManager()
+        # Patch manager (loads from database when server_patches.db exists, else from __patches)
+        _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _patches_dir = os.path.join(_project_root, "__patches")
+        _db_path = os.path.join(_project_root, "server_patches.db")
+        self.patch_manager = PatchManager(patches_directory=_patches_dir, db_path=_db_path)
         self.patch_manager.scan_patches()  # Initial scan
         self.patches_ready = False  # Track if player marked patches as ready
 
@@ -121,6 +125,12 @@ class BaseMenu:
         self.server_patch_total = 0
         self.server_patch_search = ""
         self.server_patch_loading = False
+        # Retry with exponential backoff when no patches / not connected (5s, 10s, 20s, ...)
+        self.server_patch_retry_at = None
+        self.server_patch_retry_count = 0
+        # Reconnection target (set by connect_to_server when opening community patches)
+        self.target_server_ip = None
+        self.target_server_port = None
 
         # Initialize component classes
         self.network = MenuNetwork(self)
@@ -160,6 +170,12 @@ class BaseMenu:
             self.server_patch_page = 0
             self.server_patch_selected_index = -1
             self.server_patch_items = []
+            # If not connected, schedule retry (exponential backoff) and try reconnect in loop
+            if not self.client or not self.client.connected:
+                self.server_patch_retry_at = time.time() + 5
+                self.server_patch_retry_count = 0
+            else:
+                self.server_patch_retry_at = None
             self.request_server_patch_page(0)
         else:
             self.in_room = False
@@ -197,6 +213,30 @@ class BaseMenu:
             # Update network client if connected
             if self.client:
                 self.client.update()
+                # Clear disconnect-related error once we're connected again
+                if self.client.connected and self.error_message:
+                    msg_lower = self.error_message.lower()
+                    if "disconnect" in msg_lower or "reconnect" in msg_lower or "please reconnect" in msg_lower:
+                        self.error_message = None
+
+            # Community patches: if no patches / not connected, retry with exponential backoff and reconnect
+            if self.running and self.current_menu == "server_library":
+                retry_at = getattr(self, 'server_patch_retry_at', None)
+                if retry_at is not None and time.time() >= retry_at:
+                    self.server_patch_retry_at = None
+                    # Try to reconnect if disconnected
+                    if not self.client or not self.client.connected:
+                        from BASE_files.BASE_menu_helpers import REMOTE_DOMAIN
+                        host = getattr(self, 'target_server_ip', None) or REMOTE_DOMAIN
+                        port = getattr(self, 'target_server_port', None) or getattr(self.network, 'server_port', 5555)
+                        if self.network.connect_to_server(host, port):
+                            self.request_server_patch_page(0)
+                    else:
+                        self.request_server_patch_page(0)
+                    # Exponential backoff: 5s, 10s, 20s, ... (cap at ~5 * 2^10)
+                    count = getattr(self, 'server_patch_retry_count', 0)
+                    self.server_patch_retry_count = min(count + 1, 10)
+                    self.server_patch_retry_at = time.time() + (5 * (2 ** self.server_patch_retry_count))
 
             # Only render if still running (in case game was started during update)
             if self.running:
@@ -547,6 +587,12 @@ class BaseMenu:
             self.server_patch_items = []
             self.server_patch_selected_index = -1
             self.client.request_patch_library_page(page, self.server_patch_page_size, self.server_patch_search)
+        else:
+            # Not connected: schedule retry with exponential backoff (handled in run_menu_loop)
+            if self.current_menu == "server_library":
+                if getattr(self, 'server_patch_retry_at', None) is None:
+                    self.server_patch_retry_at = time.time() + 5
+                    self.server_patch_retry_count = 0
 
     def patch_library_page_callback(self, items: list, page: int, total: int, page_size: int, search: str):
         self.server_patch_items = items or []
@@ -557,9 +603,44 @@ class BaseMenu:
         self.server_patch_search = search or self.server_patch_search
         self.server_patch_selected_index = -1
         self.server_patch_loading = False
+        # No patches: schedule retry with exponential backoff and reconnect
+        if (not self.server_patch_items and self.server_patch_total == 0) and (self.client and self.client.connected):
+            self.server_patch_retry_at = time.time() + 5
+            self.server_patch_retry_count = 0
+        elif self.server_patch_items or self.server_patch_total > 0:
+            self.server_patch_retry_at = None
 
     def patch_library_downloaded_callback(self, patch_path: str, base_backup: str, patch_id: str):
-        self.show_error_message(f"Downloaded patch: {os.path.basename(patch_path)}")
+        """Save downloaded patch to database and remove the JSON file once added."""
+        try:
+            if getattr(self.patch_manager, '_patch_db', None) and patch_path and os.path.isfile(patch_path):
+                with open(patch_path, 'r') as f:
+                    data = json.load(f)
+                patch_data = {
+                    'name_of_backup': data.get('name_of_backup', base_backup or 'Unknown'),
+                    'prompt_used': data.get('prompt_used', ''),
+                    'changes': data.get('changes', []),
+                }
+                if data.get('game_hash'):
+                    patch_data['game_hash'] = data['game_hash']
+                patch_hash = str(patch_id) if patch_id else str(hash(json.dumps(patch_data.get('changes', []))))
+                name = os.path.splitext(os.path.basename(patch_path))[0] or 'Community Patch'
+                self.patch_manager._patch_db.add_patch(
+                    patch_data,
+                    creator_name='Community',
+                    patch_hash=patch_hash,
+                    name=name,
+                )
+                # Delete the JSON file once it's in the database so we don't keep duplicates
+                try:
+                    os.remove(patch_path)
+                    print(f"Saved patch to database and removed: {patch_path}")
+                except OSError as e:
+                    print(f"Could not remove patch file {patch_path}: {e}")
+            self.show_error_message(f"Downloaded patch: {os.path.basename(patch_path)}")
+        except Exception as e:
+            print(f"Error saving patch to database: {e}")
+            self.show_error_message(f"Downloaded but save failed: {e}")
         self.patch_manager.scan_patches()
 
     def patch_library_error_callback(self, error: str):
@@ -729,14 +810,19 @@ class BaseMenu:
     def disconnected_callback(self):
         """Callback when client gets disconnected from server."""
         print("🔌 Disconnected from server")
-        print("Returning to room menu...")
+
+        # Capture before reset: only switch to room UI if we were actually in a room.
+        # If we were on main menu (e.g. opening Community Patches), disconnect() is
+        # called intentionally by connect_to_server() before reconnecting — do not force room UI.
+        was_in_room = self.in_room
 
         # Reset room state since connection is lost
         self.reset_room_state()
 
-        # Go back to room menu and show disconnection message
-        self.show_menu("room")
-        self.show_error_message("Disconnected from server. Please reconnect.")
+        if was_in_room:
+            print("Returning to room menu...")
+            self.show_menu("room")
+            self.show_error_message("Disconnected from server. Please reconnect.")
 
     def _load_settings(self):
         settings_dict = load_settings()

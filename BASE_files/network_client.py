@@ -34,6 +34,7 @@ from BASE_files.transfer_manager import (
     client_handle_patch_file,
     client_handle_patch_library_file,
     client_handle_backup_download_chunk,
+    client_handle_patch_file_chunk,
 )
 
 
@@ -85,6 +86,7 @@ class NetworkClient:
 
         # File transfer state
         self.file_transfers = {}  # file_path -> {'chunks': {}, 'total_chunks': 0, 'received_chunks': 0}
+        self.patch_transfers = {}  # filename -> transfer state for patches
         self.backup_download_transfers = {}  # backup_name -> transfer state for downloads
         
         # File sync tracking
@@ -147,6 +149,7 @@ class NetworkClient:
         self.outgoing_queue.clear()
         self.input_timestamps.clear()
         self.file_transfers.clear()
+        self.patch_transfers.clear()
         self.backup_download_transfers.clear()
         # Clear packet stats but keep structure
         self.packet_stats['total_received'] = 0
@@ -631,6 +634,16 @@ class NetworkClient:
                 self.on_file_received(message['file_path'], message.get('success', True))
         elif msg_type == 'patch_file':
             self._handle_patch_file(message)
+        elif msg_type == 'patch_file_chunk':
+            patch_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "__patches")
+            client_handle_patch_file_chunk(
+                message,
+                self.patch_transfers,
+                patch_dir,
+                self._send_patch_received,
+                self.send_patch_applied,
+                on_patch_received=self.on_patch_received,
+            )
         elif msg_type == 'patch_library_page':
             if self.on_patch_library_page:
                 self.on_patch_library_page(

@@ -18,6 +18,7 @@ import select
 from BASE_files.BASE_menu_helpers import get_local_ip, encrypt_code
 from BASE_files.server_state import ServerStateManager
 from BASE_files.server_sync import ServerSyncManager
+from BASE_files.patch_database import PatchDatabase
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -135,6 +136,17 @@ class GameServer:
         # Managers
         self.state_manager = ServerStateManager(self)
         self.sync_manager = ServerSyncManager(self)
+        
+        # Ensure clean state on startup
+        merged_patch_path = os.path.join(self.server_patches_dir, "merged_patch.json")
+        if os.path.exists(merged_patch_path):
+            try:
+                os.remove(merged_patch_path)
+                print("✓ Cleared stale merged_patch.json on startup")
+            except Exception as e:
+                print(f"[warning] Failed to clear stale merged_patch.json: {e}")
+
+        self.patch_db = PatchDatabase()
         self.sync_manager.load_game_files()
 
         print(f"Server initialized on {host}:{port}")
@@ -750,6 +762,11 @@ class GameServer:
                     self._send_data_safe(self.clients[player_id], length_bytes + data)
                 except Exception as e:
                     print(f"Failed to send character assignment: {e}")
+
+                # Check if we are in patch sync phase - if so, send the patch to this client
+                if (self.waiting_for_patch_received or self.waiting_for_patch_sync) and hasattr(self, 'current_patch_path') and self.current_patch_path:
+                     print(f"Client joined during patch sync - sending merge patch: {self.current_patch_path}")
+                     self.sync_manager.send_patch_file(player_id, self.current_patch_path)
         elif msg_type == 'file_request':
             # Client requesting a file
             self.sync_manager.handle_file_request(player_id, message)

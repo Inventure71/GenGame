@@ -806,7 +806,7 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
             print(f"Failed to load patch: {errors}")
             return False, None, None, "", ""
         
-        backup_name, _, _, old_prompt = vc.load_from_extension_file(patch_to_load) # TODO: add old_prompt to fix system
+        backup_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_to_load) # TODO: add old_prompt to fix system
         action_logger.prompt_used = old_prompt
         print(f"Patch loaded successfully. Base backup: {backup_name}")
 
@@ -814,7 +814,7 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
         # We assume the UI already loaded the patch, but we still need the backup_name for saving
         from coding.non_callable_tools.version_control import VersionControl
         vc = VersionControl()
-        backup_name, _, _, old_prompt = vc.load_from_extension_file(patch_to_load)
+        backup_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_to_load)
         action_logger.prompt_used = old_prompt
         print(f"Using already loaded patch context. Base backup: {backup_name}")
 

@@ -108,6 +108,15 @@ class VersionControl:
         try:
             # STEP 2: Generate patch (now includes the seed change)
             changes, metadata = self.create_patch_from_folders(base_folder, "GameFolder", name_of_backup)
+            
+            # Calculate resulting game hash for deduplication
+            try:
+                game_hash = self.security_backup_handler.compute_directory_hash("GameFolder")
+                print(f"    ✓ Calculated GameFolder hash: {game_hash[:8]}...")
+            except Exception as e:
+                print(f"    Warning: Failed to compute GameFolder hash: {e}")
+                game_hash = None
+                
         except Exception as e:
             print(f"ERROR: Failed to create patch from folders: {e}")
             # Restore original if we modified it
@@ -124,7 +133,15 @@ class VersionControl:
         if len(changes) > 0:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump({"name_of_backup": name_of_backup, "prompt_used": prompt_used, "changes": changes}, f, indent=2, ensure_ascii=False)
+                    patch_data = {
+                        "name_of_backup": name_of_backup, 
+                        "prompt_used": prompt_used, 
+                        "changes": changes
+                    }
+                    if game_hash:
+                        patch_data["game_hash"] = game_hash
+                        
+                    json.dump(patch_data, f, indent=2, ensure_ascii=False)
 
                 metadata_path = file_path.replace('.json', '_metadata.json')
                 with open(metadata_path, 'w', encoding='utf-8') as f:
@@ -169,13 +186,15 @@ class VersionControl:
         name_of_backup = data["name_of_backup"]
         prompt_used = data.get("prompt_used", "") # this is necessary for backwords compatibility
         changes = data["changes"]
+        game_hash = data.get("game_hash")
+        
         if os.path.exists(file_path.replace('.json', '_metadata.json')):
             with open(file_path.replace('.json', '_metadata.json'), 'r') as f:
                 metadata = json.load(f)
         else:
-            print(f"No metadata file found for {file_path}")
+            # print(f"No metadata file found for {file_path}")
             metadata = []
-        return name_of_backup, changes, metadata, prompt_used
+        return name_of_backup, changes, metadata, prompt_used, game_hash
     
     def valid_apply(self, file_path: str, diff: str) -> bool:
         result = modify_file_inline(file_path=file_path, diff_text=diff)
@@ -187,7 +206,7 @@ class VersionControl:
     def apply_patches(self, file_containing_patches: str, keep_changes_on_failure: bool = False):
         success_count = 0
         any_fixed = False
-        name_of_backup, changes, metadata, prompt_used = self.load_from_extension_file(file_containing_patches)
+        name_of_backup, changes, metadata, prompt_used, _ = self.load_from_extension_file(file_containing_patches)
         
         errors = {} # key: file_path, value: error_msg
         
@@ -268,7 +287,7 @@ class VersionControl:
             print("ERROR: File containing patches is not provided")
             return False, "File containing patches is not provided"
 
-        name_of_backup, changes, metadata, prompt_used = self.load_from_extension_file(file_containing_patches)
+        name_of_backup, changes, metadata, prompt_used, _ = self.load_from_extension_file(file_containing_patches)
 
         if needs_rebase:
             if path_to_BASE_backup is not None:
@@ -349,8 +368,8 @@ class VersionControl:
             output_path = "merged_patch.json"
         
         # Load both patches
-        name_a, changes_a, _, old_prompt_a = self.load_from_extension_file(patch_a_path)
-        name_b, changes_b, _, old_prompt_b = self.load_from_extension_file(patch_b_path)
+        name_a, changes_a, _, old_prompt_a, _ = self.load_from_extension_file(patch_a_path)
+        name_b, changes_b, _, old_prompt_b, _ = self.load_from_extension_file(patch_b_path)
 
         combined_prompt = old_prompt_a + old_prompt_b
         

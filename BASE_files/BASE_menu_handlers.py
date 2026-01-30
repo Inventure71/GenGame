@@ -100,18 +100,19 @@ class MenuHandlers:
         self.menu.show_menu("library")
 
     def on_server_library_click(self):
-        """Handle server patch library button click."""
+        """Handle server patch library button click. Checks connection; if not connected, tries to connect then shows community patches."""
         print("Server Patch Library clicked")
-        
-        # If already connected, just go there
-        if self.menu.client and self.menu.client.connected:
-            self.menu.show_menu("server_library")
-            return
 
         if not self.menu.player_id.strip():
             self.menu.show_error_message("Error: Please enter a Player ID before connecting")
             return
 
+        # If already connected, go to community patches
+        if self.menu.client and self.menu.client.connected:
+            self.menu.show_menu("server_library")
+            return
+
+        # Not connected: try to connect, then show server_library (or error)
         self.menu.loading_message = "Connecting to Server Library..."
 
         def connect_library_task():
@@ -119,10 +120,10 @@ class MenuHandlers:
                 if self.menu.network.connect_to_server(REMOTE_DOMAIN, self.menu.network.server_port):
                     self.menu.show_menu("server_library")
                 else:
-                    self.menu.show_error_message("Failed to connect to public server")
+                    self.menu.show_error_message("Not connected to server. Failed to connect to public server.")
             except Exception as e:
                 print(f"Error connecting to library: {e}")
-                self.menu.show_error_message(f"Connection error: {e}")
+                self.menu.show_error_message(f"Not connected to server. Connection error: {e}")
             finally:
                 self.menu.loading_message = None
 
@@ -177,14 +178,17 @@ class MenuHandlers:
             print("Not connected to server!")
 
     def on_back_to_menu_click(self):
-        """Handle back to menu button click."""
+        """Handle back to menu button click (intentional exit from room)."""
         print("Back to Menu clicked")
 
         # Clear patch selections when leaving room
         self.menu.patch_manager.clear_selections()
         print("✓ Patch selections cleared")
 
-        # Disconnect client first
+        # Switch to main menu first so disconnected_callback won't show "Disconnected from server"
+        # when we disconnect (user left on purpose).
+        self.menu.show_menu("main")
+
         if self.menu.client and self.menu.client.connected:
             self.menu.client.disconnect()
 
@@ -197,8 +201,6 @@ class MenuHandlers:
             self.menu.network.server_thread.join(timeout=2.0)
             self.menu.network.server_instance = None
             self.menu.network.server_thread = None
-
-        self.menu.show_menu("main")
 
     def on_library_back_click(self):
         """Handle library back button click."""
@@ -389,21 +391,43 @@ class MenuHandlers:
         patch = self.menu.patch_manager.available_patches[patch_index]
         print(f"Loading patch '{patch.name}' into workspace...")
         
-        # We perform the loading in a background thread to keep UI responsive
         def load_task():
+            import tempfile
+            import json
             from coding.non_callable_tools.version_control import VersionControl
             vc = VersionControl()
+            # Resolve patch path: from DB write to temp file, else use file_path
+            patch_path = patch.file_path
+            temp_patch_path = None
+            if patch.patch_id and getattr(self.menu.patch_manager, '_patch_db', None):
+                data = self.menu.patch_manager._patch_db.get_patch_by_id(patch.patch_id)
+                if data:
+                    content = {
+                        'name_of_backup': data.get('name_of_backup', 'Unknown'),
+                        'prompt_used': data.get('prompt_used', ''),
+                        'changes': data.get('changes', []),
+                    }
+                    if data.get('game_hash'):
+                        content['game_hash'] = data['game_hash']
+                    temp_patch_path = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+                    json.dump(content, temp_patch_path, indent=2)
+                    temp_patch_path.close()
+                    patch_path = temp_patch_path.name
+            if not patch_path or not os.path.exists(patch_path):
+                print(f"✗ No patch content for '{patch.name}'")
+                self.menu.show_error_message("Patch content not found")
+                return
             success, errors = vc.apply_all_changes(
-                needs_rebase=True, 
-                path_to_BASE_backup="__game_backups", 
-                file_containing_patches=patch.file_path,
+                needs_rebase=True,
+                path_to_BASE_backup="__game_backups",
+                file_containing_patches=patch_path,
                 skip_warnings=True
             )
             if success:
                 self.menu.agent_selected_patch_idx = patch_index
-                self.menu.agent_active_patch_path = patch.file_path
+                self.menu.agent_active_patch_path = patch_path
                 # Update the base working backup to match the patch's base
-                backup_name, _, _, old_prompt = vc.load_from_extension_file(patch.file_path)
+                backup_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_path)
                 self.menu.base_working_backup = backup_name
                 self.menu.action_logger.prompt_used = old_prompt
                 

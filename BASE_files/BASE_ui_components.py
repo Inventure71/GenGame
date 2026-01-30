@@ -981,7 +981,7 @@ class AgentWorkspace(UIComponent):
         # Monitor link
         mon_text = "Live Monitor: http://127.0.0.1:8765"
         mon_surf = AssetHandler.render_text_from_font(mon_text, self.menu.small_font, THEME["accent"])
-        mon_rect = mon_surf.get_rect(center=(self.rect.centerx, self.rect.y + 300))
+        mon_rect = mon_surf.get_rect(topright=(self.rect.right - 10, self.rect.y + 8))
         screen.blit(mon_surf, mon_rect)
 
 class TextFieldWithPaste(UIComponent):

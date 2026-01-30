@@ -11,6 +11,8 @@ import os
 import tarfile
 import tempfile
 import time
+import json
+import hashlib
 from datetime import datetime
 
 from coding.non_callable_tools.backup_handling import BackupHandler
@@ -428,20 +430,92 @@ def server_request_backup_from_client(server, player_id: str, backup_name: str) 
 
 def server_send_patch_file(server, player_id: str, patch_file_path: str) -> None:
     try:
-        with open(patch_file_path, 'rb') as f:
-            patch_content = f.read()
+        def message_factory(chunk_num: int, total_chunks: int, chunk_data: bytes) -> dict:
+            return {
+                'type': 'patch_file_chunk',
+                'filename': 'merge_patch.json',
+                'chunk_num': chunk_num,
+                'total_chunks': total_chunks,
+                'data': chunk_data
+            }
 
-        message = {
-            'type': 'patch_file',
-            'filename': 'merge_patch.json',
-            'content': patch_content,
-            'size': len(patch_content)
-        }
+        outgoing_queue = []
+        file_size = os.path.getsize(patch_file_path)
+        # Use smaller chunk size (8KB) to prevent timeouts on large patches
+        total_chunks = queue_chunked_file(outgoing_queue, patch_file_path, message_factory, chunk_size=8192)
 
-        server._send_message_to_client(player_id, message)
-        print(f"Sent merge patch to {player_id} ({len(patch_content)} bytes)")
+        print(f"Sending merge patch to {player_id} ({total_chunks} chunks, {file_size} bytes)")
+        
+        for msg in outgoing_queue:
+            server._send_message_to_client(player_id, msg)
+            
     except Exception as e:
         print(f"Failed to send patch to {player_id}: {e}")
+
+
+def client_handle_patch_file_chunk(
+    message: dict,
+    patch_transfers: Dict[str, dict],
+    patch_dir: str,
+    send_patch_received: Callable[[], None],
+    send_patch_applied: Callable[[bool, Optional[str]], None],
+    on_patch_received: Optional[Callable[[str], None]] = None,
+) -> None:
+    """Handle incoming patch file chunk from server."""
+    filename = message.get('filename', 'merge_patch.json')
+    chunk_num = message.get('chunk_num')
+    total_chunks = message.get('total_chunks')
+    chunk_data = message.get('data')
+
+    if not all([isinstance(chunk_num, int), isinstance(total_chunks, int), chunk_data]):
+        print(f"Invalid patch chunk received for {filename}")
+        return
+
+    if filename not in patch_transfers:
+        patch_transfers[filename] = {
+            'chunks': {},
+            'total_chunks': total_chunks,
+            'received_chunks': 0,
+            'start_time': time.time()
+        }
+
+    transfer = patch_transfers[filename]
+
+    if chunk_num not in transfer['chunks']:
+        transfer['chunks'][chunk_num] = chunk_data
+        transfer['received_chunks'] += 1
+        
+        # Optional: Print progress for large patches
+        if total_chunks > 5 and transfer['received_chunks'] % 5 == 0:
+             print(f"Patch download progress: {transfer['received_chunks']}/{total_chunks}")
+
+    if transfer['received_chunks'] == total_chunks:
+        try:
+            # Assemble file
+            os.makedirs(patch_dir, exist_ok=True)
+            patch_path = os.path.join(patch_dir, filename)
+            
+            with open(patch_path, 'wb') as f:
+                for i in range(total_chunks):
+                    if i in transfer['chunks']:
+                        f.write(transfer['chunks'][i])
+                    else:
+                        raise ValueError(f"Missing chunk {i}")
+            
+            print(f"Received and assembled patch file: {patch_path}")
+            
+            # Trigger success callbacks
+            send_patch_received()
+
+            if on_patch_received:
+                on_patch_received(patch_path)
+                
+        except Exception as e:
+            print(f"Error assembling patch file: {e}")
+            send_patch_applied(False, f"Failed to assemble patch file: {str(e)}")
+        finally:
+            del patch_transfers[filename]
+
 
 
 def server_send_file_chunks(server, player_id: str, file_path: str, full_path: str, chunk_size: int = 64 * 1024) -> None:
@@ -571,6 +645,25 @@ def server_assemble_patch_file(server, player_id: str, patch_name: str) -> None:
                     raise ValueError(f"Missing chunk {chunk_num}")
 
         print(f"[success] Received complete patch from {player_id}: {patch_name}")
+
+        # Add to database and delete file to save space
+        if hasattr(server, 'patch_db'):
+            try:
+                with open(patch_path, 'r', encoding='utf-8') as f:
+                    patch_data = json.load(f)
+                
+                # Calculate patch content hash for deduplication
+                changes_str = json.dumps(patch_data.get("changes", []), sort_keys=True)
+                patch_hash = hashlib.sha256(changes_str.encode('utf-8')).hexdigest()
+                
+                patch_db_id = server.patch_db.add_patch(patch_data, player_id, patch_hash, name=patch_name)
+                print(f"    ✓ Stored in DB (ID: {patch_db_id})")
+                
+                # We can delete the file now, as we'll recreate it when needed for merging
+                os.remove(patch_path)
+                print(f"    ✓ Deleted temporary patch file: {patch_path}")
+            except Exception as db_err:
+                print(f"    [error] Failed to store patch in DB: {db_err}")
 
         del server.client_patch_files[key]
 

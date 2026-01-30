@@ -124,6 +124,9 @@ class ServerSyncManager:
             self.notify_all_clients_game_start()
             return
 
+        # Store current patch path for late joiners/reconnections
+        self.server.current_patch_path = patch_path
+
         print(f"Sending merge patch to all clients: {patch_path}")
         self.server.waiting_for_patch_received = True
         self.server.clients_patch_received.clear()
@@ -134,7 +137,54 @@ class ServerSyncManager:
             self.send_patch_file(player_id, patch_path)
 
     def generate_merge_patch(self) -> Optional[str]:
-        """Generate a single merge_patch.json from all patches in __patches directory."""
+        """
+        Get the merge patch to distribute.
+        Priority:
+        1. Existing 'merged_patch.json' in server_patches_dir (created by recent merge)
+        2. Latest patch from DB (if available)
+        3. Fallback: Scan __patches directory (legacy)
+        """
+        # 1. Check for existing merged_patch.json (result of client patch selection flow)
+        # Note: This file is cleared on server startup and server reset, so it should
+        # only exist if it was generated during the current session's patch selection.
+        merged_patch_path = os.path.join(self.server.server_patches_dir, "merged_patch.json")
+        if os.path.exists(merged_patch_path):
+            print(f"Using existing merged patch: {merged_patch_path}")
+            return merged_patch_path
+
+        # 2. Check Database
+        if hasattr(self.server, 'patch_db'):
+            try:
+                # Get the most recent patch
+                items, total = self.server.patch_db.get_patches_page(0, 1, search="")
+                if items and total > 0:
+                    latest_patch = items[0]
+                    patch_id = latest_patch.get('patch_id')
+                    patch_name = latest_patch.get('name', 'latest_patch')
+                    print(f"Using latest patch from DB: {patch_name} (ID: {patch_id})")
+                    
+                    # We need to write it to a file for distribution
+                    patch_data = self.server.patch_db.get_patch_by_id(int(patch_id))
+                    if patch_data:
+                        # Reconstruct patch content
+                        content = {
+                            "name_of_backup": patch_data.get("name_of_backup"),
+                            "prompt_used": patch_data.get("prompt_used"),
+                            "changes": patch_data.get("changes")
+                        }
+                        if patch_data.get("game_hash"):
+                            content["game_hash"] = patch_data.get("game_hash")
+                            
+                        # Save to server patches dir
+                        os.makedirs(self.server.server_patches_dir, exist_ok=True)
+                        temp_path = os.path.join(self.server.server_patches_dir, "merged_patch.json")
+                        with open(temp_path, 'w', encoding='utf-8') as f:
+                            json.dump(content, f, indent=2)
+                        return temp_path
+            except Exception as e:
+                print(f"[warning] Failed to fetch patch from DB: {e}")
+
+        # 3. Fallback: Legacy file scan
         patches_dir = os.path.join(os.path.dirname(__file__), "..", "__patches")
 
         if not os.path.exists(patches_dir):
@@ -142,7 +192,7 @@ class ServerSyncManager:
             return None
 
         patch_files = [f for f in glob.glob(os.path.join(patches_dir, "*.json"))
-                       if not f.endswith("merge_patch.json")]
+                       if not f.endswith("merge_patch.json") and not f.endswith("_metadata.json")]
 
         if not patch_files:
             print("No patch files found in __patches directory")
@@ -152,11 +202,10 @@ class ServerSyncManager:
             print(f"Using single patch file: {os.path.basename(patch_files[0])}")
             return patch_files[0]
 
-        print(f"[warning]  Found {len(patch_files)} patches:")
+        print(f"[warning]  Found {len(patch_files)} patches in __patches:")
         for pf in patch_files:
             print(f"    - {os.path.basename(pf)}")
         print(f"[warning]  Using only first patch: {os.path.basename(patch_files[0])}")
-        print(f"[warning]  TODO: Implement proper 3-way merge using VersionControl.merge_patches()")
         return patch_files[0]
 
     def send_patch_file(self, player_id: str, patch_file_path: str):
@@ -259,69 +308,11 @@ class ServerSyncManager:
         server_send_file_chunks(self.server, player_id, file_path, full_path)
 
     def get_server_patch_library_page(self, page: int, page_size: int, search: str = "") -> tuple[list, int]:
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        base_dir = self.server.server_patches_dir
-        if not os.path.isabs(base_dir):
-            base_dir = os.path.join(project_root, base_dir)
-
-        if not os.path.exists(base_dir):
+        try:
+            return self.server.patch_db.get_patches_page(page, page_size, search)
+        except Exception as e:
+            print(f"Error querying patch database: {e}")
             return [], 0
-
-        search_term = (search or "").strip().lower()
-        entries = []
-
-        for root, _dirs, files in os.walk(base_dir):
-            for file_name in files:
-                if not file_name.endswith(".json"):
-                    continue
-                if file_name == "merged_patch.json":
-                    continue
-                full_path = os.path.join(root, file_name)
-                rel_path = os.path.relpath(full_path, base_dir)
-                parts = rel_path.split(os.sep)
-                player_id = parts[0] if len(parts) > 1 else "unknown"
-                patch_name = os.path.splitext(file_name)[0]
-
-                if search_term:
-                    if search_term not in patch_name.lower() and search_term not in player_id.lower():
-                        continue
-
-                try:
-                    mtime = os.path.getmtime(full_path)
-                except OSError:
-                    mtime = 0.0
-
-                entries.append((mtime, player_id, patch_name, full_path))
-
-        entries.sort(key=lambda item: item[0], reverse=True)
-        total = len(entries)
-        start = max(0, page) * max(1, page_size)
-        end = start + max(1, page_size)
-        page_entries = entries[start:end]
-
-        items = []
-        for _mtime, player_id, patch_name, full_path in page_entries:
-            base_backup = "Unknown"
-            num_changes = 0
-            try:
-                with open(full_path, 'r') as f:
-                    data = json.load(f)
-                base_backup = data.get('name_of_backup', 'Unknown')
-                changes = data.get('changes', [])
-                num_changes = len(changes) if isinstance(changes, list) else 0
-            except Exception:
-                pass
-
-            patch_id = f"{player_id}/{patch_name}"
-            items.append({
-                'patch_id': patch_id,
-                'name': patch_name,
-                'player_id': player_id,
-                'base_backup': base_backup,
-                'num_changes': num_changes
-            })
-
-        return items, total
 
     def send_patch_library_download(self, player_id: str, patch_id: str, include_backup: bool = True) -> None:
         if not patch_id:
@@ -331,44 +322,66 @@ class ServerSyncManager:
             })
             return
 
-        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        base_dir = self.server.server_patches_dir
-        if not os.path.isabs(base_dir):
-            base_dir = os.path.join(project_root, base_dir)
-        base_dir = os.path.abspath(base_dir)
-        normalized = os.path.normpath(os.path.join(base_dir, patch_id))
-        if not normalized.startswith(base_dir):
-            self.server._send_message_to_client(player_id, {
-                'type': 'patch_library_error',
-                'error': 'Invalid patch_id'
-            })
-            return
-
-        if not normalized.endswith(".json"):
-            normalized = f"{normalized}.json"
-
-        if not os.path.exists(normalized):
-            self.server._send_message_to_client(player_id, {
-                'type': 'patch_library_error',
-                'error': f'Patch not found: {patch_id}'
-            })
-            return
-
         try:
-            with open(normalized, 'rb') as f:
-                patch_content = f.read()
-
-            base_backup = "Unknown"
+            # Check if patch_id is numeric (DB ID) or path-like (Legacy file)
+            # The DB returns string IDs, so we try to parse as int
             try:
+                db_id = int(patch_id)
+                patch_data = self.server.patch_db.get_patch_by_id(db_id)
+                
+                if not patch_data:
+                    self.server._send_message_to_client(player_id, {
+                        'type': 'patch_library_error',
+                        'error': f'Patch not found in DB: {patch_id}'
+                    })
+                    return
+
+                # Reconstruct patch JSON content
+                # Ensure game_hash is included if present
+                content_dict = {
+                    "name_of_backup": patch_data.get("name_of_backup"),
+                    "prompt_used": patch_data.get("prompt_used"),
+                    "changes": patch_data.get("changes")
+                }
+                if patch_data.get("game_hash"):
+                    content_dict["game_hash"] = patch_data.get("game_hash")
+                    
+                patch_content = json.dumps(content_dict, indent=2).encode('utf-8')
+                base_backup = patch_data.get("name_of_backup", "Unknown")
+                filename = f"{patch_data.get('name', 'patch')}.json"
+                
+            except ValueError:
+                # Legacy file-based fallback
+                # This handles cases where patch_id is "username/patchname"
+                print(f"[warning] Using legacy file path for patch: {patch_id}")
+                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                base_dir = self.server.server_patches_dir
+                if not os.path.isabs(base_dir):
+                    base_dir = os.path.join(project_root, base_dir)
+                base_dir = os.path.abspath(base_dir)
+                normalized = os.path.normpath(os.path.join(base_dir, patch_id))
+                
+                if not normalized.startswith(base_dir):
+                    raise ValueError("Access denied")
+                    
+                if not normalized.endswith(".json"):
+                    normalized = f"{normalized}.json"
+                    
+                if not os.path.exists(normalized):
+                    raise ValueError(f"Patch file not found: {patch_id}")
+                    
+                with open(normalized, 'rb') as f:
+                    patch_content = f.read()
+                filename = os.path.basename(normalized)
+                
+                # Extract backup name
                 with open(normalized, 'r') as f_text:
                     data = json.load(f_text)
                 base_backup = data.get('name_of_backup', 'Unknown')
-            except Exception:
-                pass
 
             message = {
                 'type': 'patch_library_file',
-                'filename': os.path.basename(normalized),
+                'filename': filename,
                 'content': patch_content,
                 'patch_id': patch_id,
                 'base_backup': base_backup
@@ -377,7 +390,9 @@ class ServerSyncManager:
 
             if include_backup and base_backup and base_backup != "Unknown":
                 server_send_backup_archive(self.server, player_id, base_backup)
+
         except Exception as e:
+            print(f"Error sending patch download: {e}")
             self.server._send_message_to_client(player_id, {
                 'type': 'patch_library_error',
                 'error': f'Failed to send patch: {e}'
@@ -478,13 +493,38 @@ class ServerSyncManager:
                     return
 
         all_patch_paths = []
+        temp_patch_files = [] # Track files we create from DB to clean up later
+        
         for player_id, patches_info in self.server.client_patches.items():
             for patch_info in patches_info:
                 patch_name = patch_info['name']
-                patch_path = os.path.join(self.server.server_patches_dir, player_id, f"{patch_name}.json")
+                player_patch_dir = os.path.join(self.server.server_patches_dir, player_id)
+                os.makedirs(player_patch_dir, exist_ok=True)
+                patch_path = os.path.join(player_patch_dir, f"{patch_name}.json")
+                
+                # Check if file exists, if not try to recreate from DB
+                if not os.path.exists(patch_path):
+                    if hasattr(self.server, 'patch_db'):
+                        # Find patch in DB by creator and name
+                        found_patch = self.server.patch_db.get_patch_by_name_and_creator(patch_name, player_id)
+                        
+                        if found_patch:
+                            print(f"    Recreating patch file from DB: {patch_path}")
+                            with open(patch_path, 'w', encoding='utf-8') as f:
+                                # Reconstruct the original patch format
+                                content = {
+                                    "name_of_backup": found_patch["name_of_backup"],
+                                    "prompt_used": found_patch["prompt_used"],
+                                    "changes": found_patch["changes"]
+                                }
+                                if found_patch.get("game_hash"):
+                                    content["game_hash"] = found_patch["game_hash"]
+                                json.dump(content, f, indent=2)
+                            temp_patch_files.append(patch_path)
+                
                 if os.path.exists(patch_path):
                     all_patch_paths.append(patch_path)
-
+        
         print(f"Found {len(all_patch_paths)} patch files to merge")
 
         if len(all_patch_paths) == 0:
@@ -576,6 +616,19 @@ class ServerSyncManager:
         print("Distributing to clients")
 
         self.initiate_game_start_with_patch_sync(output_path)
+        
+        # Cleanup temporary patch files created from DB
+        for temp_file in temp_patch_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+                    # Try to remove player directory if empty
+                    try:
+                        os.rmdir(os.path.dirname(temp_file))
+                    except:
+                        pass
+            except:
+                pass
 
     def _normalize_seed_in_merged_patch(self, patch_path: str) -> bool:
         """
