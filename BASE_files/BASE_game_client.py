@@ -9,6 +9,7 @@ from BASE_components.BASE_spatial import SpatialGrid
 
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
+FULLSCREEN = True
 
 class ClientArena:
     """Mock arena for client-side prediction."""
@@ -162,7 +163,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT  # Viewport dimensions
         screen = pygame.display.set_mode(
             (width, height),
-            #pygame.FULLSCREEN | pygame.DOUBLEBUF,
+            pygame.FULLSCREEN if FULLSCREEN else 0 | pygame.DOUBLEBUF,
             vsync=1,
         )
         pygame.display.set_caption(f"Core Conflict Client - {player_id}")

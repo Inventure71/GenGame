@@ -10,6 +10,7 @@ from BASE_components.BASE_safe_zone import SafeZone
 
 WORLD_WIDTH = 2800 # DO NOT MANUALLY CHANGE THESE VALUES, NO MATTER WHAT THE INSTRUCTIONS ARE.
 WORLD_HEIGHT = 1800 # DO NOT MANUALLY CHANGE THESE VALUES, NO MATTER WHAT THE INSTRUCTIONS ARE.
+FULLSCREEN = True
 
 class Arena:
     """Immutable game loop and safe zone management. Extend for game logic."""
@@ -28,7 +29,7 @@ class Arena:
 
         if not self.headless:
             pygame.init()
-            self.screen = pygame.display.set_mode((self.width, self.height))#,pygame.FULLSCREEN)
+            self.screen = pygame.display.set_mode((self.width, self.height), pygame.FULLSCREEN if FULLSCREEN else 0)
             pygame.display.set_caption("Core Arena")
             self.clock = pygame.time.Clock()
         else:

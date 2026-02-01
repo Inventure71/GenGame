@@ -24,6 +24,8 @@ from BASE_components.BASE_asset_handler import AssetHandler
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.action_logger import ActionLogger
 
+FULLSCREEN = True
+
 # Features:
 # - Main menu
 # -- Create/Join room
@@ -58,7 +60,7 @@ class BaseMenu:
         print("Creating window...")
         self.screen = pygame.display.set_mode(
             (DEFAULT_WIDTH, DEFAULT_HEIGHT),
-            #pygame.FULLSCREEN | pygame.DOUBLEBUF,
+            pygame.FULLSCREEN if FULLSCREEN else 0 | pygame.DOUBLEBUF,
             vsync=1,
         )
 
