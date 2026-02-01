@@ -22,6 +22,9 @@ You are a QA engineer writing tests in `GameFolder/tests/` for new game features
    - Return types (e.g., `update()` → bool)
    - Attribute names (never assume)
    - State flags
+   - **Abilities**: When testing abilities, use the **exact** `ABILITY["name"]` from the implementation (spelling, spaces, hyphens). Verify the ability module has `activate` (and `ultimate` if the ability has one); tests that assume a different name or missing key will fail.
+   - **BASE imports**: When a test imports from `BASE_components` (e.g. BASE_camera, BASE_network), use the **exact** class/variable names exported by that module. Do **not** assume common names (e.g. "Camera"); read the BASE file or BASE_COMPONENTS_DOCS.md to get the actual name (e.g. **BaseCamera**). Wrong import names cause ImportError and block the whole test file.
+   - **Serialization in tests**: For NetworkObject subclasses (effects, pickups, platforms), the BASE pattern is **`obj.__getstate__()`** and **`NetworkObject.create_from_network_data(state)`**. Do **not** assume `.serialize()` or `.deserialize()` exist unless you verify them in BASE_network.py. Follow existing tests (e.g. test_gameplay_integration.py, test_network_serialization.py) for the exact API.
 
 5. **Pre-flight check for entity placement:**
    - [ ] Placing effect/pickup at character location?
@@ -61,24 +64,26 @@ You are a QA engineer writing tests in `GameFolder/tests/` for new game features
   - Tests whose outcome depends on unseeded RNG or on the incidental contents of auto-spawned world state.
   - Tests that assume a specific number or placement of auto-spawned objects without explicitly creating them.
 
+- **Probabilistic / chance-based behavior**:
+  - Tests must **pass 100% of the time**. The thing under test (e.g. a spawn, a drop) may only happen sometimes—that is fine.
+  - When the **feature** is chance-based (e.g. "5% chance to spawn", "random drop"), **do not** assert on a single run; that makes the test flaky (pass sometimes, fail sometimes).
+  - **Use a bounded for loop**: run the scenario many times (e.g. `for _ in range(100):` or `range(200)`) and assert that the expected outcome occurred **at least once**. Then the test always passes while validating the probabilistic behavior.
+  - Example: testing "RainbowRyePatch has a chance to spawn" → loop N times with a seed or repeated setup, check `any(isinstance(g, RainbowRyePatch) for g in arena.grass_fields)` (or similar) **after the loop**, having set a flag inside the loop when the outcome happened; then assert the flag is True.
+
 ---
 
 ## EXECUTION ORDER (CRITICAL)
 
-**Before placing entities at character locations:**
+**Before placing entities at character location:**
 
-`handle_collisions()` order:
-1. `_resolve_obstacle_collisions()` → **MOVES** character
-2. `_resolve_poops()` → May move character
-3. `_apply_effects()` → Checks collisions
-4. Pickup checks
+`handle_collisions()` resolves obstacles first (which can **move** the character), then effects and pickups. If you place an effect or pickup at the character's *initial* location, the character may have been pushed away by obstacle resolution and won't collide.
 
 **Pattern:**
 ```python
-# ✅ CORRECT
-arena.handle_collisions()  # Let character settle
+# ✅ CORRECT: settle character, then place at final position
+arena.handle_collisions()
 char_final = char.location[:]
-effect = RadialEffect(char_final, ...)  # Place at final location
+effect = RadialEffect(char_final, ...)
 arena.add_effect(effect)
 arena.handle_collisions()  # Now test collision
 ```

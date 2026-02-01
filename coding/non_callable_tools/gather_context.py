@@ -111,8 +111,9 @@ def gather_context_coding():
         f"## File Outlines (structure overview - use get_file_outline for details):\n"
         f"{gather_all_file_outlines('GameFolder')}\n\n"
         f"Do NOT call get_tree_directory - use the paths above.\n\n"
-        f"Note: High-level docs (`*_DOCS.md`, guides) are not included here; the code itself is the source of truth. "
-        f"If you need conceptual background, you may read them explicitly, but always confirm behavior against real implementations.\n\n"
+        f"## Guide for adding abilities (patterns; verify against code):\n"
+        f"{open_file(file_path='coding/prompts/GUIDE_Adding_Abilities.md')}\n\n"
+        f"Note: Code is the source of truth. When adding abilities or effects, follow the guide above and confirm behavior against real implementations.\n\n"
         f"=== END OF STARTING CONTEXT ===\n\n"
         f"⚡ REMINDER: Use tools in PARALLEL. If you need multiple files, read ALL of them in ONE response. ⚡"
     )
@@ -131,13 +132,10 @@ def gather_context_testing():
         "⚡ CRITICAL REMINDER: Batch ALL file reads in ONE turn (5-10+ parallel calls is expected). Sequential reading is FORBIDDEN. ⚡",
         "",
         "## 🚨 EXECUTION ORDER WARNING (CRITICAL FOR COLLISION TESTS):",
-        "When testing collisions, effects, or pickups:",
-        "1. `handle_collisions()` calls `_resolve_obstacle_collisions()` FIRST",
-        "2. This MOVES characters if they overlap obstacles",
-        "3. Effect/pickup checks happen AFTER obstacle resolution",
-        "4. If you place entities at character's initial location, they won't collide!",
-        "5. SOLUTION: Call `handle_collisions()` first, capture final location, then place entities",
-        "6. See GUIDE_Testing.md section 6.5 for detailed patterns and examples",
+        "handle_collisions() resolves obstacles first (can move the character), then effects and pickups.",
+        "If you place entities at the character's initial location, they may not collide after obstacle push-out.",
+        "SOLUTION: Call handle_collisions() once, capture char.location, then place entities at that position.",
+        "See GUIDE_Testing.md (EXECUTION ORDER / TEST PATTERNS) for examples.",
         "",
         "## CRITICAL: Character & Ability Attributes",
         "Before writing tests, note these BASE_components facts:",
@@ -159,6 +157,10 @@ def gather_context_testing():
         "### Arena Effects",
         "- `arena.handle_collisions(dt)` applies ALL effects each call (damage, knockback, recoil)",
         "- Effects ACCUMULATE across loop iterations",
+        "",
+        "## 🚨 BASE IMPORTS & SERIALIZATION (CRITICAL):",
+        "When a test imports from BASE_components, use the EXACT export name from that module (e.g. BaseCamera from BASE_camera, NOT 'Camera'). Check the BASE file or BASE_COMPONENTS_DOCS.md.",
+        "For serializing effects/pickups/platforms (NetworkObject): use obj.__getstate__() and NetworkObject.create_from_network_data(state). Do NOT assume .serialize() or .deserialize() exist; follow test_gameplay_integration.py and test_network_serialization.py.",
         "",
         "## Testing Guide (patterns only; verify expectations against code):",
         open_file(file_path="coding/prompts/GUIDE_Testing.md"),

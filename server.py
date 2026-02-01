@@ -316,11 +316,12 @@ class GameServer:
         # Get list of connected player names (these are already the custom names)
         connected_player_names = list(self.clients.keys())
 
-        # In practice mode, add a dummy AI player with unlimited lives
+        # In practice mode, add multiple dummy AI players with unlimited lives
+        PRACTICE_DUMMY_COUNT = 3
         if self.practice_mode and len(connected_player_names) == 1:
-            # Add dummy AI player for practice mode
-            connected_player_names.append("AI_Bot_Practice")
-            print(f"Practice mode: Adding AI bot. Players: {connected_player_names}")
+            for i in range(PRACTICE_DUMMY_COUNT):
+                connected_player_names.append(f"AI_Bot_Practice_{i + 1}")
+            print(f"Practice mode: Adding {PRACTICE_DUMMY_COUNT} AI bots. Players: {connected_player_names}")
         else:
             print(f"Recreating arena with players: {connected_player_names}")
 
@@ -340,10 +341,11 @@ class GameServer:
             world_height = getattr(setup_module, "WORLD_HEIGHT", 900)
             self.arena = setup_module.setup_battle_arena(width=world_width, height=world_height, headless=True, player_names=connected_player_names)
 
-            # In practice mode, disable game over checking
+            # In practice mode, disable game over and freeze safe zone after one move
             if self.practice_mode:
                 self.arena.practice_mode = True
-                print("Practice mode: Game over checking disabled")
+                self.arena.safe_zone.set_practice_mode()
+                print("Practice mode: Game over checking disabled; safe zone will move once then stop")
 
             # Set character IDs to match player names
             for i, character in enumerate(self.arena.characters):
@@ -355,13 +357,13 @@ class GameServer:
                     if hasattr(character, "name"):
                         character.name = player_name
 
-                    # In practice mode, make AI bot have unlimited lives
-                    if self.practice_mode and player_name == "AI_Bot_Practice":
-                        # PRACTICE MODE ONLY: AI bot with unlimited lives for endless practice
-                        # This special behavior only applies in practice mode - never in normal multiplayer
+                    # In practice mode, give all dummy AI bots unlimited lives
+                    if self.practice_mode and player_name.startswith("AI_Bot_Practice_"):
                         character.lives = float('inf')  # Unlimited lives
-
-                        print("PRACTICE MODE: AI bot configured with unlimited lives (dies but respawns infinitely)")
+            if self.practice_mode:
+                dummy_count = sum(1 for c in self.arena.characters if c.id.startswith("AI_Bot_Practice_"))
+                if dummy_count:
+                    print(f"PRACTICE MODE: {dummy_count} AI bot(s) configured with unlimited lives")
                     
             print(f"[success] Arena recreated successfully with {len(self.arena.characters)} characters")
             

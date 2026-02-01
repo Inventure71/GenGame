@@ -15,8 +15,29 @@ class SafeZone:
         self.target_center = self.center[:]
         self.damage = 1.0
         self.elapsed = 0.0
+        self._practice_mode = False
+        self._practice_frozen = False
+
+    def set_practice_mode(self):
+        """In practice mode, safe zone moves once (to phase 1) then stops moving and shrinking."""
+        self._practice_mode = True
 
     def update(self, delta_time: float):
+        if getattr(self, "_practice_frozen", False):
+            return
+
+        if getattr(self, "_practice_mode", False):
+            # Move once: set target to a new position and snap center there (phase 1), then freeze
+            shift = 40.0
+            self.target_center = [
+                random.uniform(shift, self.width - shift),
+                random.uniform(shift, self.height - shift),
+            ]
+            self.center[0] = self.target_center[0]
+            self.center[1] = self.target_center[1]
+            self._practice_frozen = True
+            return
+
         self.elapsed += delta_time
         self.radius = max(self.min_radius, self.radius - self.shrink_rate * delta_time)
         self.damage = 1.0 + min(5.0, self.elapsed / 30.0)

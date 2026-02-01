@@ -15,7 +15,7 @@ You are an expert Python developer implementing one task at a time for the Core 
 ## File Rules
 - `BASE_components/` is read-only. Extend via `GameFolder/`.
 - New entities → own file in correct `GameFolder/` subdirectory.
-- Register new pickups or arena content in `GameFolder/setup.py` inside `setup_battle_arena()`.
+- Register new (non-ability) pickups or arena content in `GameFolder/setup.py` when applicable. Abilities are auto-discovered from folders—no registration there.
 - Abilities are auto-discovered from `GameFolder/abilities/primary/` and `GameFolder/abilities/passive/`.
 - **No duplicate or unused imports**: Do not add duplicate lines importing the same symbols (e.g. two identical `from X import Y` lines). Do not add imports that are never used in the file. Before calling `complete_task`, skim modified files for duplicate or unused imports and remove them.
 - **🚨 CRITICAL: NO STARTING ABILITIES** - Players ALWAYS start with NO active (primary) abilities and NO passive abilities. All abilities must be acquired manually via weapon pickups in the arena. **NEVER** call `set_primary_ability()` or `set_passive_ability()` on characters in `setup.py` or anywhere else during character initialization. Abilities should only be obtained through pickups during gameplay.
@@ -130,7 +130,15 @@ class MyEffect(TimedEffect):
    - `get_input_data` runs on the **Client**.
    - `process_input` runs on the **Server**.
    - This keeps the core engine decoupled from specific game mechanics.
-3. **Primary ability file**: The `ABILITY` dict must include `"activate"` (and `"ultimate"` if the ability has an ultimate). Use the exact display name that tests and discoverability expect. Spawn effects only via `arena.add_effect(effect)`.
+3. **Primary ability file**: See "Adding a new primary or passive ability (checklist)" below.
+
+### Adding a new primary or passive ability (checklist)
+- **Location**: New file in `GameFolder/abilities/primary/<name>.py` or `GameFolder/abilities/passive/<name>.py`. No registry or setup.py edits—abilities are auto-discovered; pickups use `ABILITY["name"]` from the loader.
+- **Primary**: Define `activate(cow, arena, mouse_pos)` and `ABILITY` with `name`, `description`, `max_charges`, `activate`. If the ability has an ultimate, also define `ultimate(...)` and add `"ultimate"` to the dict.
+- **Passive**: Define `apply(cow)` and `ABILITY` with `name`, `description`, `apply`.
+- **Name**: Use the **exact** display name tests and pickups expect (spelling, spaces, hyphens). Mismatches cause lookup failures.
+- **Effects**: Spawn only with `arena.add_effect(effect)`. Never `arena.effects.append(...)`. New effect types used in the arena must be imported in `GAME_arena.py`; if an effect subclasses another, add a branch for the subclass **before** the base in `_resolve_nearby_collisions`.
+- **Reference**: See `coding/prompts/GUIDE_Adding_Abilities.md` for patterns and effect serialization.
 
 ## [warning] PYGAME THREADING SAFETY - CRITICAL
 

@@ -23,10 +23,12 @@ You are enhancing content for the current MS2. All enhancements must respect thi
   - Obstacles can be **blocking** or **slowing**, and grass fields regrow over time.
 
 - **Abilities & Pickups**
+  - **Players NEVER start with abilities.** All abilities are acquired **only** via pickups in the arena.
   - Players find **primary** and **passive** ability pickups on the map.
   - Each character can hold **one primary** and **one passive** at a time.
   - Primaries can spawn **effects or projectiles** (cones, radial bursts, waves, lines, traveling shots).
   - Passives modify stats or behavior (regen, angry mode, digestion, poop mines/walls).
+  - Do not describe or imply granting abilities at spawn or in setup—only through pickups.
 
 - **Controls & Input Model**
   - Input dictionary uses:

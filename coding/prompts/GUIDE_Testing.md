@@ -5,6 +5,8 @@
 Read implementation first. Verify:
 * `__init__` signature (parameters, order, types)
 * **API Existence**: Do not assume methods exist (e.g., `serialize()` vs `__getstate__()`). Check the class and its parents.
+* **BASE export names**: When importing from BASE_components (e.g. BASE_camera), use the **exact** name from that module (e.g. **BaseCamera**, not "Camera"). Check the BASE file or BASE_COMPONENTS_DOCS.md—wrong names cause ImportError.
+* **Serialization API**: For effects/pickups/platforms (NetworkObject), use **`obj.__getstate__()`** and **`NetworkObject.create_from_network_data(state)`**. Do not assume `.serialize()` or `.deserialize()`; verify in BASE_network.py and existing tests.
 * **Initialization**: Verify constructor arguments (like `health`) are actually stored and not overwritten by `super().__init__`.
 * Return types (e.g., `update()` → bool)
 * Attribute names (never assume)
@@ -29,15 +31,18 @@ Read implementation first. Verify:
 3. Hardcoded values → use actual config
 4. Reusing stateful objects → fresh per test
 5. Wrong attribute names → verify in implementation
-6. Insufficient damage → account for multipliers/cooldowns
-7. Single-step physics → may need multiple calls
-8. Missing entity IDs → required for collision detection
-9. Coordinate mismatches → World Y-up vs Screen Y-down
-10. Incomplete simulation → multiple update cycles needed
-11. Type mismatches → sets vs dicts, lists vs tuples
-12. Input format issues → missing `mouse_pos` or keys
-13. **Execution order** → `handle_collisions()` moves character before effect checks
-14. **First test in file** → If the first test in a file fails (import, setup, or headless), the rest of that file may not run. Ensure setup (arena, character, headless), imports, and any code run at import/creation (e.g. Character.__init__, AssetHandler) work with `headless=True`.
+6. **Ability name mismatch** → Use the exact `ABILITY["name"]` from the ability module (spelling, spaces, hyphens); pickups and tests look up by that name.
+7. **Wrong BASE import name** → Tests import e.g. `Camera` from BASE_camera but the class is **BaseCamera**; always verify BASE export names (file or BASE_COMPONENTS_DOCS.md).
+8. **Wrong serialization API** → Tests call `.serialize()` / `.deserialize()` but BASE uses **__getstate__()** and **create_from_network_data(state)**; follow test_gameplay_integration.py / test_network_serialization.py.
+9. Insufficient damage → account for multipliers/cooldowns
+10. Single-step physics → may need multiple calls
+11. Missing entity IDs → required for collision detection
+12. Coordinate mismatches → World Y-up vs Screen Y-down
+13. Incomplete simulation → multiple update cycles needed
+14. Type mismatches → sets vs dicts, lists vs tuples
+15. Input format issues → missing `mouse_pos` or keys
+16. **Execution order** → `handle_collisions()` moves character before effect checks
+17. **First test in file** → If the first test in a file fails (import, setup, or headless), the rest of that file may not run. Ensure setup (arena, character, headless), imports, and any code run at import/creation (e.g. Character.__init__, AssetHandler) work with `headless=True`.
 
 ---
 
@@ -64,6 +69,8 @@ Read implementation first. Verify:
 * Defense per tick, not total delta
 * Track damage before resets
 
+**Probabilistic behavior:** Tests must pass 100% of the time. When the feature is chance-based (e.g. spawn chance, random drop), use a **bounded for loop** (e.g. `for _ in range(100):`) and assert that the expected outcome occurred **at least once** (e.g. set a flag in the loop when it happens, then assert the flag). Do not assert on a single run—that makes the test flaky.
+
 ---
 
 ## 6. COORDINATES
@@ -79,11 +86,7 @@ Read implementation first. Verify:
 
 ## 7. EXECUTION ORDER (CRITICAL)
 
-`handle_collisions()` order:
-1. `_resolve_obstacle_collisions()` → **MOVES** character
-2. `_resolve_poops()` → May move character
-3. `_apply_effects()` → Checks collisions
-4. Pickup checks
+`handle_collisions()` resolves obstacles first (can **move** the character), then effects and pickups. If you place an effect or pickup at the character's *initial* location, the character may have been pushed away and won't collide.
 
 **Pattern:**
 ```python
@@ -94,8 +97,7 @@ arena.add_effect(effect)
 arena.handle_collisions()  # Test collision
 ```
 
-**Use when:** Testing collisions with characters
-**Skip when:** Testing standalone entities or character-to-character
+**Use when:** Testing collisions with characters. **Skip when:** Testing standalone entities or character-to-character.
 
 ## 8. FEATURE CHECKLIST
 

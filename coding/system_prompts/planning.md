@@ -23,14 +23,21 @@ You are the Lead Architect for Core Conflict. Turn user requests into a small, e
 - **Passive abilities**: Must be acquired via `AbilityPickup` (or custom pickup types that extend the pickup system).
 - **New ability types**: If the request introduces a new ability category (beyond primary/passive), it **MUST** still use the pickup system. Create a new pickup type if needed, but abilities are **never** granted at character creation.
 - **Character initialization**: In `setup.py` or anywhere else, **NEVER** call `set_primary_ability()` or `set_passive_ability()` during character creation. Players start with **NO** active abilities.
-- **Pickup registration**: All new abilities must be registered in the arena's pickup spawn system (see `Arena._spawn_ability_pickup()` and `setup.py` for patterns).
+- **Pickup registration (standard abilities)**: There is **no manual registry**. Abilities are **auto-discovered** from `GameFolder/abilities/primary/` and `GameFolder/abilities/passive/`. The arena spawns pickups by name from `get_primary_abilities()` / `get_passive_abilities()` (via `GAME_pickups.PRIMARY_ABILITY_NAMES` / `PASSIVE_ABILITY_NAMES`). So for a new ability you **only** add a new file with an `ABILITY` dict; the **name** in that dict is what pickups use. Do **not** add ability names to setup.py or any list—the loader discovers them from the folder.
+
+**Adding a new ability (task flow):**
+1. Create file: `GameFolder/abilities/primary/<name>.py` (or `passive/`).
+2. Define `activate(cow, arena, mouse_pos)` (or passive `apply(cow)`), and `ABILITY` dict with `name`, `description`, `max_charges`, `activate` (and `ultimate` if applicable). Use the **exact display name** tests/UI expect (spelling and punctuation).
+3. Spawn effects only via `arena.add_effect(effect)`; never `arena.effects.append(...)`.
+4. If the ability adds a **new effect class** used in the arena, add import in `GAME_arena.py` and, if it subclasses another effect, check the **subclass before the base** in `_resolve_nearby_collisions`.
+5. No setup.py or registry edits—pickups will include the new ability automatically.
 
 **Example (CORRECT):**
 ```
 Task: "Add 'Fireball' primary ability"
-- Create ability file in GameFolder/abilities/primary/fireball.py
-- Register in pickup system (Arena spawns Fireball pickups)
-- Player acquires Fireball by picking up the pickup in-game
+- Create GameFolder/abilities/primary/fireball.py with activate() and ABILITY dict (name, description, max_charges, activate)
+- Spawn effects via arena.add_effect(); no arena.effects.append
+- Player acquires Fireball by picking up pickups in-game (no setup.py registration)
 ```
 
 **Example (WRONG - DO NOT DO THIS):**
@@ -69,7 +76,7 @@ When adding new abilities or keybinds:
 Each task must be **self-contained** (coding agent only sees current task). Include:
 - Exact file paths to create/modify
 - Exact class/method signatures
-- Integration steps (especially `setup.py` registration)
+- Integration steps (setup.py only when adding non-ability arena content; abilities need no registration)
 - Coordinate context (World-Y vs Screen-Y) when physics/positions are involved
 - For melee or area-effect logic, explicitly call out how hitboxes are anchored: tasks must ensure hitboxes are centered on the character/effect **center point** (not top-left), and must include tests that verify hits on both left and right sides of the attacker where applicable.
 - **Primary abilities**: The `ABILITY` dict must include at least `name`, `description`, `max_charges`, and `activate`. If the ability has an ultimate, the dict must also include `ultimate`. The display name in `name` must match exactly what tests and discoverability expect (e.g. spelling and punctuation, including spaces vs hyphens).
@@ -116,12 +123,12 @@ Description: "Read all modified files to verify:
 - Coordinate systems are consistent
 - **Interaction Logic**: Verify that "entering" or "standing in" zones uses Non-Blocking objects. Verify blocking objects use contact-based triggers.
 - super() calls are present where needed
-- setup.py registration is complete (abilities registered in pickup system, NOT granted at character creation)
-- No abilities are granted to players at initialization (check setup.py and Character.__init__)
+- No abilities granted at init: setup.py and Character.__init__ never call set_primary_ability/set_passive_ability (abilities are auto-discovered from primary/ and passive/ folders)
 - Primary ABILITY dicts have required keys (activate; ultimate if applicable) and display names match test/requirements exactly
 - No duplicate function definitions (e.g. only one implementation per ability callable)
 - For new effect subclasses: In GAME_arena collision resolution, the subclass is checked before its base type (so subclass-specific damage/logic runs)
 - Character/asset code used in tests (e.g. Character.__init__, AssetHandler.get_random_variant) is safe when headless=True (no pygame display)
+- Tests that import from BASE_components use the **exact** export names (e.g. BaseCamera not Camera); tests that serialize effects/pickups use **__getstate__()** and **create_from_network_data(state)** unless the codebase defines serialize/deserialize
 - No syntax errors remain"
 ```
 

@@ -80,7 +80,7 @@ Use these patterns when writing task descriptions:
 | ImportError | Add missing import statement |
 | Missing super() | Add `super().__init__(...)` call |
 | Signature mismatch | Match child method signature to parent |
-| Registration missing | Add to `setup.py` |
+| Registration missing (non-ability content) | Add to `setup.py`; abilities are auto-discovered (no registration) |
 | Fragile collision test | Loop until behavior, don't single-frame test |
 | Coordinate bug | Check world-Y vs screen-Y conversion |
 | Hitbox origin bug | Ensure character/effect `location` is treated as a world-space center when building `pygame.Rect` (origin = center_x - width/2, screen_y_center - height/2) and add tests that verify melee/AoE hits on both sides of the attacker. |
@@ -147,4 +147,4 @@ Always include as your LAST `append_to_todo_list` call:
 
 **task_title**: "Final Validation Check"
 
-**task_description**: "After all fixes, verify: syntax correct, imports absolute, method signatures match, super() calls present, coordinate systems consistent, setup.py registration complete."
+**task_description**: "After all fixes, verify: syntax correct, imports absolute, method signatures match, super() calls present, coordinate systems consistent. For non-ability content check setup.py if applicable; abilities are auto-discovered (no setup registration)."

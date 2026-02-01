@@ -407,33 +407,31 @@ def test_concurrent_ability_usage():
 
 
 def test_shared_pickup_conflict():
-    """Test that only one character can pick up a pickup."""
+    """Test that only one character can pick up a pickup when both overlap it."""
     from GameFolder.pickups.GAME_pickups import PRIMARY_ABILITY_NAMES
-    
+
     arena = Arena(800, 600, headless=True)
-    char1 = Character("Player1", "Test", "", [400.0, 300.0])
-    char2 = Character("Player2", "Test", "", [400.0, 300.0])
+    # Remove obstacles so character positions stay fixed (no random pushing)
+    arena.obstacles.clear()
+
+    pos = [400.0, 300.0]
+    char1 = Character("Player1", "Test", "", pos[:])
+    char2 = Character("Player2", "Test", "", pos[:])
     arena.add_character(char1)
     arena.add_character(char2)
-    
-    # Let obstacle resolution happen
-    arena.handle_collisions()
-    char1_final = char1.location[:]
-    char2_final = char2.location[:]
-    
-    # Place pickup between them (or at one location)
-    pickup = AbilityPickup(PRIMARY_ABILITY_NAMES[0], "primary", char1_final[:])
+
+    # One pickup at the shared position; clear other pickups so we control state
+    arena.weapon_pickups.clear()
+    pickup = AbilityPickup(PRIMARY_ABILITY_NAMES[0], "primary", pos[:])
     arena.weapon_pickups.append(pickup)
-    
-    initial_pickups = len(arena.weapon_pickups)
-    
-    # Process collisions
+    initial_count = len(arena.weapon_pickups)
+
     arena.handle_collisions()
-    
-    # Only one character should get the pickup
-    picked_up = (char1.primary_ability_name is not None) or (char2.primary_ability_name is not None)
-    assert picked_up, "At least one character should get the pickup"
-    assert len(arena.weapon_pickups) < initial_pickups, "Pickup should be removed"
+
+    # Exactly one character gets the pickup; the other does not
+    got_it = sum(1 for c in (char1, char2) if c.primary_ability_name is not None)
+    assert got_it == 1, "Exactly one character should get the pickup, not both or neither"
+    assert len(arena.weapon_pickups) == initial_count - 1, "Pickup should be removed after collection"
 
 
 # ============================================================================

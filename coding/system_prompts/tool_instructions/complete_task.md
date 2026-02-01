@@ -7,7 +7,7 @@
 Call `complete_task(summary="...")` **ONLY** when:
 - Feature is fully implemented
 - All tests pass (only if applicable)
-- `setup.py` registration is done (if applicable)
+- `setup.py` registration is done when applicable (e.g. custom arena content); abilities are auto-discovered—no setup registration for them
 - No pending fixes or syntax errors
 - You are 100% confident the task is complete
 

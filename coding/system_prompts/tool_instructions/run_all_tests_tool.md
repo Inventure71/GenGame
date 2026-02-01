@@ -22,19 +22,7 @@ Call `run_all_tests_tool(explanation="...")` **ONLY**:
 
 ### Explanation Format = KNOWLEDGE HANDOFF (MANDATORY)
 
-**🚨 CRITICAL: Memory Loss After `run_all_tests_tool()` 🚨**
-
-When you call `run_all_tests_tool()`, your memory is **IMMEDIATELY WIPED**.  
-The next agent receives **ONLY** your `explanation` parameter.  
-If tests fail, the next agent has **ZERO** knowledge of what you learned.  
-**YOU MUST PASS EVERYTHING YOU LEARNED** in the `explanation`.
-
-The `explanation` is **not** a claim that you fixed things.  
-It is a **complete knowledge dump** for the NEXT AGENT: what you changed (precisely), what you learned, and what you hoped to fix. Treat it as the ONLY memory that survives. If tests still fail, the next agent must be able to continue from your description alone.
-
-**Detail requirement:** Include enough information (code snippets with line numbers, function signatures, constants, debug output, execution traces) that the next agent **DOES NOT NEED TO RE-READ ANY FILES** you already read. They should be able to continue debugging directly from your explanation.
-
-**You MUST follow this exact structure:**
+**Memory is wiped after this call** — the next agent sees only your `explanation`. Pass everything you learned (changes, code snippets with line numbers, hypotheses, debug output, next steps) so they can continue without re-reading files. Do not claim you fixed things; describe what you changed, what you learned, and what you hoped to fix. See fix_agent.md §3 for the full template; use the structure below as minimum.
 
 ```text
 FILES_READ:
@@ -94,37 +82,12 @@ NEXT_ACTIONS_FOR_FIX_AGENT:
 - **Detail level:** The next agent should NOT need to re-read any files you already read. They should be able to continue debugging directly from your explanation.
 - **No fluff** - Every bullet should help the next agent avoid re-doing work.
 
-### What to Include in Explanation (COMPLETE KNOWLEDGE DUMP)
-
-**You must include EVERYTHING you learned, not just current changes:**
-
-- **All files read**: Every file you read, with relevant code snippets (with line numbers), function signatures, key logic
-- **All functions/methods inspected**: Exact signatures, parameter names, return types, line ranges, key logic
-- **All attributes/constants discovered**: Exact values, where they're defined, default values
-- **All code changes made**: File paths, line ranges, old code → new code, why each change was made
-- **All hypotheses tested**: Which confirmed (with evidence), which rejected (with evidence)
-- **All debug output**: Actual vs expected values, state transitions, timestamps, cooldown behavior
-- **All execution order traces**: Step-by-step analysis of method execution, where order problems were found
-- **All constants/config**: Cooldowns, damage values, durations, thresholds, coordinates (with exact values and locations)
-- **All bug locations**: File:function:line, why it's suspect, relevant code snippets
-- **All next steps**: Exact file paths, function names, specific checks the next agent should perform
-
-**Detail requirement:** The next agent should be able to continue debugging **WITHOUT re-reading any files you already read**. Include enough code snippets, line numbers, and context that they can work directly from your explanation.
-
 ### Critical Rules
 
 - **ONE test run per response maximum**
-- **Test order** - Tests run in discovery order. If the first test in a file fails (e.g. import or setup), later tests may not run. Your explanation should note whether failures are concentrated in the first test(s); if so, the next agent should fix setup/imports/headless first.
-- **Memory loss after call** - Your memory is wiped immediately after `run_all_tests_tool()` returns. The next agent only sees your `explanation`.
-- **Always provide explanation** - Even if just adding debug prints, explain what you're investigating
-- **Pass forward ALL learning** - Include insights from your entire debugging session, not just the current turn
-- **Include code snippets** - Don't just reference files, include actual code with line numbers
-- **Include function signatures** - Document exact parameter names, types, return values
-- **Include constants/values** - Document exact numeric values, where they're defined
-- **Include debug output** - Show actual vs expected values, state transitions
-- **Include execution traces** - Document step-by-step execution order analysis
-- **Use the template** - Follow the structured format above to ensure nothing is forgotten
-- **Detail level** - The next agent should NOT need to re-read any files you already read
+- **Test order** — If the first test in a file fails (import/setup/headless), later tests may not run; note this in the explanation so the next agent fixes setup first.
+- **Fill every section** of the explanation template; write `NONE` only if truly empty.
+- **Be specific** — files, line numbers, signatures, constants, what you tried and what you learned.
 
 ### Example Usage
 
