@@ -4,6 +4,8 @@
 
 Read implementation first. Verify:
 * `__init__` signature (parameters, order, types)
+* **API Existence**: Do not assume methods exist (e.g., `serialize()` vs `__getstate__()`). Check the class and its parents.
+* **Initialization**: Verify constructor arguments (like `health`) are actually stored and not overwritten by `super().__init__`.
 * Return types (e.g., `update()` → bool)
 * Attribute names (never assume)
 * State flags
@@ -35,6 +37,7 @@ Read implementation first. Verify:
 11. Type mismatches → sets vs dicts, lists vs tuples
 12. Input format issues → missing `mouse_pos` or keys
 13. **Execution order** → `handle_collisions()` moves character before effect checks
+14. **First test in file** → If the first test in a file fails (import, setup, or headless), the rest of that file may not run. Ensure setup (arena, character, headless), imports, and any code run at import/creation (e.g. Character.__init__, AssetHandler) work with `headless=True`.
 
 ---
 
@@ -175,5 +178,14 @@ arena._update_spatial_grid()
 
 # Now queries will work
 nearby = arena.spatial_grid.get_nearby(spawn_x, spawn_y, 100)
-assert char in nearby
-```
+
+## 13. TROUBLESHOOTING SPECIFIC FAILURES
+
+| Symptom | Probable Cause | Check |
+| :--- | :--- | :--- |
+| **Action fails on first frame** | Cooldown blocking | Is `last_use_time` initialized to `0.0`? If `current_time` is also `0.0`, `0 < cooldown` is True. Init to `-cooldown`. |
+| **"Expected X, got 0"** | Early return / Blocking | Is a state flag (e.g., `crafting_timer`) stuck > 0 because the previous action didn't clear it? |
+| **AttributeError: 'X' has no attribute 'serialize'** | Missing Interface | Does class X inherit from a parent but fail to implement a method required by the test? `NetworkObject` often requires explicit `serialize/deserialize`. |
+| **Test says "Overlapping" but `colliderect` fails** | Hitbox Precision | Are they physically touching or just close? For Auras/Shields, use distance checks (`dist < r1+r2`) instead of `colliderect`. |
+| **"Spawn on death" fails** | Execution Order | Does `arena.update` call `super()` (respawning the char) *before* checking if it died? Move death checks *before* `super().update`. |
+| **Effect didn't modify target** | Loop Scope | Did you define `targets = a + b` but write `for x in a:`? |

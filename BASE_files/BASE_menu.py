@@ -105,6 +105,7 @@ class BaseMenu:
         self.agent_values = None
         self.agent_selected_patch_idx = -1  # Index of patch selected for loading
         self.agent_active_patch_path = None # Path to the currently loaded patch
+        self._load_patch_lock = threading.Lock()  # Serialize load-patch + test run to avoid interleaved output and wrong test counts
 
         # Patch saving state
         self.patch_name = ""

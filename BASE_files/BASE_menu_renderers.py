@@ -376,6 +376,9 @@ class MenuRenderers:
                     total = self.menu.agent_results['total']
                     comp.text = f"Tests: {passed}/{total} Passed"
                     comp.color = THEME["accent"] if passed == total else THEME["danger"]
+                else:
+                    comp.text = "Results: Pending..."
+                    comp.color = THEME["text_main"]
             elif comp.name == "fix_btn":
                 comp.visible = bool(self.menu.agent_results and self.menu.agent_results['passed'] < self.menu.agent_results['total'])
                 comp.enabled = not self.menu.agent_running

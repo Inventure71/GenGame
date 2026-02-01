@@ -10,6 +10,9 @@ You only need to add a new file with an `ABILITY` dict. No registry edits.
 
 2) Define a callable `activate(cow, arena, mouse_pos)` and an `ABILITY` dict.
    - **Required keys**: `name`, `description`, `max_charges`, `activate`
+   - If the ability has an ultimate, also define `ultimate(cow, arena, mouse_pos)` and add **`ultimate`** to the `ABILITY` dict.
+   - Use the **exact display name** that tests and the pickup system expect (e.g. spelling and punctuation; avoid mismatches like hyphen vs space).
+   - When spawning effects, use **`arena.add_effect(effect)`** only—do not append to `arena.effects` directly.
 
 Example (intentionally wild, multi-effect):
 
@@ -52,6 +55,7 @@ ABILITY = {
     "description": "Explodes a heavy milk ring, then fires a beam toward the cursor. Shrinks you slightly.",
     "max_charges": 2,
     "activate": activate,
+    # "ultimate": ultimate,  # add if this ability has an ultimate
 }
 ```
 
@@ -89,8 +93,11 @@ ABILITY = {
 
 ## Notes
 - **Description is mandatory**. Missing descriptions raise errors.
+- **Primary abilities**: The character code expects `ABILITY["activate"]` (and optionally `ABILITY["ultimate"]`). Omit neither if the ability has an ultimate—include both keys.
+- **Display name**: Must match exactly what tests and discoverability use (e.g. no hyphen/space mismatch).
 - Abilities are discovered at runtime from the folder. No registry file edits.
 - Use the concrete effect modules in `GameFolder/effects/` (e.g. `coneeffect`, `radialeffect`, `lineeffect`, `waveprojectileeffect`, `obstacleeffect`, `zoneindicator`) for reusable effect shapes.
+- Spawn effects only with **`arena.add_effect(effect)`**.
 - Keep logic inside the ability file as much as possible.
 
 ## Effect Collision Detection
@@ -109,6 +116,22 @@ The arena automatically handles collision detection using spatial partitioning:
   - **WaveProjectileEffect**: Uses `rect.colliderect()`
 
 **Why this matters**: Full-map iteration (e.g., `for obj in self.all_objects:`) is prohibited in high-frequency loops. Always use the `spatial_grid` to query for nearby entities.
+
+## Arena Collision: Subclass-Before-Base (CRITICAL)
+
+When you add a **new effect that is a subclass of an existing effect** (e.g. `StardustSundaeEffect` extends `ObstacleEffect`):
+
+- In `GameFolder/arenas/GAME_arena.py`, inside `_resolve_nearby_collisions` (or equivalent), **check the subclass type BEFORE the base type** in the same loop.
+- If you check `ObstacleEffect` first, then `StardustSundaeEffect`, every StardustSundae will match the ObstacleEffect branch and subclass-specific logic (e.g. 35 damage, special removal) will never run.
+- **Correct order**: `if isinstance(obj, StardustSundaeEffect): ... elif isinstance(obj, ObstacleEffect): ...`
+- **Wrong order**: `if isinstance(obj, ObstacleEffect): ... elif isinstance(obj, StardustSundaeEffect): ...` (second branch is unreachable for StardustSundae).
+
+Always add a dedicated branch for the new subclass **above** the branch for its base class.
+
+## Headless / Test Safety
+
+- Tests run with `setup_battle_arena(headless=True)`. No display is created.
+- Do **not** add code in `Character.__init__` or in code paths used at character creation (e.g. `AssetHandler.get_random_variant`) that **require** pygame display or a non-headless environment. If asset loading can run headless (e.g. no `pygame.display.get_surface()`), keep it that way.
 
 ## Network Serialization Requirements (CRITICAL)
 

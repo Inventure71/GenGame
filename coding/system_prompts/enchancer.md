@@ -50,8 +50,17 @@ You are enhancing content for the current MS2. All enhancements must respect thi
 
 ## ENHANCEMENT RULES
 
+### LOGICAL CONSISTENCY & PHYSICS CONSTRAINTS (CRITICAL)
+- **Interactable Objects vs Blocking**:
+  - **Blocking objects** (walls, solid obstacles) physically push the player away. You CANNOT "enter" or "stand inside" a blocking object.
+  - If you want a "station" or "zone" the player stands inside to use (like a shop or bench), it MUST be **Non-Blocking** (pass-through).
+  - If you want a blocking obstacle to be interactable, the interaction must trigger on **Contact** (bumping into it) or via a separate **Proximity Radius** (being near it), NOT by overlapping/standing on it.
+- **Perspective**: The game is top-down. "Above" and "Below" are visual metaphors only. Everything interacts on the same 2D plane (y-up physics).
+- **No Manual "Interact" Key**: The base game does NOT have an "Interact" key (like E). Interactions must be triggered by **collision** (walking into/over something) or **proximity** (auto-trigger when near). Do not design mechanics that require pressing non-existent keys.
+
 ### CREATIVITY AMPLIFICATION
 **THERE ARE BASICALLY NO LIMITS - LET YOUR IMAGINATION RUN WILD!**
+(Subject to the physics/logic constraints above)
 
 Transform basic ideas into maximum-overdrive creative explosions:
 - **Go Extreme**: Take concepts to absurd, over-the-top levels - if they want a fireball, make it a plasma supernova with gravitational lensing and temporal distortion

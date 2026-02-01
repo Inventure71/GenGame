@@ -1,7 +1,18 @@
 ## RUN_ALL_TESTS_TOOL - Critical Usage Guide
 
 **MANDATORY: Use EXACTLY this parameter:**
-- `explanation` (REQUIRED) - A string explaining what you changed and why the tests should pass now.
+- `explanation` (REQUIRED) - A complete knowledge handoff for the next agent (see format below).
+
+### Tone and framing of the explanation (MANDATORY)
+
+**Never assume or claim that you fixed something.** You do not know whether the tests will pass or whether your changes were correct. The explanation is read by the next agent, who may see failing tests; they need to know what you actually did and what you learned, not a story about fixes that worked.
+
+**Do this instead:**
+- **What you changed:** Describe each change precisely (file, location, before/after). Do not say "Fixed X"; say "Added import of Y in file Z", "Changed constant A from 40 to 30 in …", "Added serialize/deserialize to class W".
+- **What you learned:** State what you inferred from errors, stack traces, and code (e.g. "The test expects display name without hyphen", "effect_hit_times is keyed by network_id", "Ability dict was missing 'activate' key").
+- **What you hope was addressed:** Optionally state what you intended each change to address (e.g. "Hoped this would resolve the KeyError for 'activate'"). That way, if tests still fail, the next agent knows what was already tried and what might still be wrong.
+
+Write the explanation so that if something is still broken or your fixes did not work, the next agent has everything they need: your precise changes, your reasoning, and your hypotheses. They should not have to guess what you did or re-read files you already read.
 
 ### When to Call
 Call `run_all_tests_tool(explanation="...")` **ONLY**:
@@ -18,8 +29,8 @@ The next agent receives **ONLY** your `explanation` parameter.
 If tests fail, the next agent has **ZERO** knowledge of what you learned.  
 **YOU MUST PASS EVERYTHING YOU LEARNED** in the `explanation`.
 
-The `explanation` is **not** just "why tests should pass".  
-It is a **complete knowledge dump** for the NEXT AGENT. Treat it as the ONLY memory that survives.
+The `explanation` is **not** a claim that you fixed things.  
+It is a **complete knowledge dump** for the NEXT AGENT: what you changed (precisely), what you learned, and what you hoped to fix. Treat it as the ONLY memory that survives. If tests still fail, the next agent must be able to continue from your description alone.
 
 **Detail requirement:** Include enough information (code snippets with line numbers, function signatures, constants, debug output, execution traces) that the next agent **DOES NOT NEED TO RE-READ ANY FILES** you already read. They should be able to continue debugging directly from your explanation.
 
@@ -31,7 +42,7 @@ FILES_READ:
 - ...
 
 FILES_MODIFIED:
-- <file_path>: <what you changed and why>
+- <file_path>: <precise description of each change — what was added/removed/changed, at which lines; do not say "Fixed X", describe the concrete edit and what you hoped it would address>
 - ...
 
 FAILING_TESTS_AND_ERRORS:
@@ -103,6 +114,7 @@ NEXT_ACTIONS_FOR_FIX_AGENT:
 ### Critical Rules
 
 - **ONE test run per response maximum**
+- **Test order** - Tests run in discovery order. If the first test in a file fails (e.g. import or setup), later tests may not run. Your explanation should note whether failures are concentrated in the first test(s); if so, the next agent should fix setup/imports/headless first.
 - **Memory loss after call** - Your memory is wiped immediately after `run_all_tests_tool()` returns. The next agent only sees your `explanation`.
 - **Always provide explanation** - Even if just adding debug prints, explain what you're investigating
 - **Pass forward ALL learning** - Include insights from your entire debugging session, not just the current turn

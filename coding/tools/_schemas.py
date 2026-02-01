@@ -177,7 +177,7 @@ TOOL_DEFINITIONS = {
             "CRITICAL: Always write debug prints in the tests you are modifying to help future debugging.\n"
             "Add print() statements to all failing tests first, then run this tool to see debug output, then make fixes.\n"
             "Never run multiple times in one response - that's inefficient debugging.\n"
-            "MANDATORY: Always provide an 'explanation' parameter describing what you changed and why tests should pass now."
+            "MANDATORY: Always provide an 'explanation' parameter: a knowledge handoff describing what you changed (precisely), what you learned, and what you hope was fixed — never assume fixes worked; the next agent may see failing tests."
         ),
         
         "parameters": {
@@ -185,7 +185,7 @@ TOOL_DEFINITIONS = {
         "properties": {
             "explanation": {
                 "type": "string",
-                "description": "A string explaining what you changed and why the tests should pass now. Required for tracking debugging rationale."
+                "description": "Knowledge handoff for the next agent: what you changed (precisely), what you learned, and what you hope was fixed. Never claim you fixed something; describe concrete changes and reasoning so the next agent can continue if tests still fail."
             }
         },
         "required": ["explanation"]

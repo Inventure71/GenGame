@@ -428,70 +428,75 @@ class MenuHandlers:
         self.menu.show_menu("main")
 
     def on_load_patch_to_agent_click(self, patch_index: int):
-        """Handle loading a patch into the agent for updating."""
+        """Handle loading a patch into the agent for updating. Only one load runs at a time to avoid interleaved output and wrong test counts."""
         if patch_index < 0 or patch_index >= len(self.menu.patch_manager.available_patches):
             return
         
         patch = self.menu.patch_manager.available_patches[patch_index]
-        print(f"Loading patch '{patch.name}' into workspace...")
+        patch_name = patch.name  # Capture once so message always matches this load
+        print(f"Loading patch '{patch_name}' into workspace...")
         
         def load_task():
-            import tempfile
-            import json
-            from coding.non_callable_tools.version_control import VersionControl
-            vc = VersionControl()
-            # Resolve patch path: from DB write to temp file, else use file_path
-            patch_path = patch.file_path
-            temp_patch_path = None
-            if patch.patch_id and getattr(self.menu.patch_manager, '_patch_db', None):
-                data = self.menu.patch_manager._patch_db.get_patch_by_id(patch.patch_id)
-                if data:
-                    content = {
-                        'name_of_backup': data.get('name_of_backup', 'Unknown'),
-                        'prompt_used': data.get('prompt_used', ''),
-                        'changes': data.get('changes', []),
-                    }
-                    if data.get('game_hash'):
-                        content['game_hash'] = data['game_hash']
-                    temp_patch_path = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
-                    json.dump(content, temp_patch_path, indent=2)
-                    temp_patch_path.close()
-                    patch_path = temp_patch_path.name
-            if not patch_path or not os.path.exists(patch_path):
-                print(f"✗ No patch content for '{patch.name}'")
-                self.menu.show_error_message("Patch content not found")
-                return
-            success, errors = vc.apply_all_changes(
-                needs_rebase=True,
-                path_to_BASE_backup="__game_backups",
-                file_containing_patches=patch_path,
-                skip_warnings=True
-            )
-            if success:
-                self.menu.agent_selected_patch_idx = patch_index
-                self.menu.agent_active_patch_path = patch_path
-                # Update the base working backup to match the patch's base
-                backup_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_path)
-                self.menu.base_working_backup = backup_name
-                self.menu.action_logger.prompt_used = old_prompt
-                
-                # Run tests after loading to check for issues
-                print("Running tests on loaded patch...")
-                from coding.tools.testing import run_all_tests_tool
-                test_results = run_all_tests_tool(explanation="Post-patch-load validation test run")
-                
-                # Set agent results so fix button can appear if tests failed
-                passed = test_results.get('passed_tests', 0)
-                total = test_results.get('total_tests', 0)
-                self.menu.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}
-                
-                print(f"✓ Patch '{patch.name}' loaded. Tests: {passed}/{total} passed.")
-                if passed < total:
-                    print("[warning] Tests failed - Fix button is now available.")
-                self.menu.show_error_message(f"Loaded: {patch.name} ({passed}/{total} tests passed)")
-            else:
-                print(f"✗ Failed to load patch: {errors}")
-                self.menu.show_error_message(f"Load failed: {errors}")
+            self.menu._load_patch_lock.acquire()
+            try:
+                import tempfile
+                import json
+                from coding.non_callable_tools.version_control import VersionControl
+                vc = VersionControl()
+                # Resolve patch path: from DB write to temp file, else use file_path
+                patch_path = patch.file_path
+                temp_patch_path = None
+                if patch.patch_id and getattr(self.menu.patch_manager, '_patch_db', None):
+                    data = self.menu.patch_manager._patch_db.get_patch_by_id(patch.patch_id)
+                    if data:
+                        content = {
+                            'name_of_backup': data.get('name_of_backup', 'Unknown'),
+                            'prompt_used': data.get('prompt_used', ''),
+                            'changes': data.get('changes', []),
+                        }
+                        if data.get('game_hash'):
+                            content['game_hash'] = data['game_hash']
+                        temp_patch_path = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+                        json.dump(content, temp_patch_path, indent=2)
+                        temp_patch_path.close()
+                        patch_path = temp_patch_path.name
+                if not patch_path or not os.path.exists(patch_path):
+                    print(f"✗ No patch content for '{patch_name}'")
+                    self.menu.show_error_message("Patch content not found")
+                    return
+                success, errors = vc.apply_all_changes(
+                    needs_rebase=True,
+                    path_to_BASE_backup="__game_backups",
+                    file_containing_patches=patch_path,
+                    skip_warnings=True
+                )
+                if success:
+                    self.menu.agent_selected_patch_idx = patch_index
+                    self.menu.agent_active_patch_path = patch_path
+                    # Update the base working backup to match the patch's base
+                    backup_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_path)
+                    self.menu.base_working_backup = backup_name
+                    self.menu.action_logger.prompt_used = old_prompt
+                    
+                    # Run tests after loading to check for issues (same thread, so workspace is stable)
+                    print("Running tests on loaded patch...")
+                    from coding.tools.testing import run_all_tests_tool
+                    test_results = run_all_tests_tool(explanation="Post-patch-load validation test run")
+                    
+                    # Set agent results so fix button can appear if tests failed
+                    passed = test_results.get('passed_tests', 0)
+                    total = test_results.get('total_tests', 0)
+                    self.menu.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}
+                    
+                    print(f"✓ Patch '{patch_name}' loaded. Tests: {passed}/{total} passed.")
+                    if passed < total:
+                        print("[warning] Tests failed - Fix button is now available.")
+                    self.menu.show_error_message(f"Loaded: {patch_name} ({passed}/{total} tests passed)")
+                else:
+                    print(f"✗ Failed to load patch: {errors}")
+                    self.menu.show_error_message(f"Load failed: {errors}")
+            finally:
+                self.menu._load_patch_lock.release()
 
         load_thread = threading.Thread(target=load_task)
         load_thread.start()
@@ -511,9 +516,11 @@ class MenuHandlers:
                     return False
 
                 if success:
-                    # Clear loaded patch state
+                    # Clear loaded patch state and test results (like first open)
                     self.menu.agent_selected_patch_idx = -1
                     self.menu.agent_active_patch_path = None
+                    self.menu.agent_results = None
+                    self.menu.agent_values = None
                     print("✓ Successfully reset to base backup")
                     self.menu.show_error_message("Reset to base game")
                 else:

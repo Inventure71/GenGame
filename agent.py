@@ -349,7 +349,7 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
                 modify_file_inline,
                 todo_list_verification.complete_task,
             ]
-            verify_file_sys_prompt = load_prompt("coding/system_prompts/verify_file.md", include_general_context=False)
+            verify_file_sys_prompt = load_prompt("coding/system_prompts/verify_file.md", include_general_context=True)
             modelHandler.set_tools(tools)
             modelHandler.setup_config("LOW", verify_file_sys_prompt, tools=tools)
 

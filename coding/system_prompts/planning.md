@@ -18,6 +18,7 @@ You are the Lead Architect for Core Conflict. Turn user requests into a small, e
 
 **🚨 MANDATORY: All abilities must be acquired through pickups. Players NEVER start with abilities. 🚨**
 
+- **Verify Base Class Contracts**: When creating new entities (pickups, obstacles), READ the parent class `__init__` and attributes. Ensure your subclass passes required arguments to `super()` (like `health` or `color`) and implements any attributes expected by the Arena (like `obstacle_type` for obstacles).
 - **Primary abilities**: Must be acquired via `AbilityPickup` (or custom pickup types that extend the pickup system).
 - **Passive abilities**: Must be acquired via `AbilityPickup` (or custom pickup types that extend the pickup system).
 - **New ability types**: If the request introduces a new ability category (beyond primary/passive), it **MUST** still use the pickup system. Create a new pickup type if needed, but abilities are **never** granted at character creation.
@@ -57,6 +58,13 @@ When adding new abilities or keybinds:
 2. **Server-Side Execution**: Add logic to `process_input(self, input_data, arena)` in `GAME_character.py`. This reads the logical actions and triggers methods (e.g., `if input_data.get('dash'): self.dash()`).
 3. **EXTENSIBILITY**: NEVER modify `server.py` or `BASE_game_client.py` for new gameplay features. The system is designed to delegate all input handling and action execution to the `Character` class.
 
+## Interaction Logic Safety (CRITICAL)
+- **Physics vs Interaction**:
+  - **Blocking Objects**: Players cannot "enter" or overlap with blocking objects (they get pushed out).
+  - **Interactable Zones**: If a feature requires the player to "stand inside" or "walk over" an object (shops, benches, zones), that object **MUST be Non-Blocking** (pass-through).
+  - **Contact Triggers**: If an object is Blocking, interactions must trigger on **edge contact** (collision) or **proximity distance**, never overlap.
+- **No "Interact" Key**: The game has no generic "Interact" button. All interactions must be passive (collision/proximity) or use existing inputs (Attack/Dash/Poop/Eat).
+
 ## Task Requirements
 Each task must be **self-contained** (coding agent only sees current task). Include:
 - Exact file paths to create/modify
@@ -64,6 +72,8 @@ Each task must be **self-contained** (coding agent only sees current task). Incl
 - Integration steps (especially `setup.py` registration)
 - Coordinate context (World-Y vs Screen-Y) when physics/positions are involved
 - For melee or area-effect logic, explicitly call out how hitboxes are anchored: tasks must ensure hitboxes are centered on the character/effect **center point** (not top-left), and must include tests that verify hits on both left and right sides of the attacker where applicable.
+- **Primary abilities**: The `ABILITY` dict must include at least `name`, `description`, `max_charges`, and `activate`. If the ability has an ultimate, the dict must also include `ultimate`. The display name in `name` must match exactly what tests and discoverability expect (e.g. spelling and punctuation, including spaces vs hyphens).
+- **No duplicate definitions**: Tasks must not introduce duplicate definitions of the same function (e.g. a single `ultimate` implementation, not two).
 
 ## Effect Serialization Requirements
 When planning tasks that create new effects:
@@ -71,6 +81,9 @@ When planning tasks that create new effects:
 - **MUST** specify storing derived values (like `cow_size`) if needed for drawing
 - **NOTE**: Effects may accept `update(delta_time, arena=None)`; the MS2 Arena passes itself when the effect signature supports it.
 - **MUST** reference existing effects (`WaveProjectileEffect`, `RadialEffect`, `ConeEffect`, etc.) as examples
+- **Arena integration**: If the new effect type is used in `GameFolder/arenas/GAME_arena.py` (e.g. in collision or update logic), the plan **MUST** include adding the corresponding effect class import at the top of `GAME_arena.py`. Never reference an effect type in the arena without that import.
+- **Arena collision order**: If the new effect is a **subclass** of an existing effect (e.g. extends `ObstacleEffect`), the plan **MUST** state that in `GAME_arena._resolve_nearby_collisions` the new effect type is checked **before** the base type (e.g. `isinstance(obj, NewEffect)` before `isinstance(obj, ObstacleEffect)`).
+- **Test-driven constants**: If tasks or tests (or comments in tests) specify exact numeric values (radius, width, height, etc.) for an effect, the implementation must use those values.
 
 Example task specification:
 ```
@@ -99,11 +112,16 @@ Always include as the last task:
 Title: "Final Validation Check"
 Description: "Read all modified files to verify:
 - Method signatures match call sites
-- Imports are correct and absolute
+- Imports are correct and absolute (including any new effect classes used in GAME_arena.py—each must be imported at top of that file)
 - Coordinate systems are consistent
+- **Interaction Logic**: Verify that "entering" or "standing in" zones uses Non-Blocking objects. Verify blocking objects use contact-based triggers.
 - super() calls are present where needed
 - setup.py registration is complete (abilities registered in pickup system, NOT granted at character creation)
 - No abilities are granted to players at initialization (check setup.py and Character.__init__)
+- Primary ABILITY dicts have required keys (activate; ultimate if applicable) and display names match test/requirements exactly
+- No duplicate function definitions (e.g. only one implementation per ability callable)
+- For new effect subclasses: In GAME_arena collision resolution, the subclass is checked before its base type (so subclass-specific damage/logic runs)
+- Character/asset code used in tests (e.g. Character.__init__, AssetHandler.get_random_variant) is safe when headless=True (no pygame display)
 - No syntax errors remain"
 ```
 

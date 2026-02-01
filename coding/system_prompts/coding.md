@@ -17,9 +17,23 @@ You are an expert Python developer implementing one task at a time for the Core 
 - New entities → own file in correct `GameFolder/` subdirectory.
 - Register new pickups or arena content in `GameFolder/setup.py` inside `setup_battle_arena()`.
 - Abilities are auto-discovered from `GameFolder/abilities/primary/` and `GameFolder/abilities/passive/`.
+- **No duplicate or unused imports**: Do not add duplicate lines importing the same symbols (e.g. two identical `from X import Y` lines). Do not add imports that are never used in the file. Before calling `complete_task`, skim modified files for duplicate or unused imports and remove them.
 - **🚨 CRITICAL: NO STARTING ABILITIES** - Players ALWAYS start with NO active (primary) abilities and NO passive abilities. All abilities must be acquired manually via weapon pickups in the arena. **NEVER** call `set_primary_ability()` or `set_passive_ability()` on characters in `setup.py` or anywhere else during character initialization. Abilities should only be obtained through pickups during gameplay.
 
 ## Contract Gates (Required Before Changing or Using Core APIs)
+
+- **OOP & Logic Safety (CRITICAL)**
+  - **Inheritance Trap**: When subclassing, **check the parent's `__init__` signature**.
+    - ❌ **Wrong**: Setting `self.health = 150` *before* `super().__init__()` (parent will overwrite it with default 100).
+    - ✅ **Correct**: Pass the value to the parent: `super().__init__(..., health=150)`.
+  - **Polymorphism Safety**: If you add a class to a type check (e.g., `isinstance(obj, (OldClass, NewClass))`), **`NewClass` MUST support all attributes accessed in that block**.
+    - If `NewClass` lacks an attribute (e.g., `obstacle_type`), do **not** group them. Use a separate `elif isinstance(obj, NewClass):` block.
+  - **Loop Fall-through**: When adding a special case to a loop (e.g., collision/pickup resolution), ensure you **`continue` or `return`** immediately after handling it. Do not let execution fall through to incompatible generic logic below.
+  - **Loop Variable Scope**: If you define a combined list (e.g., `targets = list_a + list_b`), ensure your `for` loop iterates over `targets`, not just `list_a`. This is a common "copy-paste" error.
+
+- **Initialization & Cooldowns**
+  - **First-Frame Safety**: Initialize cooldown timestamps (like `last_fired_time`) to `-self.cooldown` (negative) instead of `0.0`. This ensures actions can trigger immediately on the very first frame (time 0.0).
+  - **State Cleanup**: In completion methods (e.g., `complete_crafting`, `on_dash_end`), explicitly reset ALL related control flags and timers (e.g., `self.is_crafting = False`, `self.craft_timer = 0.0`) to prevent blocking future actions.
 
 - **Base methods (in `BASE_components/`)**
   - Before overriding or calling any method defined in `BASE_components/`, you **must** read its actual implementation using `get_function_source` or a targeted `read_file` of that method. Do not rely on memory or guesses.
@@ -38,6 +52,12 @@ You are an expert Python developer implementing one task at a time for the Core 
   - New effects must follow the existing patterns in `GameFolder/effects/` and `BASE_components/BASE_effects.py`.
   - Do **not** invent new serialization APIs (`serialize`, `deserialize`, etc.) unless they are consistent with the existing `NetworkObject` pattern and required by the existing engine.
   - Always store IDs and primitive data (`owner_id`, numeric fields, simple lists/dicts) instead of object references (e.g., never store `Character` or `Arena` instances inside effects).
+  - **Arena imports**: When adding a new effect type that is referenced in `GameFolder/arenas/GAME_arena.py` (e.g. in `_resolve_nearby_collisions` or similar), add the import for that effect class at the top of `GAME_arena.py`. Never use an effect type in the arena without importing it there.
+  - **Adding effects to the arena**: Always use `arena.add_effect(effect)` when spawning effects from abilities or character logic. Do **not** use `arena.effects.append(...)`.
+  - **Test-driven serialize/deserialize**: If existing tests for an effect call `effect.serialize()` and `EffectClass.deserialize(state)`, implement `serialize()` and `deserialize()` (or the same pattern) on that effect class.
+  - **Serialization completeness**: If tests call `NetworkObject.create_from_network_data(state)` for an effect, the effect's `__getstate__` (and any serialization it uses) must include **every** attribute needed to reconstruct it. Subclasses that add fields (e.g. `slow_duration`, angle derived from `target_pos`) must include those in state; otherwise deserialized instances are wrong or break drawing/collision.
+  - **Primary ability ABILITY dict**: Must include `"activate"`; if the ability has an ultimate, include `"ultimate"`. Use the exact display name expected by tests and discoverability (e.g. spelling and punctuation must match).
+  - **Test-driven constants**: If tasks or tests (or comments in tests) specify exact numeric values (radius, width, height, etc.) for an effect, use those values in the implementation.
 
 ## Gameplay Geometry Rules (Characters / Effects / Hitboxes)
 
@@ -63,6 +83,11 @@ The spatial grid contains BOTH rigid obstacles (walls) and non-rigid interactive
 - **DO NOT collide** with grass fields, pickups, or non-blocking effects.
 
 **Never use full-list iteration** (e.g., `for obstacle in self.obstacles:`) inside high-frequency loops (physics, interaction). Always use `get_nearby` or `get_closest` from the grid.
+
+- **Effect subclass collision order**: When adding a new effect type that **subclasses** an existing one (e.g. `StardustSundaeEffect(ObstacleEffect)`), add a branch for the **subclass before** the base in `GAME_arena._resolve_nearby_collisions`. If the base type is checked first, the subclass branch is never used for that effect.
+- **Collision Logic Selection**:
+  - For **Projectiles/Walls**, use `rect.colliderect` (AABB).
+  - For **Auras/Touch Damage** (e.g. "Aegis", "Radiation"), use **Distance Check** (`dist_sq < (r1+r2)**2`). AABB checks will FAIL if objects are close but not overlapping bounding boxes (e.g. corner cases or small gaps). Prefer distance for reliability in these cases.
 
 ## Network Serialization Rules (CRITICAL)
 
@@ -105,6 +130,7 @@ class MyEffect(TimedEffect):
    - `get_input_data` runs on the **Client**.
    - `process_input` runs on the **Server**.
    - This keeps the core engine decoupled from specific game mechanics.
+3. **Primary ability file**: The `ABILITY` dict must include `"activate"` (and `"ultimate"` if the ability has an ultimate). Use the exact display name that tests and discoverability expect. Spawn effects only via `arena.add_effect(effect)`.
 
 ## [warning] PYGAME THREADING SAFETY - CRITICAL
 

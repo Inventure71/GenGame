@@ -202,6 +202,9 @@ class Character(BaseCharacter):
         Swap the cow's current ability with the closest pickup you're standing on.
         Optimized using spatial grid.
         """
+        # Ensure spatial grid includes current pickups (e.g. after test or spawn appends)
+        if hasattr(arena, "_update_spatial_grid"):
+            arena._update_spatial_grid()
         cow_rect = self.get_rect(arena.height)
         from GameFolder.pickups.GAME_pickups import AbilityPickup
         
