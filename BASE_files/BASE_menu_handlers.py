@@ -3,9 +3,12 @@ Click handlers for the BaseMenu class.
 These methods handle user interactions and menu navigation.
 """
 
+import hashlib
+import json
 import os
+import tempfile
 import threading
-from BASE_files.BASE_helpers import encrypt_api_key, decrypt_api_key
+from BASE_files.BASE_menu_helpers import encrypt_api_key, decrypt_api_key, REMOTE_DOMAIN
 
 
 class MenuHandlers:
@@ -39,12 +42,27 @@ class MenuHandlers:
             self.menu.show_error_message("Error: Please enter a Player ID before creating a room")
             print("Error: Please enter a Player ID before creating a room")
             return
+        
         print("Remote Public Game clicked")
-        if self.menu.network.create_remote_room():
-            self.menu.show_menu("room")
-        else:
-            self.menu.show_error_message("Failed to connect to remote server")
-            print("Failed to connect to remote server")
+        self.menu.loading_message = "Connecting to Public Lobby..."
+        
+        def connect_task():
+            try:
+                success = self.menu.network.create_remote_room()
+                if success:
+                    # In a real app we might need a thread-safe queue for UI changes, 
+                    # but simple string/bool flags are usually fine in python/pygame
+                    self.menu.show_menu("room")
+                else:
+                    self.menu.show_error_message("Failed to connect to remote server")
+                    print("Failed to connect to remote server")
+            except Exception as e:
+                print(f"Error in connection thread: {e}")
+                self.menu.show_error_message(f"Connection error: {e}")
+            finally:
+                self.menu.loading_message = None
+
+        threading.Thread(target=connect_task, daemon=True).start()
 
     def on_join_room_click(self):
         """Handle join room button click."""
@@ -62,7 +80,7 @@ class MenuHandlers:
             return
 
         # Decrypt the code to get IP and PORT
-        from BASE_files.BASE_helpers import decrypt_code
+        from BASE_files.BASE_menu_helpers import decrypt_code
         try:
             server_ip, server_port = decrypt_code(self.menu.join_room_code.strip())
             print(f"Joining room at {server_ip}:{server_port}")
@@ -84,9 +102,42 @@ class MenuHandlers:
         print("Library clicked")
         self.menu.show_menu("library")
 
+    def on_server_library_click(self):
+        """Handle server patch library button click. Checks connection; if not connected, tries to connect then shows community patches."""
+        print("Server Patch Library clicked")
+
+        if not self.menu.player_id.strip():
+            self.menu.show_error_message("Error: Please enter a Player ID before connecting")
+            return
+
+        # If already connected, go to community patches
+        if self.menu.client and self.menu.client.connected:
+            self.menu.show_menu("server_library")
+            return
+
+        # Not connected: try to connect, then show server_library (or error)
+        self.menu.loading_message = "Connecting to Server Library..."
+
+        def connect_library_task():
+            try:
+                if self.menu.network.connect_to_server(REMOTE_DOMAIN, self.menu.network.server_port):
+                    self.menu.show_menu("server_library")
+                else:
+                    self.menu.show_error_message("Not connected to server. Failed to connect to public server.")
+            except Exception as e:
+                print(f"Error connecting to library: {e}")
+                self.menu.show_error_message(f"Not connected to server. Connection error: {e}")
+            finally:
+                self.menu.loading_message = None
+
+        threading.Thread(target=connect_library_task, daemon=True).start()
+
     def on_agent_content_click(self):
         """Handle agent content button click."""
         print("Agent Content clicked")
+        if not self.menu.ensure_base_workspace():
+            self.menu.show_error_message("Failed to restore base workspace; agent may be unsafe.")
+
         self.menu.show_menu("agent")
 
     def on_settings_click(self):
@@ -103,6 +154,18 @@ class MenuHandlers:
         """Handle ready button click - sends patches to server."""
         print("Ready clicked - sending patches to server")
         if self.menu.client and self.menu.client.connected:
+            # Check if game is already active
+            if getattr(self.menu, 'game_active', False):
+                # Check if player is in active players list
+                active_players = getattr(self.menu, 'active_players', [])
+                if self.menu.player_id in active_players:
+                    print("Rejoining active game...")
+                    self.menu.game_start_callback()
+                    return
+                else:
+                    self.menu.show_error_message("Game in progress. Cannot join mid-game.")
+                    return
+
             # Mark as ready
             self.menu.patches_ready = True
 
@@ -118,14 +181,17 @@ class MenuHandlers:
             print("Not connected to server!")
 
     def on_back_to_menu_click(self):
-        """Handle back to menu button click."""
+        """Handle back to menu button click (intentional exit from room)."""
         print("Back to Menu clicked")
 
         # Clear patch selections when leaving room
         self.menu.patch_manager.clear_selections()
         print("✓ Patch selections cleared")
 
-        # Disconnect client first
+        # Switch to main menu first so disconnected_callback won't show "Disconnected from server"
+        # when we disconnect (user left on purpose).
+        self.menu.show_menu("main")
+
         if self.menu.client and self.menu.client.connected:
             self.menu.client.disconnect()
 
@@ -139,12 +205,69 @@ class MenuHandlers:
             self.menu.network.server_instance = None
             self.menu.network.server_thread = None
 
-        self.menu.show_menu("main")
-
     def on_library_back_click(self):
         """Handle library back button click."""
         print("Library Back clicked")
         self.menu.show_menu("main")
+
+    def on_server_library_back_click(self):
+        """Handle server library back button click."""
+        print("Server Library Back clicked")
+        self.menu.show_menu("main")
+
+    def on_server_library_prev_click(self):
+        """Go to previous server patch page."""
+        if self.menu.server_patch_page <= 0:
+            return
+        self.menu.server_patch_page -= 1
+        self.menu.request_server_patch_page(self.menu.server_patch_page)
+
+    def on_server_library_next_click(self):
+        """Go to next server patch page."""
+        if self.menu.server_patch_total <= 0:
+            return
+        max_page = max(0, (self.menu.server_patch_total - 1) // max(1, self.menu.server_patch_page_size))
+        if self.menu.server_patch_page >= max_page:
+            return
+        self.menu.server_patch_page += 1
+        self.menu.request_server_patch_page(self.menu.server_patch_page)
+
+    def on_server_library_download_click(self):
+        """Download the selected server patch (and its backup)."""
+        idx = self.menu.server_patch_selected_index
+        if idx < 0 or idx >= len(self.menu.server_patch_items):
+            self.menu.show_error_message("No patch selected")
+            return
+        if not (self.menu.client and self.menu.client.connected):
+            self.menu.show_error_message("Not connected to server")
+            return
+        patch = self.menu.server_patch_items[idx]
+        patch_id = patch.get('patch_id')
+        if not patch_id:
+            self.menu.show_error_message("Invalid patch selection")
+            return
+        self.menu.client.request_patch_library_download(patch_id, include_backup=True)
+        self.menu.show_error_message(f"Downloading patch: {patch.get('name', patch_id)}")
+
+    def on_server_library_search_click(self):
+        """Search server patch library."""
+        self.menu.server_patch_page = 0
+        self.menu.request_server_patch_page(0)
+
+    def on_delete_patch_click(self):
+        """Delete the first selected patch in the library."""
+        if not self.menu.patch_manager.selected_patches:
+            self.menu.show_error_message("No patch selected")
+            return
+        
+        patch = self.menu.patch_manager.selected_patches[0]
+        idx = self.menu.patch_manager.available_patches.index(patch)
+        
+        if self.menu.patch_manager.delete_patch(idx):
+            self.menu.show_error_message(f"Deleted: {patch.name}")
+            self.menu.patch_manager.clear_selections()
+        else:
+            self.menu.show_error_message(f"Failed to delete: {patch.name}")
 
     def on_agent_send_click(self):
         """Handle agent send button click."""
@@ -169,18 +292,17 @@ class MenuHandlers:
             kwargs={
                 'patch_to_load': patch_to_load,
                 'needs_rebase': False # The UI handles rebase during "Load" or initial start
-            }
+            },
+            daemon=True
         )
         agent_thread.start()
+        self.menu.agent_thread = agent_thread
 
     def on_agent_stop_click(self):
         """Handle agent stop button click."""
         print("Agent Stop clicked")
         if self.menu.agent_running:
-            # For now, just set the flag - the agent thread should check this periodically
-            # TODO: Implement proper agent stopping mechanism
-            self.menu.agent_running = False
-            self.menu.show_error_message("Agent stop requested - may take a moment to complete")
+            self.menu.stop_agent_immediately()
 
     def on_agent_fix_click(self):
         """Handle agent fix button click."""
@@ -189,35 +311,107 @@ class MenuHandlers:
         self.menu.show_fix_prompt = False
 
         # Run agent fix in a separate thread
-        agent_thread = threading.Thread(target=self.menu.run_agent_fix, args=(self.menu.agent_results,))
+        agent_thread = threading.Thread(target=self.menu.run_agent_fix, args=(self.menu.agent_results,), daemon=True)
         agent_thread.start()
+        self.menu.agent_thread = agent_thread
+
+    def on_auto_name_patch_click(self):
+        """Handle auto name patch button click - extracts name from first line of enhanced prompt."""
+        # Use the enhanced prompt from action_logger if available, otherwise fall back to agent_prompt
+        prompt_to_use = getattr(self.menu.action_logger, 'prompt_used', None) or self.menu.agent_prompt
+        
+        if not prompt_to_use:
+            print("No prompt available to extract name from")
+            return
+        
+        # Extract first line from prompt
+        first_line = prompt_to_use.split('\n')[0].strip()
+        
+        # Split on first colon and take only the part before it (e.g., "Name: Description:" -> "Name")
+        if ':' in first_line:
+            first_line = first_line.split(':', 1)[0].strip()
+        
+        # Set as patch name
+        first_line = first_line.replace(" ", "-")
+        self.menu.patch_name = first_line
+        print(f"Auto-named patch: {self.menu.patch_name}")
+        
+        # Update the UI text field if it exists
+        if self.menu.current_menu == "agent":
+            ui = self.menu.renderers.managers.get("agent")
+            if ui:
+                for comp in ui.components:
+                    if comp.name == "patch_name":
+                        comp.text = self.menu.patch_name
+                        break
 
     def on_agent_save_patch_click(self):
-        """Handle agent save patch button click."""
+        """Handle agent save patch button click. Saves to database only; no final .json in __patches."""
         print(f"Agent Save Patch clicked: {self.menu.patch_name}")
 
-        # Save the current changes as a patch
-        patches_dir = "__patches"
-        if not os.path.exists(patches_dir):
-            os.makedirs(patches_dir)
+        if not (self.menu.patch_name and self.menu.patch_name.strip()):
+            self.menu.show_error_message("Enter a patch name before saving")
+            return
 
         # Use current backup name from agent results if available, else from menu base
         backup_name = self.menu.base_working_backup
         if self.menu.agent_values and "backup_name" in self.menu.agent_values:
             backup_name = self.menu.agent_values["backup_name"]
 
-        # Save the patch
-        patch_path = os.path.join(patches_dir, f"{self.menu.patch_name}.json")
-        success = self.menu.action_logger.save_changes_to_extension_file(patch_path, name_of_backup=backup_name)
+        patch_manager = self.menu.patch_manager
+        db = getattr(patch_manager, "_patch_db", None)
+        if not db:
+            self.menu.show_error_message("Patch database not available")
+            print("✗ Patch database not available")
+            return
 
-        if success:
-            print(f"✓ Patch saved successfully: {patch_path}")
-            # Clear the patch name field
+        # Save to database only: use a temp file for the extension-file format, then insert into DB and remove temp file
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+                temp_path = tmp.name
+            success = self.menu.action_logger.save_changes_to_extension_file(
+                temp_path, name_of_backup=backup_name, prompt_used=self.menu.action_logger.prompt_used
+            )
+            if not success:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+                print("✗ Failed to save patch")
+                return
+            with open(temp_path, "r", encoding="utf-8") as f:
+                patch_data = json.load(f)
+            changes_str = json.dumps(patch_data.get("changes", []), sort_keys=True)
+            patch_hash = hashlib.sha256(changes_str.encode("utf-8")).hexdigest()
+            creator = (self.menu.player_id or "").strip() or "Unknown"
+            db.add_patch(
+                patch_data,
+                creator_name=creator,
+                patch_hash=patch_hash,
+                name=self.menu.patch_name.strip(),
+            )
+            try:
+                os.remove(temp_path)
+            except OSError as e:
+                print(f"Could not remove temp patch file: {e}")
+            metadata_path = temp_path.replace(".json", "_metadata.json")
+            if os.path.exists(metadata_path):
+                try:
+                    os.remove(metadata_path)
+                except OSError:
+                    pass
+            print(f"✓ Patch saved to database: {self.menu.patch_name}")
             self.menu.patch_name = ""
-            # Refresh patch list
-            self.menu.patch_manager.scan_patches()
-        else:
-            print("✗ Failed to save patch")
+            patch_manager.scan_patches()
+        except Exception as e:
+            print(f"✗ Failed to save patch to database: {e}")
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
 
     def on_agent_back_click(self):
         """Handle agent back button click."""
@@ -234,47 +428,75 @@ class MenuHandlers:
         self.menu.show_menu("main")
 
     def on_load_patch_to_agent_click(self, patch_index: int):
-        """Handle loading a patch into the agent for updating."""
+        """Handle loading a patch into the agent for updating. Only one load runs at a time to avoid interleaved output and wrong test counts."""
         if patch_index < 0 or patch_index >= len(self.menu.patch_manager.available_patches):
             return
         
         patch = self.menu.patch_manager.available_patches[patch_index]
-        print(f"Loading patch '{patch.name}' into workspace...")
+        patch_name = patch.name  # Capture once so message always matches this load
+        print(f"Loading patch '{patch_name}' into workspace...")
         
-        # We perform the loading in a background thread to keep UI responsive
         def load_task():
-            from coding.non_callable_tools.version_control import VersionControl
-            vc = VersionControl()
-            success, errors = vc.apply_all_changes(
-                needs_rebase=True, 
-                path_to_BASE_backup="__game_backups", 
-                file_containing_patches=patch.file_path,
-                skip_warnings=True
-            )
-            if success:
-                self.menu.agent_selected_patch_idx = patch_index
-                self.menu.agent_active_patch_path = patch.file_path
-                # Update the base working backup to match the patch's base
-                backup_name, _, _ = vc.load_from_extension_file(patch.file_path)
-                self.menu.base_working_backup = backup_name
-                
-                # Run tests after loading to check for issues
-                print("Running tests on loaded patch...")
-                from coding.tools.testing import run_all_tests_tool
-                test_results = run_all_tests_tool(explanation="Post-patch-load validation test run")
-                
-                # Set agent results so fix button can appear if tests failed
-                passed = test_results.get('passed_tests', 0)
-                total = test_results.get('total_tests', 0)
-                self.menu.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}
-                
-                print(f"✓ Patch '{patch.name}' loaded. Tests: {passed}/{total} passed.")
-                if passed < total:
-                    print("[warning] Tests failed - Fix button is now available.")
-                self.menu.show_error_message(f"Loaded: {patch.name} ({passed}/{total} tests passed)")
-            else:
-                print(f"✗ Failed to load patch: {errors}")
-                self.menu.show_error_message(f"Load failed: {errors}")
+            self.menu._load_patch_lock.acquire()
+            try:
+                import tempfile
+                import json
+                from coding.non_callable_tools.version_control import VersionControl
+                vc = VersionControl()
+                # Resolve patch path: from DB write to temp file, else use file_path
+                patch_path = patch.file_path
+                temp_patch_path = None
+                if patch.patch_id and getattr(self.menu.patch_manager, '_patch_db', None):
+                    data = self.menu.patch_manager._patch_db.get_patch_by_id(patch.patch_id)
+                    if data:
+                        content = {
+                            'name_of_backup': data.get('name_of_backup', 'Unknown'),
+                            'prompt_used': data.get('prompt_used', ''),
+                            'changes': data.get('changes', []),
+                        }
+                        if data.get('game_hash'):
+                            content['game_hash'] = data['game_hash']
+                        temp_patch_path = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+                        json.dump(content, temp_patch_path, indent=2)
+                        temp_patch_path.close()
+                        patch_path = temp_patch_path.name
+                if not patch_path or not os.path.exists(patch_path):
+                    print(f"✗ No patch content for '{patch_name}'")
+                    self.menu.show_error_message("Patch content not found")
+                    return
+                success, errors = vc.apply_all_changes(
+                    needs_rebase=True,
+                    path_to_BASE_backup="__game_backups",
+                    file_containing_patches=patch_path,
+                    skip_warnings=True
+                )
+                if success:
+                    self.menu.agent_selected_patch_idx = patch_index
+                    self.menu.agent_active_patch_path = patch_path
+                    # Update the base working backup to match the patch's base
+                    backup_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_path)
+                    self.menu.base_working_backup = backup_name
+                    self.menu.action_logger.prompt_used = old_prompt
+                    
+                    # Run tests after loading to check for issues (same thread, so workspace is stable)
+                    print("Running tests on loaded patch...")
+                    from coding.tools.testing import run_all_tests_tool
+                    test_results = run_all_tests_tool(explanation="Post-patch-load validation test run")
+                    
+                    # Set agent results so fix button can appear if tests failed
+                    passed = test_results.get('passed_tests', 0)
+                    total = test_results.get('total_tests', 0)
+                    self.menu.agent_results = {'passed': passed, 'total': total, 'test_output': test_results}
+                    
+                    print(f"✓ Patch '{patch_name}' loaded. Tests: {passed}/{total} passed.")
+                    if passed < total:
+                        print("[warning] Tests failed - Fix button is now available.")
+                    self.menu.show_error_message(f"Loaded: {patch_name} ({passed}/{total} tests passed)")
+                else:
+                    print(f"✗ Failed to load patch: {errors}")
+                    self.menu.show_error_message(f"Load failed: {errors}")
+            finally:
+                self.menu._load_patch_lock.release()
 
         load_thread = threading.Thread(target=load_task)
         load_thread.start()
@@ -288,12 +510,17 @@ class MenuHandlers:
                 from coding.non_callable_tools.backup_handling import BackupHandler
                 # Restore the base backup directly
                 backup_handler = BackupHandler("__game_backups")
-                success = backup_handler.restore_backup(self.menu.base_working_backup, target_path="GameFolder")
+                success, _ = backup_handler.restore_backup(self.menu.base_working_backup, target_path="GameFolder")
+                if success is None:
+                    print(f"[error] Failed to reset to base backup: {self.menu.base_working_backup}")
+                    return False
 
                 if success:
-                    # Clear loaded patch state
+                    # Clear loaded patch state and test results (like first open)
                     self.menu.agent_selected_patch_idx = -1
                     self.menu.agent_active_patch_path = None
+                    self.menu.agent_results = None
+                    self.menu.agent_values = None
                     print("✓ Successfully reset to base backup")
                     self.menu.show_error_message("Reset to base game")
                 else:
@@ -309,7 +536,7 @@ class MenuHandlers:
     def on_settings_save_click(self):
         """Handle settings save button click."""
         print("Settings Save clicked")
-        from BASE_files.BASE_helpers import create_settings_file
+        from BASE_files.BASE_menu_helpers import create_settings_file
     
         result = create_settings_file(
             username=self.menu.settings_username,
@@ -332,37 +559,3 @@ class MenuHandlers:
         """Handle settings back button click."""
         print("Settings Back clicked")
         self.menu.show_menu("main")
-
-    def on_save_current_state_click(self):
-        """Handle saving the current GameFolder state to a patch (even if failed)."""
-        if not self.menu.patch_name.strip():
-            self.menu.show_error_message("Please enter a patch name first")
-            # Components handle their own focus
-            return
-
-        print(f"Saving current state to patch: {self.menu.patch_name}")
-
-        patches_dir = "__patches"
-        if not os.path.exists(patches_dir):
-            os.makedirs(patches_dir)
-
-        # Use active backup (from loaded patch) or fallback to base working backup
-        backup_name = self.menu.base_working_backup
-        if not backup_name:
-            # If no backup is set, create a fresh one as the base
-            from coding.non_callable_tools.backup_handling import BackupHandler
-            handler = BackupHandler("__game_backups")
-            _, backup_name = handler.create_backup("GameFolder")
-            print(f"Created fresh backup for comparison: {backup_name}")
-
-        patch_path = os.path.join(patches_dir, f"{self.menu.patch_name}.json")
-        success = self.menu.action_logger.save_changes_to_extension_file(patch_path, name_of_backup=backup_name)
-
-        if success:
-            print(f"✓ State saved successfully: {patch_path}")
-            self.menu.patch_name = ""
-            # Refresh patch list
-            self.menu.patch_manager.scan_patches()
-            self.menu.show_error_message(f"Saved: {self.menu.patch_name}")
-        else:
-            self.menu.show_error_message("Failed to save current state")

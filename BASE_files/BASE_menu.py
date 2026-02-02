@@ -1,4 +1,6 @@
 import os
+import json
+import ctypes
 
 # Set video driver BEFORE importing pygame
 #os.environ['SDL_VIDEODRIVER'] = 'cocoa'
@@ -12,14 +14,17 @@ import platform
 import subprocess
 import threading
 
-from BASE_files.BASE_helpers import load_settings
+from BASE_files.BASE_menu_helpers import load_settings
 from BASE_files.patch_manager import PatchManager
 from BASE_files.BASE_game_client import run_client, DEFAULT_WIDTH, DEFAULT_HEIGHT
 from BASE_files.BASE_menu_renderers import MenuRenderers
 from BASE_files.BASE_menu_handlers import MenuHandlers
 from BASE_files.BASE_menu_network import MenuNetwork
+from BASE_components.BASE_asset_handler import AssetHandler
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.action_logger import ActionLogger
+
+FULLSCREEN = True
 
 # Features:
 # - Main menu
@@ -54,7 +59,9 @@ class BaseMenu:
 
         print("Creating window...")
         self.screen = pygame.display.set_mode(
-            (DEFAULT_WIDTH, DEFAULT_HEIGHT), pygame.FULLSCREEN
+            (DEFAULT_WIDTH, DEFAULT_HEIGHT),
+            pygame.FULLSCREEN if FULLSCREEN else 0 | pygame.DOUBLEBUF,
+            vsync=1,
         )
 
         print(f"Video Driver: {pygame.display.get_driver()}")
@@ -73,15 +80,15 @@ class BaseMenu:
 
         print("Loading fonts...")
         try:
-            self.menu_font = pygame.font.Font(None, 48)  # Title font
-            self.button_font = pygame.font.Font(None, 32)  # Button font
-            self.small_font = pygame.font.Font(None, 24)   # Small text font
+            self.menu_font = AssetHandler.get_font(None, 48)  # Title font
+            self.button_font = AssetHandler.get_font(None, 32)  # Button font
+            self.small_font = AssetHandler.get_font(None, 24)   # Small text font
             print("Fonts loaded successfully.")
         except Exception as e:
             print(f"Warning: Could not load default font: {e}. Trying SysFont...")
-            self.menu_font = pygame.font.SysFont("Arial", 48)
-            self.button_font = pygame.font.SysFont("Arial", 32)
-            self.small_font = pygame.font.SysFont("Arial", 24)
+            self.menu_font = AssetHandler.get_sys_font("Arial", 48)
+            self.button_font = AssetHandler.get_sys_font("Arial", 32)
+            self.small_font = AssetHandler.get_sys_font("Arial", 24)
 
         # Game state
         self.player_id = ""
@@ -94,19 +101,38 @@ class BaseMenu:
         # Agent menu state
         self.agent_prompt = ""
         self.agent_running = False
+        self.agent_thread = None
         self.agent_results = None
         self.show_fix_prompt = False
         self.agent_values = None
         self.agent_selected_patch_idx = -1  # Index of patch selected for loading
         self.agent_active_patch_path = None # Path to the currently loaded patch
+        self._load_patch_lock = threading.Lock()  # Serialize load-patch + test run to avoid interleaved output and wrong test counts
 
         # Patch saving state
         self.patch_name = ""
 
-        # Patch manager
-        self.patch_manager = PatchManager()
+        # Patch manager (DB path default: __patches/server_patches.db; creates dir and DB if missing)
+        _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        _patches_dir = os.path.join(_project_root, "__patches")
+        self.patch_manager = PatchManager(patches_directory=_patches_dir)
         self.patch_manager.scan_patches()  # Initial scan
         self.patches_ready = False  # Track if player marked patches as ready
+
+        # Server patch library state
+        self.server_patch_items = []
+        self.server_patch_selected_index = -1
+        self.server_patch_page = 0
+        self.server_patch_page_size = 50
+        self.server_patch_total = 0
+        self.server_patch_search = ""
+        self.server_patch_loading = False
+        # Retry with exponential backoff when no patches / not connected (5s, 10s, 20s, ...)
+        self.server_patch_retry_at = None
+        self.server_patch_retry_count = 0
+        # Reconnection target (set by connect_to_server when opening community patches)
+        self.target_server_ip = None
+        self.target_server_port = None
 
         # Initialize component classes
         self.network = MenuNetwork(self)
@@ -142,6 +168,17 @@ class BaseMenu:
                 for comp in room_ui.components:
                     if hasattr(comp, 'reset_cache'):
                         comp.reset_cache()
+        elif menu_name == "server_library":
+            self.server_patch_page = 0
+            self.server_patch_selected_index = -1
+            self.server_patch_items = []
+            # If not connected, schedule retry (exponential backoff) and try reconnect in loop
+            if not self.client or not self.client.connected:
+                self.server_patch_retry_at = time.time() + 5
+                self.server_patch_retry_count = 0
+            else:
+                self.server_patch_retry_at = None
+            self.request_server_patch_page(0)
         else:
             self.in_room = False
 
@@ -178,6 +215,30 @@ class BaseMenu:
             # Update network client if connected
             if self.client:
                 self.client.update()
+                # Clear disconnect-related error once we're connected again
+                if self.client.connected and self.error_message:
+                    msg_lower = self.error_message.lower()
+                    if "disconnect" in msg_lower or "reconnect" in msg_lower or "please reconnect" in msg_lower:
+                        self.error_message = None
+
+            # Community patches: if no patches / not connected, retry with exponential backoff and reconnect
+            if self.running and self.current_menu == "server_library":
+                retry_at = getattr(self, 'server_patch_retry_at', None)
+                if retry_at is not None and time.time() >= retry_at:
+                    self.server_patch_retry_at = None
+                    # Try to reconnect if disconnected
+                    if not self.client or not self.client.connected:
+                        from BASE_files.BASE_menu_helpers import REMOTE_DOMAIN
+                        host = getattr(self, 'target_server_ip', None) or REMOTE_DOMAIN
+                        port = getattr(self, 'target_server_port', None) or getattr(self.network, 'server_port', 5555)
+                        if self.network.connect_to_server(host, port):
+                            self.request_server_patch_page(0)
+                    else:
+                        self.request_server_patch_page(0)
+                    # Exponential backoff: 5s, 10s, 20s, ... (cap at ~5 * 2^10)
+                    count = getattr(self, 'server_patch_retry_count', 0)
+                    self.server_patch_retry_count = min(count + 1, 10)
+                    self.server_patch_retry_at = time.time() + (5 * (2 ** self.server_patch_retry_count))
 
             # Only render if still running (in case game was started during update)
             if self.running:
@@ -219,6 +280,9 @@ class BaseMenu:
     def on_library_click(self):
         self.handlers.on_library_click()
 
+    def on_server_library_click(self):
+        self.handlers.on_server_library_click()
+
     def on_agent_content_click(self):
         self.handlers.on_agent_content_click()
 
@@ -242,6 +306,24 @@ class BaseMenu:
 
     def on_library_back_click(self):
         self.handlers.on_library_back_click()
+
+    def on_server_library_back_click(self):
+        self.handlers.on_server_library_back_click()
+
+    def on_server_library_prev_click(self):
+        self.handlers.on_server_library_prev_click()
+
+    def on_server_library_next_click(self):
+        self.handlers.on_server_library_next_click()
+
+    def on_server_library_download_click(self):
+        self.handlers.on_server_library_download_click()
+
+    def on_server_library_search_click(self):
+        self.handlers.on_server_library_search_click()
+
+    def on_delete_patch_click(self):
+        self.handlers.on_delete_patch_click()
 
     def on_agent_send_click(self):
         self.handlers.on_agent_send_click()
@@ -331,6 +413,33 @@ class BaseMenu:
         print("Failed to retrieve clipboard content")
         return ""
 
+    def _kill_agent_thread(self):
+        """Attempt to stop the running agent thread by raising SystemExit."""
+        thread = getattr(self, "agent_thread", None)
+        if thread and thread.is_alive():
+            res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                ctypes.c_long(thread.ident),
+                ctypes.py_object(SystemExit)
+            )
+            if res == 0:
+                return False  # thread not found
+            if res > 1:
+                # revert if more than one thread was affected
+                ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread.ident), 0)
+                return False
+        return True
+
+    def stop_agent_immediately(self):
+        """Hard kill the agent thread and reset state."""
+        stopped = self._kill_agent_thread()
+        self.agent_running = False
+        self.agent_thread = None
+        try:
+            self.action_logger.end_session()
+        except Exception:
+            pass
+        self.show_error_message("Agent stopped." if stopped else "Failed to stop agent thread.")
+
     # Agent functionality
     def run_agent(self, prompt: str, patch_to_load: str = None, needs_rebase: bool = True):
         """Run the agent with the given prompt."""
@@ -365,6 +474,7 @@ class BaseMenu:
             self.agent_results = {'passed': 0, 'total': 0, 'error': str(e)}
         finally:
             self.agent_running = False
+            self.agent_thread = None
 
     def run_agent_fix(self, results):
         """Run the agent in fix mode."""
@@ -456,6 +566,7 @@ class BaseMenu:
             # End the visual logging session
             self.action_logger.end_session()
             self.agent_running = False
+            self.agent_thread = None
 
     # Callback methods (used by network client)
     def file_received_callback(self, file_path: str, success: bool):
@@ -471,6 +582,77 @@ class BaseMenu:
             self.patch_to_apply = new_path
         else:
             print(f"✗ Failed to receive file: {file_path}")
+
+    def request_server_patch_page(self, page: int = 0):
+        if self.client and self.client.connected:
+            self.server_patch_loading = True
+            self.server_patch_items = []
+            self.server_patch_selected_index = -1
+            self.client.request_patch_library_page(page, self.server_patch_page_size, self.server_patch_search)
+        else:
+            # Not connected: schedule retry with exponential backoff (handled in run_menu_loop)
+            if self.current_menu == "server_library":
+                if getattr(self, 'server_patch_retry_at', None) is None:
+                    self.server_patch_retry_at = time.time() + 5
+                    self.server_patch_retry_count = 0
+
+    def patch_library_page_callback(self, items: list, page: int, total: int, page_size: int, search: str):
+        self.server_patch_items = items or []
+        self.server_patch_page = max(0, int(page))
+        self.server_patch_total = max(0, int(total))
+        if page_size:
+            self.server_patch_page_size = int(page_size)
+        self.server_patch_search = search or self.server_patch_search
+        self.server_patch_selected_index = -1
+        self.server_patch_loading = False
+        # No patches: schedule retry with exponential backoff and reconnect
+        if (not self.server_patch_items and self.server_patch_total == 0) and (self.client and self.client.connected):
+            self.server_patch_retry_at = time.time() + 5
+            self.server_patch_retry_count = 0
+        elif self.server_patch_items or self.server_patch_total > 0:
+            self.server_patch_retry_at = None
+
+    def patch_library_downloaded_callback(self, patch_path: str, base_backup: str, patch_id: str):
+        """Save downloaded patch to database and remove the JSON file once added."""
+        try:
+            if getattr(self.patch_manager, '_patch_db', None) and patch_path and os.path.isfile(patch_path):
+                with open(patch_path, 'r') as f:
+                    data = json.load(f)
+                patch_data = {
+                    'name_of_backup': data.get('name_of_backup', base_backup or 'Unknown'),
+                    'prompt_used': data.get('prompt_used', ''),
+                    'changes': data.get('changes', []),
+                }
+                if data.get('game_hash'):
+                    patch_data['game_hash'] = data['game_hash']
+                patch_hash = str(patch_id) if patch_id else str(hash(json.dumps(patch_data.get('changes', []))))
+                name = os.path.splitext(os.path.basename(patch_path))[0] or 'Community Patch'
+                self.patch_manager._patch_db.add_patch(
+                    patch_data,
+                    creator_name='Community',
+                    patch_hash=patch_hash,
+                    name=name,
+                )
+                # Delete the JSON file once it's in the database so we don't keep duplicates
+                try:
+                    os.remove(patch_path)
+                    print(f"Saved patch to database and removed: {patch_path}")
+                except OSError as e:
+                    print(f"Could not remove patch file {patch_path}: {e}")
+            self.show_error_message(f"Downloaded patch: {os.path.basename(patch_path)}")
+        except Exception as e:
+            print(f"Error saving patch to database: {e}")
+            self.show_error_message(f"Downloaded but save failed: {e}")
+        self.patch_manager.scan_patches()
+
+    def patch_library_error_callback(self, error: str):
+        self.show_error_message(f"Server patch library error: {error}")
+
+    def backup_downloaded_callback(self, backup_name: str, success: bool, error: str):
+        if success:
+            self.show_error_message(f"Downloaded backup: {backup_name}")
+        else:
+            self.show_error_message(f"Backup download failed: {backup_name} ({error})")
 
     def name_rejected_callback(self, reason: str):
         """Callback when player name is rejected by server."""
@@ -509,6 +691,10 @@ class BaseMenu:
             if result:
                 print("-----    SUCCESS    -----")
                 print("All changes applied successfully")
+                from BASE_files.BASE_menu_helpers import reload_game_code
+                reload_game_code()
+                # Delete temp single-patch .json files used to send to server; merged patch is now applied
+                self.patch_manager.cleanup_temp_patch_files()
                 self.client.send_patch_applied(success=True)
             else:
                 print("-----    FAILED    -----")
@@ -597,6 +783,14 @@ class BaseMenu:
         self.error_message = None
         self.error_message_time = 0
 
+    def on_game_in_progress_callback(self, in_progress: bool, active_players: list):
+        """Callback when receiving room status about game progress."""
+        self.game_active = in_progress
+        self.active_players = active_players
+        # Force UI update if in room
+        if self.current_menu == "room":
+            self.renderers._sync_state_to_components(self.renderers.managers["room"])
+
     def server_restarted_callback(self, message: str):
         """Callback when the server has restarted and is ready for new games."""
         print(f"🔄 {message}")
@@ -620,14 +814,19 @@ class BaseMenu:
     def disconnected_callback(self):
         """Callback when client gets disconnected from server."""
         print("🔌 Disconnected from server")
-        print("Returning to room menu...")
+
+        # Capture before reset: only switch to room UI if we were actually in a room.
+        # If we were on main menu (e.g. opening Community Patches), disconnect() is
+        # called intentionally by connect_to_server() before reconnecting — do not force room UI.
+        was_in_room = self.in_room
 
         # Reset room state since connection is lost
         self.reset_room_state()
 
-        # Go back to room menu and show disconnection message
-        self.show_menu("room")
-        self.show_error_message("Disconnected from server. Please reconnect.")
+        if was_in_room:
+            print("Returning to room menu...")
+            self.show_menu("room")
+            self.show_error_message("Disconnected from server. Please reconnect.")
 
     def _load_settings(self):
         settings_dict = load_settings()
@@ -652,6 +851,42 @@ class BaseMenu:
             self.settings_openai_key = ""
             self.selected_provider = "GEMINI"
             self.settings_model = ""
+    
+    def ensure_base_workspace(self) -> bool:
+        """
+        Ensure we have a base backup and restore GameFolder to it.
+        Safe to call multiple times; keeps code DRY between startup and entering Agent.
+        """
+        from coding.non_callable_tools.backup_handling import BackupHandler
+        handler = BackupHandler("__game_backups")
+        
+        while True:
+            # Ensure we have a base backup recorded
+            if self.base_working_backup is None:
+                print("Creating initial safety backup...")
+                try:
+                    _, self.base_working_backup = handler.create_backup("GameFolder")
+                    print(f"Initial backup created: {self.base_working_backup}")
+                    # Persist it so future runs restore correctly
+                    self.handlers.on_settings_save_click()
+                    break
+                except Exception as e:
+                    print(f"Warning: Failed to create initial backup: {e}")
+                    return False
+
+            # Restore to base backup
+            print(f"Restoring from backup: {self.base_working_backup}")
+            _, restored_name = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
+            if restored_name is None:
+                print("Warning: Failed to restore backup")
+                #return False
+                self.base_working_backup = None
+                continue
+            else:
+                self.base_working_backup = restored_name
+                print(f"Backup restored: {self.base_working_backup}")
+                break
+        return True
 
     def on_start(self):
         self._load_settings()
@@ -659,23 +894,8 @@ class BaseMenu:
         cleanup_old_logs()
         self.patch_to_apply = None
 
-        from coding.non_callable_tools.backup_handling import BackupHandler
-        handler = BackupHandler("__game_backups")
-
-        # Ensure we have an initial base backup if none is set
-        if self.base_working_backup is None:
-            print("Creating initial safety backup...")
-            try:
-                _, self.base_working_backup = handler.create_backup("GameFolder")
-                print(f"Initial backup created: {self.base_working_backup}")
-                self.handlers.on_settings_save_click()
-
-            except Exception as e:
-                print(f"Warning: Failed to create initial backup: {e}")
-        else:
-            print(f"Restoring from backup: {self.base_working_backup}")
-            _, self.base_working_backup = handler.restore_backup(self.base_working_backup, target_path="GameFolder")
-            print(f"Backup restored: {self.base_working_backup}")
+        # DRY: reuse the same logic
+        return self.ensure_base_workspace()
     
     def start_game(self):
         """Start the game."""

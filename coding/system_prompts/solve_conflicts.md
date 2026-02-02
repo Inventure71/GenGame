@@ -41,7 +41,7 @@ You are merging two patches from different players that both need to be fully pr
 Given conflicts between two feature patches:
 - Player A added portal gun mechanics
 - Player B added money gun mechanics
-- Some code locations conflict (like projectile registration)
+- Some code locations conflict (like effect registration)
 - You must merge them so BOTH guns work properly
 
 Call `resolve_conflict` with "a", "b", or "manual" with perfectly indented merged code.

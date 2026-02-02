@@ -1,122 +1,129 @@
-from BASE_components.BASE_ui import BaseUI
 import pygame
+from BASE_components.BASE_ui import BaseUI
+from BASE_components.BASE_asset_handler import AssetHandler
+
 
 class GameUI(BaseUI):
-    """
-    Game specific UI. Currently uses all features from the modernized BaseUI.
-    Enhanced with shield visualization.
-    """
+    """MS2 UI: shows health, size, dashes, and abilities."""
+
     def __init__(self, screen, arena_width, arena_height):
         super().__init__(screen, arena_width, arena_height)
+        self.font = AssetHandler.get_font(None, 24)
+        self.small_font = AssetHandler.get_font(None, 18)
 
-    def draw_character_indicator(self, character, player_num: int, position: [int, int]):
-        """
-        Override to add shield visualization around the health circle.
-        """
-        x, y = position
+    def draw(self, characters: list, game_over: bool = False, winner=None, respawn_timers: dict = None, local_player_id: str = None, network_stats: dict = None):
+        self._draw_stats(characters, local_player_id, network_stats)
+        target = self._pick_target_character(characters, local_player_id)
+        if target:
+            self._draw_health_bar(target)
+        if respawn_timers:
+            self._draw_respawns(respawn_timers, characters)
+        if self._is_help_requested():
+            target = self._pick_target_character(characters, local_player_id)
+            if target:
+                self._draw_ability_help(target)
+        if game_over:
+            self._draw_game_over(winner)
 
-        # Calculate health percentage and color (same as base)
-        health_pct = max(0, min(1, character.health / character.max_health))
+    def _draw_ability_help(self, character):
+        primary_name = getattr(character, "primary_ability_name", None) or "No Primary"
+        primary_desc = getattr(character, "primary_description", "") or "No description"
+        passive_name = getattr(character, "passive_ability_name", None) or "No Passive"
+        passive_desc = getattr(character, "passive_description", "") or "No description"
 
-        # Color gradient: Green -> Yellow -> Red
-        if health_pct > 0.6:
-            color = (int(255 * (1 - (health_pct - 0.6) / 0.4)), 255, 0)
-        elif health_pct > 0.3:
-            color = (255, int(255 * ((health_pct - 0.3) / 0.3)), 0)
+        lines = [
+            "Ability Details (Hold H)",
+            f"Primary: {primary_name}",
+            f"  {primary_desc}",
+            f"Passive: {passive_name}",
+            f"  {passive_desc}",
+        ]
+        surfaces = [
+            AssetHandler.render_text(line, None, 24, (255, 255, 255))
+            for line in lines
+        ]
+
+        pad = 10
+        line_height = 20
+        width = max(surface.get_width() for surface in surfaces) + pad * 2
+        height = line_height * len(lines) + pad * 2
+        x = self.arena_width - width - 20
+        y = 20
+
+        panel = pygame.Surface((width, height), pygame.SRCALPHA)
+        panel.fill((0, 0, 0, 160))
+        self.screen.blit(panel, (x, y))
+
+        text_y = y + pad
+        for surface in surfaces:
+            self.screen.blit(surface, (x + pad, text_y))
+            text_y += line_height
+
+    def _draw_stats(self, characters, local_player_id: str = None, network_stats: dict = None):
+        x = 20
+        y = 20
+        target = self._pick_target_character(characters, local_player_id)
+        if target and not getattr(target, "is_eliminated", False):
+            name = getattr(target, "name", "Cow")
+            size = int(getattr(target, "size", target.width))
+            dashes = getattr(target, "dashes_left", 0)
+            ability = getattr(target, "primary_ability_name", None) or "No Primary"
+            passive = getattr(target, "passive_ability_name", None) or "No Passive"
+
+            lines = [
+                f"{name}",
+                f"Size: {size}  Dashes: {dashes}",
+                f"Primary: {ability}",
+                f"Passive: {passive}",
+            ]
+
+            for line in lines:
+                text = AssetHandler.render_text(line, None, 24, (255, 255, 255))
+                self.screen.blit(text, (x, y))
+                y += 20
+            y += 10
+        
+        # Draw network stats below character stats
+        if network_stats:
+            y += 10  # Add spacing before network stats
+            network_lines = [
+                f"Network Stats:",
+                f"Packets/sec: {network_stats.get('received_last_second', 0)}",
+                f"Packets Lost: {network_stats.get('packets_lost', 0)}",
+            ]
+            
+            for line in network_lines:
+                text = AssetHandler.render_text(line, None, 18, (200, 200, 255))
+                self.screen.blit(text, (x, y))
+                y += 18
+
+    def _draw_health_bar(self, character):
+        max_health = float(getattr(character, "max_health", 100.0) or 0.0)
+        health = float(getattr(character, "health", 0.0) or 0.0)
+        if max_health <= 0:
+            return
+
+        ratio = max(0.0, min(1.0, health / max_health))
+        if ratio > 0.6:
+            fill_color = (60, 200, 90)
+        elif ratio > 0.3:
+            fill_color = (230, 200, 60)
         else:
-            color = (255, 0, 0)
+            fill_color = (220, 70, 70)
 
-        # Draw invulnerability effect (outermost glow) if character is invulnerable
-        if hasattr(character, 'is_invulnerable') and character.is_invulnerable:
-            # Simple glow effect - multiple concentric circles with decreasing alpha
-            timer_pct = max(0, min(1, character.invulnerability_timer / 8.0))  # Max 8.0 seconds
-            glow_intensity = int(150 * timer_pct) + 50  # Fade from 200 to 50
+        bar_width = 220
+        bar_height = 18
+        x = 20
+        y = self.arena_height - bar_height - 20
 
-            # Create glow surface once
-            glow_size = self.circle_radius * 2 + 16
-            glow_surf = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+        bg_rect = pygame.Rect(x, y, bar_width, bar_height)
+        fill_rect = pygame.Rect(x, y, int(bar_width * ratio), bar_height)
 
-            # Draw multiple glow circles with decreasing alpha
-            for i in range(3):
-                radius = self.circle_radius + 4 + i * 2
-                alpha = int(80 * timer_pct * (1 - i * 0.3))  # Fade with timer and distance
-                if alpha > 0:
-                    glow_color = (glow_intensity, glow_intensity, 255, alpha)
-                    pygame.draw.circle(glow_surf, glow_color,
-                                     (glow_size // 2, glow_size // 2), radius)
+        pygame.draw.rect(self.screen, (30, 30, 30), bg_rect)
+        pygame.draw.rect(self.screen, fill_color, fill_rect)
+        pygame.draw.rect(self.screen, (220, 220, 220), bg_rect, 2)
 
-            # Blit the glow surface
-            self.screen.blit(glow_surf, (x - glow_size // 2, y - glow_size // 2))
-
-            # Invulnerability border
-            border_color = (100, 100, min(255, glow_intensity))
-            pygame.draw.circle(self.screen, border_color, (x, y), self.circle_radius + 8, 2)
-
-        # Draw shield ring (outer circle) if character has shield
-        if hasattr(character, 'shield') and character.shield > 0:
-            shield_pct = character.shield / character.max_shield
-            shield_color = (0, int(255 * shield_pct), int(255 * shield_pct))  # Cyan gradient
-
-            # Shield background (gray when depleted)
-            pygame.draw.circle(self.screen, (60, 60, 60), (x, y), self.circle_radius + 6)
-            # Active shield
-            shield_angle = 360 * shield_pct
-            pygame.draw.arc(self.screen, shield_color, (x - self.circle_radius - 6, y - self.circle_radius - 6,
-                                                       (self.circle_radius + 6) * 2, (self.circle_radius + 6) * 2),
-                          0, shield_angle * 3.14159 / 180, 4)
-            # Shield border
-            pygame.draw.circle(self.screen, (0, 255, 255), (x, y), self.circle_radius + 6, 2)
-
-        # Draw background and health circle (same as base)
-        pygame.draw.circle(self.screen, (30, 30, 30), (x, y), self.circle_radius)
-        pygame.draw.circle(self.screen, color, (x, y), self.circle_radius - 2)
-        pygame.draw.circle(self.screen, (0, 0, 0), (x, y), self.circle_radius, 3)
-
-        # Draw player identifier (Name or Number) - same as base
-        id_text = self.font.render(str(player_num), True, (255, 255, 255))
-        id_rect = id_text.get_rect(center=(x, y - 8))
-
-        # Text shadow
-        shadow = self.font.render(str(player_num), True, (0, 0, 0))
-        self.screen.blit(shadow, (id_rect.x + 1, id_rect.y + 1))
-        self.screen.blit(id_text, id_rect)
-
-        # Draw lives - same as base
-        lives_y = y + 12
-        life_spacing = 10
-        life_radius = 4
-        start_x = x - ((character.MAX_LIVES - 1) * life_spacing) // 2
-
-        for i in range(character.MAX_LIVES):
-            life_x = start_x + i * life_spacing
-            if i < character.lives:
-                pygame.draw.circle(self.screen, (255, 255, 255), (life_x, lives_y), life_radius)
-            else:
-                pygame.draw.circle(self.screen, (100, 100, 100), (life_x, lives_y), life_radius, 1)
-
-        # Draw weapon info - same as base
-        if character.weapon:
-            weapon_name = character.weapon.name[:10]
-            ammo_display = f"{character.weapon.ammo}/{character.weapon.max_ammo}"
-            weapon_text = self.small_font.render(f"{weapon_name}", True, (255, 255, 255))
-            ammo_text = self.small_font.render(ammo_display, True, (255, 200, 0))
-
-            # Position weapon name
-            weapon_rect = weapon_text.get_rect(center=(x, y + self.circle_radius + 18))
-
-            # Position ammo below weapon name
-            ammo_rect = ammo_text.get_rect(center=(x, y + self.circle_radius + 32))
-
-            # Label background for weapon
-            bg_rect = weapon_rect.inflate(8, 4)
-            bg_surf = pygame.Surface((bg_rect.width, bg_rect.height), pygame.SRCALPHA)
-            pygame.draw.rect(bg_surf, (0, 0, 0, 180), (0, 0, bg_rect.width, bg_rect.height), border_radius=4)
-            self.screen.blit(bg_surf, bg_rect)
-            self.screen.blit(weapon_text, weapon_rect)
-
-            # Label background for ammo
-            ammo_bg_rect = ammo_rect.inflate(8, 4)
-            ammo_bg_surf = pygame.Surface((ammo_bg_rect.width, ammo_bg_rect.height), pygame.SRCALPHA)
-            pygame.draw.rect(ammo_bg_surf, (0, 0, 0, 180), (0, 0, ammo_bg_rect.width, ammo_bg_rect.height), border_radius=4)
-            self.screen.blit(ammo_bg_surf, ammo_bg_rect)
-            self.screen.blit(ammo_text, ammo_rect)
+        label = f"HP {int(health)}/{int(max_health)}"
+        text = AssetHandler.render_text(label, None, 18, (255, 255, 255))
+        text_rect = text.get_rect(midleft=(x + 8, y + bar_height / 2))
+        self.screen.blit(text, text_rect)

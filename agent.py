@@ -3,14 +3,14 @@ import math
 import os
 from typing import List, Dict
 from dotenv import load_dotenv
-from BASE_files.BASE_helpers import load_settings
+from BASE_files.BASE_menu_helpers import load_settings
 from coding.non_callable_tools.backup_handling import BackupHandler
 from coding.generic_implementation import GenericHandler
 from coding.non_callable_tools.gather_context import gather_context_planning, gather_context_coding, gather_context_testing, gather_context_fix
 from coding.non_callable_tools.todo_list import TodoList
 from coding.tools.file_handling import get_tree_directory, read_file, create_file, get_directory
 from coding.tools.modify_inline import modify_file_inline
-from coding.tools.code_analysis import find_function_usages, get_function_source, list_functions_in_file
+from coding.tools.code_analysis import find_function_usages, get_function_source, get_file_outline
 from coding.non_callable_tools.action_logger import action_logger
 from coding.tools.testing import parse_test_results
 from BASE_components.BASE_tests import run_all_tests
@@ -120,6 +120,33 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
 
     conflicts_by_file = get_all_conflicts(path_to_problematic_patch)
     print(f"Found conflicts in {len(conflicts_by_file)} file(s)")
+
+    # Auto-resolve seed conflicts because they are predictable and present in all clients
+    import re
+    import random
+    seed_resolved = 0
+    seed_conflicts = []  # Collect conflicts to resolve
+
+    for file_path, conflicts in conflicts_by_file.items():
+        if not file_path.endswith("setup.py"):
+            continue
+        for conflict in conflicts:
+            if len(conflict["option_a"]) == 1 and len(conflict["option_b"]) == 1:
+                a_line = conflict["option_a"][0].strip()
+                b_line = conflict["option_b"][0].strip()
+                if re.match(r'random\.seed\(\s*\d+\s*\)', a_line) and re.match(r'random\.seed\(\s*\d+\s*\)', b_line):
+                    seed_conflicts.append((file_path, conflict))
+
+    # Resolve in reverse order (highest conflict_num first) to avoid number shifts
+    for file_path, conflict in sorted(seed_conflicts, key=lambda x: x[1]["conflict_num"], reverse=True):
+        chosen = random.choice([conflict["option_a"], conflict["option_b"]])
+        resolve_conflict(path_to_problematic_patch, file_path, conflict["conflict_num"], "manual", chosen)
+        seed_resolved += 1
+        print(f"  ✓ Auto-resolved seed conflict #{conflict['conflict_num']} in {file_path}")
+
+    if seed_resolved > 0:
+        print(f"Auto-resolved {seed_resolved} seed conflict(s), re-checking remaining conflicts...")
+        conflicts_by_file = get_all_conflicts(path_to_problematic_patch)
 
     if len(conflicts_by_file) == 0:
         print("No conflicts found, continuing...")
@@ -322,7 +349,7 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
                 modify_file_inline,
                 todo_list_verification.complete_task,
             ]
-            verify_file_sys_prompt = load_prompt("coding/system_prompts/verify_file.md", include_general_context=False)
+            verify_file_sys_prompt = load_prompt("coding/system_prompts/verify_file.md", include_general_context=True)
             modelHandler.set_tools(tools)
             modelHandler.setup_config("LOW", verify_file_sys_prompt, tools=tools)
 
@@ -364,7 +391,10 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
         try:
             from coding.non_callable_tools.backup_handling import BackupHandler
             base_backup_handler = BackupHandler("__game_backups")
-            base_backup_handler.restore_backup(base_backup, target_path="GameFolder")
+            success, _ = base_backup_handler.restore_backup(base_backup, target_path="GameFolder")
+            if success is None:
+                print(f"[error] Failed to restore to base game state: {base_backup}")
+                raise Exception("Failed to restore to base game state")
             print(f"[success] Successfully restored to base game state: {base_backup}")
         except Exception as e:
             print(f"[error] Failed to restore to base game state: {e}")
@@ -460,7 +490,7 @@ def plan_feature(prompt: str, modelHandler: GenericHandler, todo_list: TodoList,
         read_file,
         find_function_usages,
         get_function_source,
-        list_functions_in_file,
+        get_file_outline,
         get_directory,
         # get_tree_directory,  # Already provided in planning context
     ]
@@ -494,7 +524,7 @@ def implement_feature(modelHandler: GenericHandler, todo_list: TodoList):
         get_directory,
         get_tree_directory,
         modify_file_inline,
-        list_functions_in_file,
+        get_file_outline,
         find_function_usages,
         get_function_source,
         todo_list.complete_task,
@@ -556,7 +586,7 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
         get_directory,
         get_tree_directory,
         modify_file_inline,
-        list_functions_in_file,
+        get_file_outline,
         find_function_usages,
         get_function_source,
         todo_list.complete_task,
@@ -597,7 +627,7 @@ def generate_tests(prompt: str, modelHandler: GenericHandler, todo_list: TodoLis
     print("Tests created")
     print("--------------------------------")
 
-def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
+def fix_system(prompt: str, modelHandler: GenericHandler, results: dict, old_prompt: str = ""):
     if len(modelHandler.chat_history) > 0:
         print("------ Cleaning up chat history after planning and before fixing ------")
         modelHandler.clean_chat_history()
@@ -618,7 +648,7 @@ def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
         get_directory,
         get_tree_directory,
         modify_file_inline,
-        list_functions_in_file,
+        get_file_outline,
         find_function_usages,
         get_function_source,
         run_all_tests_tool,
@@ -637,6 +667,9 @@ def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
     ]
     if prompt:
         lines.append(f"## User Comment:\n{prompt}")
+    if old_prompt:
+        lines.append(f"## Original Implementation Goal:\n{old_prompt}\n")
+        lines.append("IMPORTANT: The above describes what SHOULD be implemented. Use this as context to understand the intended behavior when fixing tests.")
 
     full_prompt = "\n".join(lines)
 
@@ -647,7 +680,7 @@ def fix_system(prompt: str, modelHandler: GenericHandler, results: dict):
     modelHandler.ask_until_task_completed_V2(todo_list, current_index, full_prompt)
     return todo_list
 
-def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None, UI_called=False):
+def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fix_mode: bool, backup_name: str, total_cleanup: bool, results: dict=None, UI_called=False, old_prompt: str = ""):
     """
     Main game creation loop that plans, implements, tests, and optionally fixes issues.
     
@@ -668,6 +701,7 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
 
         print("------ Enchanting prompt ------")
         prompt = enchancer_feature(prompt, modelHandler)
+        action_logger.prompt_used = prompt
     
         print("--------------------------------"*5)
         print("Enchanced prompt:")
@@ -681,9 +715,11 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
     
     else:
         print("------ Fixing system ------")
+        if not old_prompt:
+            old_prompt = getattr(action_logger, 'prompt_used', "")
         if results is None:
             results = run_all_tests_tool(explanation="Initial test run before fix cycle")
-        todo_list = fix_system(prompt, modelHandler, results)
+        todo_list = fix_system(prompt, modelHandler, results, old_prompt=old_prompt)
 
     results = run_all_tests_tool(explanation="Final test run after implementation/fix cycle")
     print("Tests results: ", results)
@@ -708,7 +744,7 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
             )
             if not UI_called:
                 # Recursive call for command-line fix mode
-                return full_loop(fix_prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results, UI_called=False)
+                return full_loop(fix_prompt, modelHandler, todo_list, fix_mode=True, backup_name=backup_name, total_cleanup=False, results=results, UI_called=False, old_prompt=action_logger.prompt_used)
             else:
                 # Return to menu with fix prompt
                 return False, modelHandler, todo_list, fix_prompt, backup_name
@@ -764,20 +800,22 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
             file_containing_patches=patch_to_load,
             skip_warnings=True
         )
-        from BASE_files.BASE_helpers import reload_game_code
+        from BASE_files.BASE_menu_helpers import reload_game_code
         reloaded_setup = reload_game_code()
         if not success:
             print(f"Failed to load patch: {errors}")
             return False, None, None, "", ""
         
-        backup_name, _, _ = vc.load_from_extension_file(patch_to_load)
+        backup_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_to_load) # TODO: add old_prompt to fix system
+        action_logger.prompt_used = old_prompt
         print(f"Patch loaded successfully. Base backup: {backup_name}")
 
     elif patch_to_load and not needs_rebase:
         # We assume the UI already loaded the patch, but we still need the backup_name for saving
         from coding.non_callable_tools.version_control import VersionControl
         vc = VersionControl()
-        backup_name, _, _ = vc.load_from_extension_file(patch_to_load)
+        backup_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_to_load)
+        action_logger.prompt_used = old_prompt
         print(f"Using already loaded patch context. Base backup: {backup_name}")
 
     elif start_from_base is None:
@@ -788,6 +826,9 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
     elif start_from_base and needs_rebase:
         # Rebase to a specific backup
         backup_path, backup_name = handler.restore_backup(start_from_base, target_path="GameFolder")
+        if backup_name is None:
+            print(f"[error] Failed to restore to base game state: {start_from_base}")
+            raise Exception("Failed to restore to base game state")
         print("Restored backup from: ", backup_path)
     
     else:
@@ -817,7 +858,8 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
         fix_mode=False, 
         backup_name=backup_name, 
         total_cleanup=True, 
-        UI_called=UI_called
+        UI_called=UI_called,
+        old_prompt=action_logger.prompt_used
     )
     
     # End session on success, or when not called from UI

@@ -1,4 +1,23 @@
 import pygame
+import math
+from BASE_components.BASE_asset_handler import AssetHandler
+
+
+# --- THEME CONSTANTS ---
+THEME = {
+    "background": (10, 14, 23),      # Deep Dark Blue
+    "surface": (25, 32, 48),         # Lighter Dark Blue
+    "surface_hover": (35, 42, 60),   # Highlighted Surface
+    "primary": (0, 180, 240),        # Cyan/Electric Blue
+    "primary_hover": (50, 200, 255),
+    "danger": (220, 40, 80),         # Neon Red
+    "danger_hover": (240, 70, 100),
+    "text_main": (240, 245, 255),    # Off-white
+    "text_dim": (140, 150, 170),     # Grey-blue
+    "border": (45, 55, 75),          # Subtle border
+    "accent": (100, 255, 218),       # Mint accent (optional)
+    "accent_hover": (130, 255, 230), # Lighter Mint
+}
 
 class UIComponent:
     """Base class for all UI elements."""
@@ -93,8 +112,8 @@ class UIManager:
     def render(self, screen):
         """Render all visible components."""
         # Render regular components first
-        regular_components = [comp for comp in self.components if not isinstance(comp, NotificationOverlay)]
-        overlay_components = [comp for comp in self.components if isinstance(comp, NotificationOverlay)]
+        regular_components = [comp for comp in self.components if not isinstance(comp, (NotificationOverlay, LoadingOverlay))]
+        overlay_components = [comp for comp in self.components if isinstance(comp, (NotificationOverlay, LoadingOverlay))]
 
         # Render regular components
         for comp in regular_components:
@@ -120,7 +139,7 @@ class Label(UIComponent):
         self._update_rect()
 
     def _update_rect(self):
-        surf = self.font.render(self.text, True, self.color)
+        surf = AssetHandler.render_text_from_font(self.text, self.font, self.color)
         self.rect.width = surf.get_width()
         self.rect.height = surf.get_height()
         if self.center:
@@ -132,7 +151,7 @@ class Label(UIComponent):
         self._update_rect()
 
     def render(self, screen):
-        surf = self.font.render(self.text, True, self.color)
+        surf = AssetHandler.render_text_from_font(self.text, self.font, self.color)
         screen.blit(surf, self.rect.topleft)
 
 class Button(UIComponent):
@@ -146,34 +165,61 @@ class Button(UIComponent):
         self.border_color = (150, 150, 180)
         self.text_color = (255, 255, 255)
 
-    def get_colors(self):
-        """Determine background color based on style and hover state."""
-        if self.style == "primary":
-            base = (70, 70, 130)
-        elif self.style == "danger":
-            base = (130, 40, 40)
-        else: # normal
-            base = (70, 70, 100)
-        
-        if not self.enabled:
-            return (40, 40, 40)
-        if self.hovered:
-            # Lighten the color when hovered
-            return tuple(min(255, c + 30) for c in base)
-        return base
-
     def render(self, screen):
         color = self.get_colors()
         
+        # Shadow/Glow effect (optional, simple offset)
+        # pygame.draw.rect(screen, (0, 0, 0, 50), self.rect.move(2, 2), border_radius=8)
+
         # Draw background
         pygame.draw.rect(screen, color, self.rect, border_radius=8)
-        # Draw border
-        pygame.draw.rect(screen, self.border_color, self.rect, 2, border_radius=8)
+        
+        # Draw border (thinner, more subtle, or only on hover)
+        border_c = THEME["border"]
+        if self.style == "primary":
+             border_c = THEME["primary"]
+        elif self.style == "accent":
+             border_c = THEME["accent"]
+        
+        if self.hovered:
+            border_c = THEME["text_main"]
+            
+        pygame.draw.rect(screen, border_c, self.rect, 1, border_radius=8)
         
         # Draw text
-        text_surf = self.font.render(self.text, True, self.text_color)
+        text_color = THEME["text_main"]
+        if self.style == "accent":
+            # Accent is bright mint, so use dark text for contrast if needed, 
+            # but let's stick to theme for now. Maybe background color is dark enough?
+            # Actually mint (100, 255, 218) is quite bright. White text might be hard to read.
+            # Let's use the background color for text on accent buttons.
+            text_color = THEME["background"]
+        elif not self.enabled:
+            text_color = THEME["text_dim"]
+            
+        text_surf = AssetHandler.render_text_from_font(self.text, self.font, text_color)
         text_rect = text_surf.get_rect(center=self.rect.center)
         screen.blit(text_surf, text_rect)
+
+    def get_colors(self):
+        """Determine background color based on style and hover state."""
+        if not self.enabled:
+            return (30, 35, 45)
+
+        if self.style == "primary":
+            base = THEME["primary"]
+            hover = THEME["primary_hover"]
+        elif self.style == "danger":
+            base = THEME["danger"]
+            hover = THEME["danger_hover"]
+        elif self.style == "accent":
+            base = THEME["accent"]
+            hover = THEME["accent_hover"]
+        else: # normal
+            base = THEME["surface"]
+            hover = THEME["surface_hover"]
+        
+        return hover if self.hovered else base
 
     def handle_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -184,19 +230,31 @@ class Button(UIComponent):
         return False
 
 class Panel(UIComponent):
-    """Background container with border."""
-    def __init__(self, x, y, width, height, color=(30, 30, 40), border_color=(100, 100, 120), border_width=2, name=None):
+    """Background container with optional transparency."""
+    def __init__(self, x, y, width, height, color=None, border_color=None, border_width=1, alpha=240, name=None):
         super().__init__(x, y, width, height, name=name)
-        self.color = color
-        self.border_color = border_color
+        self.color = color if color else THEME["surface"]
+        self.border_color = border_color if border_color else THEME["border"]
         self.border_width = border_width
+        self.alpha = alpha
+        
+        # Pre-create surface for alpha blending
+        self.surface = pygame.Surface((width, height), pygame.SRCALPHA)
 
     def render(self, screen):
-        # Draw background
-        pygame.draw.rect(screen, self.color, self.rect)
+        # Clear surface
+        self.surface.fill((0,0,0,0))
+        
+        # Draw background with alpha
+        if self.color:
+             r, g, b = self.color
+             pygame.draw.rect(self.surface, (r, g, b, self.alpha), (0, 0, self.rect.width, self.rect.height), border_radius=6)
+        
         # Draw border
         if self.border_width > 0:
-            pygame.draw.rect(screen, self.border_color, self.rect, self.border_width)
+            pygame.draw.rect(self.surface, self.border_color, (0, 0, self.rect.width, self.rect.height), self.border_width, border_radius=6)
+            
+        screen.blit(self.surface, self.rect.topleft)
 
 class TextField(UIComponent):
     """Full-featured input with cursor, selection, and clipboard support."""
@@ -214,8 +272,8 @@ class TextField(UIComponent):
         self.padding = 10
         self.line_height = 25
         self.char_width = 8 # Approximate, ideally calculated from font
-        self.text_color = (255, 255, 255)
-        self.placeholder_color = (150, 150, 150)
+        self.text_color = THEME["text_main"]
+        self.placeholder_color = THEME["text_dim"]
         self._focused = False  # Initialize the backing field
         self._text_input_enabled = False
 
@@ -450,38 +508,62 @@ class TextField(UIComponent):
         return False
 
     def render(self, screen):
-        bg_color = (60, 60, 80) if self.focused else (40, 40, 50)
+        # Modern Input Style: Dark background, bottom border highlight on focus
+        
+        bg_color = (20, 24, 35) # Slightly darker than surface
+        border_color = THEME["primary"] if self.focused else THEME["border"]
+        
         pygame.draw.rect(screen, bg_color, self.rect, border_radius=4)
-        pygame.draw.rect(screen, (100, 100, 120), self.rect, 2, border_radius=4)
+        
+        # Draw border (full rectangle or just bottom line? Let's do full thin rect)
+        pygame.draw.rect(screen, border_color, self.rect, 1 if not self.focused else 2, border_radius=4)
 
         if not self.is_multiline:
             # Single-line rendering
             display_text = self._text if self._text or not self.placeholder else self.placeholder
-            color = self.text_color if self._text else self.placeholder_color
+            color = THEME["text_main"] if self._text else THEME["text_dim"]
 
-            text_surf = self.font.render(display_text, True, color)
+            text_surf = AssetHandler.render_text_from_font(display_text, self.font, color)
 
             # Calculate cursor position in text
             text_up_to_cursor = self._text[:self.cursor_pos]
-            cursor_text_surf = self.font.render(text_up_to_cursor, True, self.text_color)
+            cursor_text_surf = AssetHandler.render_text_from_font(text_up_to_cursor, self.font, THEME["text_main"])
             cursor_offset = cursor_text_surf.get_width()
 
             # Handle text truncation for display
             max_w = self.rect.width - self.padding * 2
+            
+            # Simple scrolling logic for single line
             if text_surf.get_width() > max_w:
-                # Text is too long, show end portion
-                crop_rect = pygame.Rect(text_surf.get_width() - max_w, 0, max_w, text_surf.get_height())
+                # If cursor is near end, show end. If near start, show start.
+                # Simplified: Always keep cursor visible.
+                
+                # Calculate visible window based on cursor
+                scroll_x = 0
+                if cursor_offset > max_w:
+                    scroll_x = cursor_offset - max_w
+                
+                # Render only the visible part (this is tricky with just blit, easier to re-render visible substring or use subsurface)
+                # Fallback to the existing crop logic but updated
+                
+                crop_rect = pygame.Rect(scroll_x, 0, max_w, text_surf.get_height())
+                # Ensure crop rect is within bounds
+                if crop_rect.x + crop_rect.width > text_surf.get_width():
+                     crop_rect.x = text_surf.get_width() - crop_rect.width
+                
                 screen.blit(text_surf, (self.rect.x + self.padding, self.rect.y + (self.rect.height - text_surf.get_height())//2), crop_rect)
-                # Adjust cursor offset relative to the cropped display
-                cursor_offset = max(0, cursor_offset - (text_surf.get_width() - max_w))
+                
+                # Adjust cursor for rendering
+                cursor_draw_x = self.rect.x + self.padding + (cursor_offset - crop_rect.x)
             else:
-                # Text fits, display normally
                 screen.blit(text_surf, (self.rect.x + self.padding, self.rect.y + (self.rect.height - text_surf.get_height())//2))
+                cursor_draw_x = self.rect.x + self.padding + cursor_offset
 
             # Cursor for single-line
             if self.focused and (pygame.time.get_ticks() // 500) % 2 == 0:
-                cursor_x = self.rect.x + self.padding + cursor_offset
-                pygame.draw.line(screen, (255, 255, 255), (cursor_x, self.rect.y + 10), (cursor_x, self.rect.y + self.rect.height - 10), 2)
+                # Ensure cursor is within bounds before drawing
+                if self.rect.x <= cursor_draw_x <= self.rect.right:
+                    pygame.draw.line(screen, THEME["primary"], (cursor_draw_x, self.rect.y + 10), (cursor_draw_x, self.rect.y + self.rect.height - 10), 2)
         else:
             # Multi-line rendering with proper scrolling
             lines = self._get_lines()
@@ -502,7 +584,7 @@ class TextField(UIComponent):
                     display_text = line_text[self.h_scroll_offset:]
 
                 # Render each line
-                text_surf = self.font.render(display_text, True, self.text_color)
+                text_surf = AssetHandler.render_text_from_font(display_text, self.font, THEME["text_main"])
                 screen.blit(text_surf, (self.rect.x + self.padding, y_offset))
                 y_offset += self.line_height
 
@@ -519,10 +601,10 @@ class TextField(UIComponent):
                     visible_start = self.h_scroll_offset
                     visible_cursor_col = max(0, cursor_col - visible_start)
                     visible_text_up_to_cursor = cursor_line_text[visible_start:cursor_col]
-                    cursor_text_surf = self.font.render(visible_text_up_to_cursor, True, self.text_color)
+                    cursor_text_surf = AssetHandler.render_text_from_font(visible_text_up_to_cursor, self.font, THEME["text_main"])
                     cursor_x = self.rect.x + self.padding + cursor_text_surf.get_width()
                     cursor_y = self.rect.y + self.padding + cursor_line_visible * self.line_height
-                    pygame.draw.line(screen, (255, 255, 255), (cursor_x, cursor_y), (cursor_x, cursor_y + self.line_height), 2)
+                    pygame.draw.line(screen, THEME["primary"], (cursor_x, cursor_y), (cursor_x, cursor_y + self.line_height), 2)
 
 class ScrollableList(UIComponent):
     """List with scrollable items."""
@@ -572,18 +654,37 @@ class ScrollableList(UIComponent):
             item = self.items[idx]
             item_rect = pygame.Rect(self.rect.x, self.rect.y + i * self.item_height, self.rect.width, self.item_height - 2)
             
-            bg_color = (50, 100, 50) if item.get('selected') else (50, 50, 60)
-            if item_rect.collidepoint(pygame.mouse.get_pos()):
-                bg_color = tuple(min(255, c + 20) for c in bg_color)
+            # Alternate row colors for better readability
+            is_hovered = item_rect.collidepoint(pygame.mouse.get_pos())
+            is_selected = item.get('selected')
+            
+            if is_selected:
+                bg_color = (40, 60, 90) # Selected blueish
+                border_color = THEME["primary"]
+            elif is_hovered:
+                bg_color = THEME["surface_hover"]
+                border_color = THEME["border"]
+            else:
+                bg_color = THEME["surface"] if idx % 2 == 0 else (20, 25, 40)
+                border_color = (0,0,0,0) # No border by default
             
             pygame.draw.rect(screen, bg_color, item_rect, border_radius=4)
-            pygame.draw.rect(screen, (100, 100, 120), item_rect, 1, border_radius=4)
+            if is_selected or is_hovered:
+                 pygame.draw.rect(screen, border_color, item_rect, 1, border_radius=4)
             
-            # Text rendering (using a default font if none provided to the list)
-            # This is a bit of a hack, better to pass a font to ScrollableList
-            font = pygame.font.Font(None, 24)
-            text_surf = font.render(item['text'], True, (255, 255, 255))
-            screen.blit(text_surf, (item_rect.x + 10, item_rect.y + (self.item_height - text_surf.get_height())//2))
+            # Text rendering
+            font = AssetHandler.get_font(None, 24)
+            color = THEME["primary"] if is_selected else THEME["text_main"]
+            
+            text_surf = AssetHandler.render_text_from_font(item['text'], font, color)
+            
+            # Clip text if too long
+            max_text_width = item_rect.width - 20 # 10px padding each side
+            if text_surf.get_width() > max_text_width:
+                area = pygame.Rect(0, 0, max_text_width, text_surf.get_height())
+                screen.blit(text_surf, (item_rect.x + 10, item_rect.y + (self.item_height - text_surf.get_height())//2), area)
+            else:
+                screen.blit(text_surf, (item_rect.x + 10, item_rect.y + (self.item_height - text_surf.get_height())//2))
 
 # --- TIER 2: COMPOSITES ---
 
@@ -599,17 +700,76 @@ class RoomStatusBar(UIComponent):
         
         # Room Code
         code_text = f"Room Code: {code}"
-        surf = self.menu.small_font.render(code_text, True, (100, 200, 255))
+        surf = AssetHandler.render_text_from_font(code_text, self.menu.small_font, THEME["primary"])
         screen.blit(surf, (self.rect.x, self.rect.y))
         
         # Share instruction
-        share_surf = self.menu.small_font.render("Share code to let others join", True, (150, 150, 150))
+        share_surf = AssetHandler.render_text_from_font("Share code to let others join", self.menu.small_font, THEME["text_dim"])
         screen.blit(share_surf, (self.rect.x, self.rect.y + 25))
         
         # Status
-        color = (100, 255, 100) if status == "CONNECTED" else (255, 100, 100)
-        stat_surf = self.menu.small_font.render(f"Status: {status}", True, color)
+        color = THEME["primary"] if status == "CONNECTED" else THEME["danger"]
+        stat_surf = AssetHandler.render_text_from_font(f"Status: {status}", self.menu.small_font, color)
         screen.blit(stat_surf, (self.rect.x, self.rect.y + 55))
+
+        # --- Process Visualization ---
+        # Game in Progress / Waiting / Syncing states
+        process_text = None
+        process_color = THEME["text_dim"]
+
+        # 1. Game in Progress (Active)
+        if getattr(self.menu, 'game_active', False):
+             process_text = "GAME IN PROGRESS"
+             process_color = THEME["danger"]
+        
+        # 2. Waiting for other players (Ready clicked)
+        elif self.menu.patches_ready:
+            process_text = "Waiting for other players..."
+            
+            # Check client state if available
+            if self.menu.client:
+                # Check active downloads
+                active_downloads = [t for t in self.menu.client.file_transfers.values() if t.get('received_chunks', 0) < t.get('total_chunks', 1)]
+                if active_downloads:
+                     total_chunks = sum(t.get('total_chunks', 1) for t in active_downloads)
+                     received_chunks = sum(t.get('received_chunks', 0) for t in active_downloads)
+                     pct = int((received_chunks / total_chunks) * 100) if total_chunks > 0 else 0
+                     process_text = f"Syncing Data: {pct}%"
+                     process_color = THEME["accent"]
+                # Check uploads (outgoing queue)
+                elif len(self.menu.client.outgoing_queue) > 0:
+                     process_text = f"Uploading: {len(self.menu.client.outgoing_queue)} items..."
+                     process_color = THEME["primary"]
+                # Default waiting state
+                else:
+                     process_text = "Waiting for players / Server..."
+                     process_color = THEME["text_dim"]
+
+        if process_text:
+            # Draw prominent status background
+            font = self.menu.button_font
+            text_surf = AssetHandler.render_text_from_font(process_text, font, process_color)
+            
+            # Center it horizontally on screen if possible, otherwise use local rect
+            screen_width = screen.get_width()
+            screen_height = screen.get_height()
+            
+            # Draw a panel at the top center for high visibility
+            panel_width = text_surf.get_width() + 60
+            panel_height = 60
+            panel_x = (screen_width - panel_width) // 2
+            panel_y = 100 # Below the title
+            
+            # Draw semi-transparent background
+            bg_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+            pygame.draw.rect(bg_surf, (0, 0, 0, 200), (0, 0, panel_width, panel_height), border_radius=10)
+            pygame.draw.rect(bg_surf, process_color, (0, 0, panel_width, panel_height), 2, border_radius=10)
+            
+            screen.blit(bg_surf, (panel_x, panel_y))
+            
+            # Draw text centered in panel
+            text_rect = text_surf.get_rect(center=(panel_x + panel_width//2, panel_y + panel_height//2))
+            screen.blit(text_surf, text_rect)
 
 class PatchBrowser(UIComponent):
     """Combines Panel, Label, and ScrollableList for patch selection."""
@@ -664,7 +824,75 @@ class PatchBrowser(UIComponent):
         # Header
         count = len(self.menu.patch_manager.selected_patches)
         header_text = f"Select Patch (0-1) - {count}/1 selected"
-        surf = self.menu.button_font.render(header_text, True, (255, 255, 255))
+        surf = AssetHandler.render_text_from_font(header_text, self.menu.button_font, THEME["text_main"])
+        screen.blit(surf, (self.rect.x + 10, self.rect.y + 10))
+
+        self.list.render(screen)
+
+class ServerPatchBrowser(UIComponent):
+    """Patch browser backed by server library pages."""
+    def __init__(self, x, y, width, height, menu, name=None):
+        super().__init__(x, y, width, height, name=name)
+        self.menu = menu
+        self.panel = Panel(x, y, width, height)
+        self.list = ScrollableList(x + 10, y + 50, width - 20, height - 60)
+        self.list.on_item_click = self._on_item_click
+        self.last_count = -1
+        self.last_selection = -1
+        self.last_page = -1
+        self.last_items_hash = 0
+
+    def _on_item_click(self, idx, item):
+        self.menu.server_patch_selected_index = idx
+
+    def _items_hash(self):
+        return hash(tuple(item.get('patch_id', '') for item in self.menu.server_patch_items))
+
+    def update(self, mouse_pos):
+        super().update(mouse_pos)
+        self.list.update(mouse_pos)
+
+        current_count = len(self.menu.server_patch_items)
+        current_selection = self.menu.server_patch_selected_index
+        current_page = self.menu.server_patch_page
+        current_hash = self._items_hash()
+
+        if (
+            current_count != self.last_count
+            or current_selection != self.last_selection
+            or current_page != self.last_page
+            or current_hash != self.last_items_hash
+        ):
+            self._sync_patches()
+            self.last_count = current_count
+            self.last_selection = current_selection
+            self.last_page = current_page
+            self.last_items_hash = current_hash
+
+    def _sync_patches(self):
+        self.list.clear_items()
+        for idx, patch in enumerate(self.menu.server_patch_items):
+            selected = idx == self.menu.server_patch_selected_index
+            checkbox = "[X]" if selected else "[ ]"
+            name = patch.get('name', 'Unknown')
+            owner = patch.get('player_id', 'Unknown')
+            base = patch.get('base_backup', 'Unknown')
+            changes = patch.get('num_changes', 0)
+            text = f"{checkbox} {name} (Owner: {owner}, Base: {base}, Changes: {changes})"
+            self.list.add_item(text, patch, selected)
+
+    def handle_event(self, event):
+        return self.list.handle_event(event)
+
+    def render(self, screen):
+        self.panel.render(screen)
+
+        page_size = max(1, getattr(self.menu, 'server_patch_page_size', 1))
+        total = max(0, getattr(self.menu, 'server_patch_total', 0))
+        current_page = max(0, getattr(self.menu, 'server_patch_page', 0))
+        total_pages = max(1, (total + page_size - 1) // page_size)
+        header_text = f"Server Patches - Page {current_page + 1}/{total_pages} (Total: {total})"
+        surf = AssetHandler.render_text_from_font(header_text, self.menu.button_font, THEME["text_main"])
         screen.blit(surf, (self.rect.x + 10, self.rect.y + 10))
 
         self.list.render(screen)
@@ -674,11 +902,11 @@ class AgentWorkspace(UIComponent):
     def __init__(self, x, y, width, height, menu, name=None):
         super().__init__(x, y, width, height, name=name)
         self.menu = menu
-        self.prompt_field = TextField(x, y + 30, width, 250, menu.button_font, placeholder="Describe features...", is_multiline=True)
+        self.prompt_field = TextField(x, y + 30, width, 180, menu.button_font, placeholder="Describe features...", is_multiline=True)
         # Reorganized buttons: Paste at center bottom of text field, Start Agent and Stop Agent at corners
-        self.paste_button = Button(x + (width-100)//2, y + 290, 100, 45, "Paste", menu.small_font, self._on_paste_click)
-        self.run_button = Button(x, y + 290, 200, 45, "Start Agent", menu.button_font, menu.on_agent_send_click, style="primary")
-        self.stop_button = Button(x + width - 150, y + 290, 150, 45, "Stop Agent", menu.button_font, menu.on_agent_stop_click, style="danger")
+        self.paste_button = Button(x + (width-100)//2, y + 220, 100, 45, "Paste", menu.small_font, self._on_paste_click)
+        self.run_button = Button(x, y + 220, 200, 45, "Start Agent", menu.button_font, menu.on_agent_send_click, style="primary")
+        self.stop_button = Button(x + width - 150, y + 220, 150, 45, "Stop Agent", menu.button_font, menu.on_agent_stop_click, style="danger")
         self._last_focused_state = False
 
     def update(self, mouse_pos):
@@ -741,7 +969,7 @@ class AgentWorkspace(UIComponent):
 
     def render(self, screen):
         # Label
-        surf = self.menu.button_font.render("Describe features or improvements:", True, (255, 255, 255))
+        surf = AssetHandler.render_text_from_font("Describe features or improvements:", self.menu.button_font, THEME["text_main"])
         screen.blit(surf, (self.rect.x, self.rect.y))
 
         self.prompt_field.render(screen)
@@ -752,8 +980,8 @@ class AgentWorkspace(UIComponent):
         
         # Monitor link
         mon_text = "Live Monitor: http://127.0.0.1:8765"
-        mon_surf = self.menu.small_font.render(mon_text, True, (150, 200, 255))
-        mon_rect = mon_surf.get_rect(center=(self.rect.centerx, self.rect.y + 370))
+        mon_surf = AssetHandler.render_text_from_font(mon_text, self.menu.small_font, THEME["accent"])
+        mon_rect = mon_surf.get_rect(topright=(self.rect.right - 10, self.rect.y + 8))
         screen.blit(mon_surf, mon_rect)
 
 class TextFieldWithPaste(UIComponent):
@@ -818,19 +1046,72 @@ class TextFieldWithPaste(UIComponent):
 class NotificationOverlay(UIComponent):
     """Global message display component."""
     def __init__(self, menu, name=None):
-        super().__init__(0, 50, 1400, 60, name=name)  # Moved to top, larger height for background
+        super().__init__(0, 20, 1400, 60, name=name)  # Moved to top
         self.menu = menu
+        self.surface = pygame.Surface((1400, 60), pygame.SRCALPHA)
 
     def render(self, screen):
         if self.menu.error_message and pygame.time.get_ticks() - self.menu.error_message_time < 5000:
-            # Background panel
-            bg_color = (40, 20, 20)  # Dark red background
-            border_color = (100, 40, 40)  # Red border
-            pygame.draw.rect(screen, bg_color, self.rect)
-            pygame.draw.rect(screen, border_color, self.rect, 2)
+            sw = screen.get_width()
+            
+            # Resize if screen width changed
+            if self.rect.width != sw:
+                self.rect.width = sw
+                self.surface = pygame.Surface((sw, 60), pygame.SRCALPHA)
+            
+            # Clear surface
+            self.surface.fill((0,0,0,0))
+            
+            # Draw semi-transparent background
+            bg_color = (40, 10, 10, 230) # Dark red, transparent
+            pygame.draw.rect(self.surface, bg_color, (0, 0, self.rect.width, self.rect.height), border_radius=6)
+            pygame.draw.rect(self.surface, THEME["danger"], (0, 0, self.rect.width, self.rect.height), 2, border_radius=6)
+            
+            # Error message text - Draw onto surface to center relative to overlay
+            surf = AssetHandler.render_text_from_font(self.menu.error_message, self.menu.small_font, (255, 200, 200))
+            rect = surf.get_rect(center=(self.rect.width // 2, self.rect.height // 2))
+            self.surface.blit(surf, rect)
+            
+            # Blit surface to screen
+            screen.blit(self.surface, (0, self.rect.y))
 
-            # Error message text
-            surf = self.menu.small_font.render(self.menu.error_message, True, (255, 150, 150))
-            rect = surf.get_rect(center=(700, 80))
-            screen.blit(surf, rect)
-
+class LoadingOverlay(UIComponent):
+    """Overlay to show blocking operations."""
+    def __init__(self, menu, name=None):
+        super().__init__(0, 0, 1400, 900, name=name) # Full screen
+        self.menu = menu
+        self.surface = pygame.Surface((1400, 900), pygame.SRCALPHA)
+        self.spinner_angle = 0
+    
+    def render(self, screen):
+        # Check if menu has loading_message attribute and it is set
+        msg = getattr(self.menu, 'loading_message', None)
+        if msg:
+            # Semi-transparent dark background
+            self.surface.fill((0,0,0,180))
+            screen.blit(self.surface, (0,0))
+            
+            # Center coordinates
+            # Use screen rect if available to handle resizing, else fallback to component rect
+            cx, cy = screen.get_rect().centerx, screen.get_rect().centery
+            
+            # Spinner (simple rotating arc)
+            self.spinner_angle = (self.spinner_angle + 15) % 360
+            radius = 30
+            
+            # Define rect for arc
+            rect = pygame.Rect(0, 0, radius * 2, radius * 2)
+            rect.center = (cx, cy - 30)
+            
+            # Draw spinning arc
+            import math
+            start_angle = math.radians(self.spinner_angle)
+            end_angle = math.radians(self.spinner_angle + 270)
+            
+            pygame.draw.arc(screen, THEME["primary"], rect, start_angle, end_angle, 4)
+            
+            # Text
+            font = AssetHandler.get_font(None, 36)
+            text_surf = AssetHandler.render_text_from_font(msg, font, THEME["text_main"])
+            text_rect = text_surf.get_rect(center=(cx, cy + 30))
+            screen.blit(text_surf, text_rect)

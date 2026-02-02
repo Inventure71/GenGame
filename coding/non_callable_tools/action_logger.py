@@ -55,16 +55,21 @@ class ActionLogger:
         self.visual_server_process = None
         self.todo_list_ref = None  # Reference to the TodoList
         
+        self.prompt_used = ""
+
         # Register cleanup
         atexit.register(self._cleanup)
     
-    def save_changes_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups"):
+    def save_changes_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups", prompt_used: str = None):
+        if prompt_used is None:
+            prompt_used = getattr(self, 'prompt_used', "")
+    
         # import only if not already imported
         if "VersionControl" not in globals():
             from coding.non_callable_tools.version_control import VersionControl
 
         version_control = VersionControl(self)
-        return version_control.save_to_extension_file(file_path, name_of_backup=name_of_backup, base_backups_root=base_backups_root)
+        return version_control.save_to_extension_file(file_path, name_of_backup=name_of_backup, base_backups_root=base_backups_root, prompt_used=prompt_used)
 
     def set_todo_list(self, todo_list):
         """Set reference to the TodoList for tracking."""

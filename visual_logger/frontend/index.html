@@ -12,6 +12,35 @@
         rel="stylesheet">
     <link rel="stylesheet" href="/static/styles.css">
     <script src="https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.min.js"></script>
+    <style>
+        .graph-control-separator {
+            width: 1px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 0 8px;
+        }
+
+        .graph-select {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-secondary);
+            border-radius: 4px;
+            font-size: 11px;
+            padding: 2px 4px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .graph-select:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .graph-select option {
+            background: #1a1b26;
+            color: var(--text-primary);
+        }
+    </style>
 </head>
 
 <body>
@@ -155,6 +184,13 @@
                                 <button class="graph-btn" id="zoomReset" title="Reset Zoom">⟲</button>
                                 <button class="graph-btn graph-btn-toggle active" id="toggleLineTokens"
                                     title="Toggle token display on lines">🪙</button>
+                                <div class="graph-control-separator"></div>
+                                <select class="graph-select" id="flowLimitSelect" title="Max nodes to show">
+                                    <option value="50" selected>Last 50</option>
+                                    <option value="100">Last 100</option>
+                                    <option value="200">Last 200</option>
+                                    <option value="all">Show All</option>
+                                </select>
                             </div>
                             <div class="graph-viewport" id="graphViewport">
                                 <div class="mermaid" id="mermaidGraph">

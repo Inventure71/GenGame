@@ -49,6 +49,7 @@ If you can't explain *why* the fix works, **you haven't found the bug.**
 
 - Failing test output with error messages and stack traces
 - Directory tree for `GameFolder/`
+- File outlines for all GameFolder files (structure overview)
 - **Primary Reference**: Use `BASE_components/BASE_COMPONENTS_DOCS.md` for all questions regarding BASE class attributes and methods.
 
 ### CRITICAL: Parallel File Reading Strategy
@@ -66,7 +67,7 @@ If you can't explain *why* the fix works, **you haven't found the bug.**
 
 **Example:**
 - ✗ BAD: Read test → wait → Read implementation → wait → Read docs
-- ✓ GOOD: [Think: I need test_tornado.py, TornadoGun.py, TornadoProjectile.py, BASE_COMPONENTS_DOCS.md] → [4 parallel read_file calls]
+- ✓ GOOD: [Think: I need mandatory_edge_cases_test.py, waveprojectileeffect.py, GAME_arena.py, BASE_COMPONENTS_DOCS.md] → [4 parallel read_file calls]
 
 ---
 
@@ -79,10 +80,10 @@ Use these patterns when writing task descriptions:
 | ImportError | Add missing import statement |
 | Missing super() | Add `super().__init__(...)` call |
 | Signature mismatch | Match child method signature to parent |
-| Registration missing | Add to `setup.py` |
+| Registration missing (non-ability content) | Add to `setup.py`; abilities are auto-discovered (no registration) |
 | Fragile collision test | Loop until behavior, don't single-frame test |
 | Coordinate bug | Check world-Y vs screen-Y conversion |
-| Hitbox origin bug | Ensure character/projectile `location` is treated as a world-space center when building `pygame.Rect` (origin = center_x - width/2, screen_y_center - height/2) and add tests that verify melee/AoE hits on both sides of the attacker. |
+| Hitbox origin bug | Ensure character/effect `location` is treated as a world-space center when building `pygame.Rect` (origin = center_x - width/2, screen_y_center - height/2) and add tests that verify melee/AoE hits on both sides of the attacker. |
 
 ---
 
@@ -110,7 +111,7 @@ Use `append_to_todo_list`. Each task must be **self-contained**.
 
 ## [success] Fix Task Template (for `append_to_todo_list`)
 
-**task_title**: Brief description (e.g., "Add missing import in MyWeapon.py")
+**task_title**: Brief description (e.g., "Add missing import in waveprojectileeffect.py")
 
 **task_description** should include:
 - **Root Cause**: WHY it's broken
@@ -146,4 +147,4 @@ Always include as your LAST `append_to_todo_list` call:
 
 **task_title**: "Final Validation Check"
 
-**task_description**: "After all fixes, verify: syntax correct, imports absolute, method signatures match, super() calls present, coordinate systems consistent, setup.py registration complete."
+**task_description**: "After all fixes, verify: syntax correct, imports absolute, method signatures match, super() calls present, coordinate systems consistent. For non-ability content check setup.py if applicable; abilities are auto-discovered (no setup registration)."

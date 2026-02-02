@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y \
     # Mesa software rendering libraries (Required for ARM/M4 Mac compatibility)
     libgl1-mesa-dri libgl1 libglx-mesa0 \
     # VNC & Web Proxy Tools
-    xvfb x11vnc fluxbox novnc websockify net-tools procps \
+    tigervnc-standalone-server tigervnc-common fluxbox novnc websockify net-tools procps \
     # Clipboard support for noVNC
     xclip autocutsel \
     && rm -rf /var/lib/apt/lists/*
@@ -55,8 +55,9 @@ EXPOSE 6080 8765
 ENV VISUAL_LOGGER_HOST=0.0.0.0
 ENV VISUAL_LOGGER_PORT=8765
 
-# The startup script handles Xvfb, Fluxbox, VNC, and then the Game
+# The startup script handles Xvnc, Fluxbox, VNC, and then the Game
 ENTRYPOINT ["/run-vnc.sh"]
 
 # Launch the game client connecting to the server service defined in docker-compose
-CMD ["python", "main.py", "--host", "cc-server", "--port", "5555"]
+# Note: docker-compose.yml overrides this with the correct service name "server"
+CMD ["python", "main.py", "--host", "server", "--port", "5555"]

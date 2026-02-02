@@ -163,11 +163,12 @@ class GenericHandler:
             return f"{main_message}\n{append_warning_str}" # we only append the warning if it is the last item
         return main_message
 
-    def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None, auto_nudge: int = 2) -> str:
+    def ask_model(self, history: list, config: types.GenerateContentConfig, history_to_update: list = None, auto_nudge: int = 2, auto_truncate_history: int = 0) -> str:
         """
         Generalized ask_model that works with any provider through BaseHandler interface.
         The common logic is here, provider-specific details are handled by the client.
         NOTE: To disable auto nudging, set auto_nudge to -1.
+        NOTE: To disable auto truncation of history, set auto_truncate_history to 0.
         """
         turns = 0
         max_turns = 30  # Safety cutoff
@@ -178,6 +179,7 @@ class GenericHandler:
         # so the model can actually see the results of its actions during THIS turn.
         # But we will NOT append the tool outputs to self.chat_history.
         current_turn_log = [] 
+        current_turn_log_tests = []
         
         while turns < max_turns and not stop_loop:
             turns += 1
@@ -191,7 +193,9 @@ class GenericHandler:
 
             # 1. Make API call (provider-specific)
             try:
+                print("STARTING API CALL")
                 response = self.client.make_api_call(api_history, config)
+                print("API CALL COMPLETED")
             except Exception as e:
                 print(f"API call failed: {e}")
                 raise e
@@ -228,9 +232,9 @@ class GenericHandler:
             tool_call_results = []
 
             all_tools_success = True
-            regular_tools = [tc for tc in tool_calls if tc.name != "complete_task"]
-            complete_task_calls = [tc for tc in tool_calls if tc.name == "complete_task"]
-
+            # also include run_all_tests_tool
+            regular_tools = [tc for tc in tool_calls if tc.name != "complete_task" and tc.name != "run_all_tests_tool"]
+            complete_task_calls = [tc for tc in tool_calls if tc.name == "complete_task" or tc.name == "run_all_tests_tool"]
 
             """AUTO NUDGING"""
             append_warning_str = ""
@@ -260,7 +264,11 @@ class GenericHandler:
                         if name in self.client.tool_map:
                             if name == "complete_task" and not all_tools_success:
                                 print(f"DEBUG: complete_task was called but not all tools were successful, so we will not call it really", flush=True)
-                                result = {"error": "Error: Not all tools were successful this turn so completing task is not possible"}
+                                result = {"error": "Error: Not all tools were successful this turn so completing task is not possible."}
+                                result_str = result["error"]
+                            elif name == "run_all_tests_tool" and not all_tools_success:
+                                print(f"DEBUG: run_all_tests_tool was called but not all tools were successful, so we will not call it really", flush=True)
+                                result = {"error": "Error: Not all tools were successful this turn so running all tests is not possible, fix the application of the failed tools and then try again."}
                                 result_str = result["error"]
                             elif ((name == "complete_task" and all_tools_success) and (args.get("summary") is None or len(args.get("summary")) < 100)):
                                 print(f"DEBUG: complete_task was called but the summary is too short, so we will not call it really", flush=True)
@@ -277,6 +285,8 @@ class GenericHandler:
                                         print("Run all tests tool was successful, so we will stop the loop FORCEFULLY", flush=True)
                                         print("We need to run the complete_task tool now manually", flush=True)
                                         self.client.tool_map["complete_task"](summary="All tests passed")
+                                        # Log this manual action so it appears in the visual logger
+                                        action_logger.log_action("complete_task", {"summary": "All tests passed (Auto-called)"}, "Task Completed", success=True, chat_history=api_history)
                                         stop_loop = True
                                     else:
                                         # Minimal inline filter for failures and stdout
@@ -356,11 +366,15 @@ class GenericHandler:
                 
                 # Add the test result as a model response
                 self.clean_chat_history()
-                response_content = self.client.convert_to_client_schema(role="assistant", content=f"What I did: {explanation_run_tests_tool}")
+                for item in current_turn_log_tests:
+                    current_turn_log.append(item)
+                response_content = self.client.convert_to_client_schema(role="assistant", content=explanation_run_tests_tool if explanation_run_tests_tool else "No explanation provided.")
+                current_turn_log_tests.append(response_content)
                 current_turn_log.append(response_content)
                 # Already filtered in the tool call to be only failures.
                 response_content = self.client.convert_to_client_schema(role="user", content=f"The result of the tests is: {result_run_tests_tool}")
                 current_turn_log.append(response_content)
+                current_turn_log_tests.append(response_content)
 
                 print(f"DEBUG: current_turn_log: {current_turn_log}", flush=True)
             else:  

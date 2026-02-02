@@ -1,7 +1,18 @@
 ## RUN_ALL_TESTS_TOOL - Critical Usage Guide
 
 **MANDATORY: Use EXACTLY this parameter:**
-- `explanation` (REQUIRED) - A string explaining what you changed and why the tests should pass now.
+- `explanation` (REQUIRED) - A complete knowledge handoff for the next agent (see format below).
+
+### Tone and framing of the explanation (MANDATORY)
+
+**Never assume or claim that you fixed something.** You do not know whether the tests will pass or whether your changes were correct. The explanation is read by the next agent, who may see failing tests; they need to know what you actually did and what you learned, not a story about fixes that worked.
+
+**Do this instead:**
+- **What you changed:** Describe each change precisely (file, location, before/after). Do not say "Fixed X"; say "Added import of Y in file Z", "Changed constant A from 40 to 30 in …", "Added serialize/deserialize to class W".
+- **What you learned:** State what you inferred from errors, stack traces, and code (e.g. "The test expects display name without hyphen", "effect_hit_times is keyed by network_id", "Ability dict was missing 'activate' key").
+- **What you hope was addressed:** Optionally state what you intended each change to address (e.g. "Hoped this would resolve the KeyError for 'activate'"). That way, if tests still fail, the next agent knows what was already tried and what might still be wrong.
+
+Write the explanation so that if something is still broken or your fixes did not work, the next agent has everything they need: your precise changes, your reasoning, and your hypotheses. They should not have to guess what you did or re-read files you already read.
 
 ### When to Call
 Call `run_all_tests_tool(explanation="...")` **ONLY**:
@@ -11,10 +22,7 @@ Call `run_all_tests_tool(explanation="...")` **ONLY**:
 
 ### Explanation Format = KNOWLEDGE HANDOFF (MANDATORY)
 
-The `explanation` is **not** just "why tests should pass".  
-It is a **knowledge capsule** for the NEXT AGENT. Treat it as the ONLY memory that survives.
-
-**You MUST follow this exact structure:**
+**Memory is wiped after this call** — the next agent sees only your `explanation`. Pass everything you learned (changes, code snippets with line numbers, hypotheses, debug output, next steps) so they can continue without re-reading files. Do not claim you fixed things; describe what you changed, what you learned, and what you hoped to fix. See fix_agent.md §3 for the full template; use the structure below as minimum.
 
 ```text
 FILES_READ:
@@ -22,7 +30,7 @@ FILES_READ:
 - ...
 
 FILES_MODIFIED:
-- <file_path>: <what you changed and why>
+- <file_path>: <precise description of each change — what was added/removed/changed, at which lines; do not say "Fixed X", describe the concrete edit and what you hoped it would address>
 - ...
 
 FAILING_TESTS_AND_ERRORS:
@@ -43,7 +51,7 @@ DEBUG_OUTPUT_INSIGHTS:
 - ...
 
 IMPORTANT_CONSTANTS_AND_CONFIG:
-- <entity/weapon/arena>: <key numerical values discovered> (cooldowns, damage, durations, thresholds, positions)
+- <entity/ability/arena>: <key numerical values discovered> (cooldowns, damage, durations, thresholds, positions)
 - ...
 
 LIKELY_BUG_LOCATIONS:
@@ -62,27 +70,24 @@ NEXT_ACTIONS_FOR_FIX_AGENT:
 
 **Rules:**
 
+- **Include code snippets with line numbers** - Don't just reference files, include the actual code the next agent needs to see
+- **Include function signatures** - Document exact parameter names, types, return values
+- **Include attribute/constant values** - Document exact numeric values, default values, where they're defined
+- **Include debug output** - Show actual vs expected values, state transitions, timestamps
+- **Include execution traces** - Document step-by-step execution order you analyzed
 - Always fill **every section** (write `NONE` if truly nothing, but think hard first).
-- Be **specific**: mention exact files, classes, methods, attributes, constants.
+- Be **specific**: mention exact files, classes, methods, attributes, constants, line numbers.
 - Capture **both**: what worked and what you already tried that didn't work.
 - Assume the next agent **cannot see your past thoughts or tool calls**; this handoff is all they get.
+- **Detail level:** The next agent should NOT need to re-read any files you already read. They should be able to continue debugging directly from your explanation.
 - **No fluff** - Every bullet should help the next agent avoid re-doing work.
-
-### What to Include in Explanation
-
-- **Current changes**: What you just modified in this turn
-- **Session learning**: Key insights, patterns, or discoveries from previous turns
-- **Debug findings**: What debug output revealed (if applicable)
-- **Root cause analysis**: Why the fix should work
-- **Context**: Any relevant information that helps understand the fix
-- **Rejected hypotheses**: What you tried that didn't work (to avoid re-trying)
 
 ### Critical Rules
 
 - **ONE test run per response maximum**
-- **Always provide explanation** - Even if just adding debug prints, explain what you're investigating
-- **Pass forward learning** - Include insights from your entire debugging session, not just the current turn
-- **Use the template** - Follow the structured format above to ensure nothing is forgotten
+- **Test order** — If the first test in a file fails (import/setup/headless), later tests may not run; note this in the explanation so the next agent fixes setup first.
+- **Fill every section** of the explanation template; write `NONE` only if truly empty.
+- **Be specific** — files, line numbers, signatures, constants, what you tried and what you learned.
 
 ### Example Usage
 
@@ -90,44 +95,41 @@ NEXT_ACTIONS_FOR_FIX_AGENT:
 ```
 run_all_tests_tool(explanation="""
 FILES_READ:
-- GameFolder/tests/test_orbital_cannon.py: Test expects shoot() to return list, but implementation may return None on cooldown
-- GameFolder/weapons/OrbitalCannon.py: shoot() method checks last_shot_time against cooldown (2.0s), returns None if too soon
-- BASE_components/BASE_weapon.py: BASE class shoot() signature returns Optional[List[Projectile]], can return None
-- GameFolder/tests/test_banana_cannon.py: Similar working test resets last_shot_time=0 before calling shoot()
+- GameFolder/tests/mandatory_edge_cases_test.py: Tests effect damage cooldown timing
+- GameFolder/effects/waveprojectileeffect.py: Effect update and lifetime logic
+- GameFolder/arenas/GAME_arena.py: Effect damage cooldown enforcement
 
 FILES_MODIFIED:
-- GameFolder/tests/test_orbital_cannon.py: Added debug prints showing shoot() return value and last_shot_time state
+- GameFolder/tests/mandatory_edge_cases_test.py: Added debug prints showing effect hit timestamps
 
 FAILING_TESTS_AND_ERRORS:
-- test_orbital_cannon_shooting_corners in test_orbital_cannon.py: AssertionError - assert len(projectiles) == 1 failed (got 0)
-- Stack focus: OrbitalCannon.shoot() line 45-52, test line 51
+- test_effect_damage_cooldown in mandatory_edge_cases_test.py: AssertionError - cooldown not enforced
+- Stack focus: GameFolder/arenas/GAME_arena.py:_apply_effects and test line 22
 
 ROOT_CAUSE_HYPOTHESES_CONFIRMED:
-- shoot() returning None due to cooldown → Debug print showed "shoot -> None type=<class 'NoneType'>" and "last_shot_time=0.0 cooldown=2.0"
+- effect_hit_times key mismatch → Debug showed network_id missing causing new key each frame
 
 ROOT_CAUSE_HYPOTHESES_REJECTED:
-- Projectile creation failing → Debug showed shoot() never reached projectile creation code, returned None earlier
-- Wrong method signature → Verified BASE class signature matches implementation
+- Effect lifetime too short → Effect still present after cooldown window
 
 DEBUG_OUTPUT_INSIGHTS:
-- shoot() called with last_shot_time=0.0, but current_time in shoot() was 0.016 (from arena.update_world), so cooldown check passed
-- Actually wait, need to check if test is calling shoot() before any arena updates
+- effect_hit_times keys used effect.network_id but network_id was None
+- current_time advanced correctly but key never matched
 
 IMPORTANT_CONSTANTS_AND_CONFIG:
-- OrbitalCannon: cooldown=2.0s, last_shot_time initialized to 0.0
-- Test: Resets gun.last_shot_time = 0 before each shoot() call
+- RadialEffect: damage_cooldown=1.0s
+- Arena: effect_hit_times dict keyed by (effect.network_id, cow.id)
 
 LIKELY_BUG_LOCATIONS:
-- test_orbital_cannon.py:test_orbital_cannon_shooting_corners: Test may be calling shoot() with wrong timing or not resetting cooldown properly
+- GameFolder/arenas/GAME_arena.py:_apply_effects: missing network identity for effects
 
-OPEN_QUESTIONS_AND_NEXT_ACTIONS:
-- Need to verify: Does shoot() use arena.current_time or time.time()? → Check BASE_weapon.py for time source
-- Next: If using arena.current_time, test needs to ensure arena has been updated at least once, OR shoot() should accept explicit time parameter
+OPEN_QUESTIONS_AND_AMBIGUITIES:
+- Should effects use network_id or fall back to object id when missing?
 
 NEXT_ACTIONS_FOR_FIX_AGENT:
-- Step 1: Read BASE_weapon.py shoot() method to confirm how it gets current time (arena.current_time vs time.time())
-- Step 2: If using arena.current_time, fix test to call arena.update_world(0.016) before shoot(), OR fix implementation to use time.time() instead
-- Step 3: Verify fix by checking debug output shows shoot() returns list instead of None
+- Step 1: Ensure all effects set network identity on creation
+- Step 2: If network_id missing, key by id(effect) instead
+- Step 3: Re-run tests to confirm cooldown enforcement
 """)
 ```
 

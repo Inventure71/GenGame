@@ -6,9 +6,9 @@ Handles server creation, client connections, and room management.
 import threading
 import socket
 from server import GameServer
-from BASE_files.BASE_helpers import encrypt_code
+from BASE_files.BASE_menu_helpers import encrypt_code
 from BASE_files.network_client import NetworkClient
-from BASE_files.BASE_helpers import REMOTE_DOMAIN
+from BASE_files.BASE_menu_helpers import REMOTE_DOMAIN
 
 
 class MenuNetwork:
@@ -72,9 +72,14 @@ class MenuNetwork:
         self.client.on_patch_received = self.menu.patch_received_callback
         self.client.on_patch_sync_failed = self.menu.patch_sync_failed_callback
         self.client.on_patch_merge_failed = self.menu.patch_merge_failed_callback
+        self.client.on_patch_library_page = self.menu.patch_library_page_callback
+        self.client.on_patch_library_downloaded = self.menu.patch_library_downloaded_callback
+        self.client.on_patch_library_error = self.menu.patch_library_error_callback
+        self.client.on_backup_downloaded = self.menu.backup_downloaded_callback
         self.client.on_game_restarting = self.menu.game_restarting_callback
         self.client.on_server_restarted = self.menu.server_restarted_callback
         self.client.on_disconnected = self.menu.disconnected_callback
+        self.client.on_room_status = self.menu.on_game_in_progress_callback  # Wire up new callback
 
         return True
 
@@ -101,7 +106,7 @@ class MenuNetwork:
             print(f"Practice room created: {self.menu.room_code}")
         else:
             # Normal local room uses encrypted code
-            from BASE_files.BASE_helpers import get_local_ip
+            from BASE_files.BASE_menu_helpers import get_local_ip
             local_ip = get_local_ip()
             self.menu.room_code = encrypt_code(local_ip, self.server_port, "LOCAL")
             print(f"Local room code: {self.menu.room_code}")

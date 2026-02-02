@@ -45,6 +45,29 @@ services:
       - "com.docker.compose.project=cc"
       - "com.docker.compose.service=client"
   
+  client2:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: client2
+    environment:
+      - SDL_VIDEODRIVER=x11
+      - DISPLAY=:0
+      - LIBGL_ALWAYS_SOFTWARE=1
+      - VISUAL_LOGGER_HOST=0.0.0.0
+      - VISUAL_LOGGER_PORT=8766
+    ports:
+      - "6081:6080"  # Web VNC Access
+      - "8766:8765"  # Visual Logger Dashboard
+    volumes:
+      - game_backups:/app/__game_backups
+      - config:/app/__config
+      - patches:/app/__patches
+    profiles: ["client"]
+    command: ["python", "main.py", "--host", "server", "--port", "5555"]
+    labels:
+      - "com.docker.compose.project=cc"
+      - "com.docker.compose.service=client2"
 volumes:
   server_patches:
     driver: local

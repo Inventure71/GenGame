@@ -26,7 +26,6 @@ COPY BASE_components/ ./BASE_components/
 COPY coding/ ./coding/
 COPY visual_logger/ ./visual_logger/
 COPY agent.py .
-COPY requirements.txt .
 COPY server.py .
 COPY GameFolder/ ./GameFolder/
 

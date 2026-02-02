@@ -189,7 +189,9 @@ class BackupHandler:
         backup_path = os.path.join(self.backup_folder, backup_name)
 
         if not os.path.exists(backup_path):
-            raise ValueError(f"Backup {backup_name} does not exist")
+            print(f"Backup {backup_name} does not exist")
+            return None, None
+            #raise ValueError(f"Backup {backup_name} does not exist")
 
         if target_path is None:
             target_path = backup_name

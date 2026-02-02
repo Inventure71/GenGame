@@ -156,6 +156,10 @@ def clear_python_cache():
     Two-phase approach:
     1. Clear in-memory module cache (sys.modules) - FAST
     2. Clear disk bytecode cache (__pycache__, .pyc) - SLOWER
+    
+    Thread-safe: From background threads, only clears cache if pygame is already initialized
+    to prevent deadlocks. Skips gc.collect() from background threads to avoid finalizing
+    pygame objects which can cause deadlocks on macOS.
     """
     import sys
     import shutil
@@ -163,6 +167,21 @@ def clear_python_cache():
     import threading
     import gc
     import importlib
+    import os
+
+    # Check if we're in a background thread
+    is_background_thread = threading.current_thread() != threading.main_thread()
+    
+    # If in background thread, ensure pygame is initialized before clearing cache
+    # This prevents deadlocks when modules re-import and try to use pygame APIs
+    if is_background_thread:
+        try:
+            import pygame
+            if not pygame.get_init():
+                print("Skipping cache clear from background thread - pygame not initialized (would cause deadlock)")
+                return
+        except ImportError:
+            pass  # pygame not available, safe to proceed
 
     # Phase 1: Clear in-memory module cache (CRITICAL - this is what fixes the issue)
     # This is fast and happens in-memory, no I/O
@@ -188,16 +207,21 @@ def clear_python_cache():
     importlib.invalidate_caches()
     
     # Force garbage collection to clean up old module objects
-    # This releases memory from deleted modules
-    gc.collect()
+    # SKIP from background threads - gc.collect() can finalize pygame objects
+    # which causes deadlocks when called from background threads on macOS
+    if not is_background_thread:
+        gc.collect()
+    else:
+        print("Skipping gc.collect() from background thread to avoid pygame finalization deadlocks")
     
     print(f"Cleared {cleared_count} modules from sys.modules")
 
     # Phase 2: Clear disk cache (optional but helps ensure consistency)
+    # ENABLED for background threads per user requirement for fresh tests
     # Only do this from main thread to avoid threading issues
-    if threading.current_thread() != threading.main_thread():
-        print("Skipping disk cache clearing from background thread")
-        return
+    # if is_background_thread:
+    #     print("Skipping disk cache clearing from background thread")
+    #     return
 
     start_time = time.time()
     timeout = 1.5  # Short timeout for disk operations

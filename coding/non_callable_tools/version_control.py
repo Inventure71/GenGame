@@ -5,6 +5,7 @@ import ast
 import time
 import glob
 import difflib
+import random
 from typing import Tuple, List, Dict, Optional
 from merge3 import Merge3
 from coding.non_callable_tools.backup_handling import BackupHandler
@@ -38,8 +39,48 @@ class VersionControl:
     def __init__(self, action_logger_instance: ActionLogger = None, path_to_security_backup: str = "__TEMP_SECURITY_BACKUP"):
         self.action_logger_instance = action_logger_instance
         self.security_backup_handler = BackupHandler(path_to_security_backup)
-    
-    def save_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups"):
+
+    def _substitute_seed(self) -> tuple:
+        """
+        Modify setup.py to ensure random.seed() appears in diff.
+        Returns: (original_content, seed_modified) tuple
+        """
+        setup_path = "GameFolder/setup.py"
+        original_setup_content = None
+        seed_modified = False
+        
+        if os.path.exists(setup_path):
+            try:
+                with open(setup_path, 'r', encoding='utf-8') as f:
+                    original_setup_content = f.read()
+                
+                # Find random.seed(...) pattern
+                seed_pattern = r'random\.seed\(\s*(\d+)\s*\)'
+                match = re.search(seed_pattern, original_setup_content)
+                
+                if match:
+                    current_seed = int(match.group(1))
+                    new_seed = current_seed + 7  # Add 7 to ensure it's different
+                    
+                    # Replace with new seed value
+                    modified_content = re.sub(
+                        seed_pattern, 
+                        f'random.seed({new_seed})', 
+                        original_setup_content
+                    )
+                    
+                    # Write modified content
+                    with open(setup_path, 'w', encoding='utf-8') as f:
+                        f.write(modified_content)
+                    
+                    seed_modified = True
+                    print(f"    ✓ Modified random.seed({current_seed}) -> random.seed({new_seed}) in setup.py to ensure it appears in diff")
+            except Exception as e:
+                print(f"    Warning: Could not modify setup.py seed: {e}")
+        
+        return original_setup_content, seed_modified
+
+    def save_to_extension_file(self, file_path: str, name_of_backup: str = None, base_backups_root: str = "__game_backups", prompt_used: str = ""):
         """
         Saves a patch by comparing the current GameFolder against a base backup.
         This is the source of truth for all patches in the system.
@@ -60,42 +101,100 @@ class VersionControl:
 
         print(f"Generating patch by comparing GameFolder against {base_folder}...")
 
+        # STEP 1: Modify setup.py BEFORE generating patch (so seed appears in diff)
+        setup_path = "GameFolder/setup.py"
+        original_setup_content, seed_modified = self._substitute_seed()
+
         try:
+            # STEP 2: Generate patch (now includes the seed change)
             changes, metadata = self.create_patch_from_folders(base_folder, "GameFolder", name_of_backup)
+            
+            # Calculate resulting game hash for deduplication
+            try:
+                game_hash = self.security_backup_handler.compute_directory_hash("GameFolder")
+                print(f"    ✓ Calculated GameFolder hash: {game_hash[:8]}...")
+            except Exception as e:
+                print(f"    Warning: Failed to compute GameFolder hash: {e}")
+                game_hash = None
+                
         except Exception as e:
             print(f"ERROR: Failed to create patch from folders: {e}")
+            # Restore original if we modified it
+            if seed_modified and original_setup_content:
+                try:
+                    with open(setup_path, 'w', encoding='utf-8') as f:
+                        f.write(original_setup_content)
+                    print(f"    ✓ Restored original setup.py after error")
+                except Exception as e2:
+                    print(f"    Warning: Could not restore setup.py: {e2}")
             return False
 
+        # STEP 3: Save the patch
         if len(changes) > 0:
             try:
                 with open(file_path, 'w', encoding='utf-8') as f:
-                    json.dump({"name_of_backup": name_of_backup, "changes": changes}, f, indent=2, ensure_ascii=False)
+                    patch_data = {
+                        "name_of_backup": name_of_backup, 
+                        "prompt_used": prompt_used, 
+                        "changes": changes
+                    }
+                    if game_hash:
+                        patch_data["game_hash"] = game_hash
+                        
+                    json.dump(patch_data, f, indent=2, ensure_ascii=False)
 
                 metadata_path = file_path.replace('.json', '_metadata.json')
                 with open(metadata_path, 'w', encoding='utf-8') as f:
-                    json.dump({"name_of_backup": name_of_backup, "metadata": metadata}, f, indent=2, ensure_ascii=False)
+                    json.dump({"name_of_backup": name_of_backup, "prompt_used": prompt_used, "metadata": metadata}, f, indent=2, ensure_ascii=False)
 
                 print(f"Successfully saved {len(changes)} changes to {file_path}")
+                
+                # STEP 4: Restore original setup.py content
+                if seed_modified and original_setup_content:
+                    try:
+                        with open(setup_path, 'w', encoding='utf-8') as f:
+                            f.write(original_setup_content)
+                        print(f"    ✓ Restored original setup.py content")
+                    except Exception as e:
+                        print(f"    Warning: Could not restore setup.py: {e}")
+                
                 return True
             except Exception as e:
                 print(f"ERROR: Failed to write patch files: {e}")
+                # Restore original if we modified it
+                if seed_modified and original_setup_content:
+                    try:
+                        with open(setup_path, 'w', encoding='utf-8') as f:
+                            f.write(original_setup_content)
+                    except:
+                        pass
                 return False
         else:
             print("No changes found relative to the base backup.")
+            # Restore original if we modified it
+            if seed_modified and original_setup_content:
+                try:
+                    with open(setup_path, 'w', encoding='utf-8') as f:
+                        f.write(original_setup_content)
+                except:
+                    pass
             return False
 
     def load_from_extension_file(self, file_path: str):
         content = open_file(file_path)
         data = json.loads(content)
         name_of_backup = data["name_of_backup"]
+        prompt_used = data.get("prompt_used", "") # this is necessary for backwords compatibility
         changes = data["changes"]
+        game_hash = data.get("game_hash")
+        
         if os.path.exists(file_path.replace('.json', '_metadata.json')):
             with open(file_path.replace('.json', '_metadata.json'), 'r') as f:
                 metadata = json.load(f)
         else:
-            print(f"No metadata file found for {file_path}")
+            # print(f"No metadata file found for {file_path}")
             metadata = []
-        return name_of_backup, changes, metadata
+        return name_of_backup, changes, metadata, prompt_used, game_hash
     
     def valid_apply(self, file_path: str, diff: str) -> bool:
         result = modify_file_inline(file_path=file_path, diff_text=diff)
@@ -107,7 +206,7 @@ class VersionControl:
     def apply_patches(self, file_containing_patches: str, keep_changes_on_failure: bool = False):
         success_count = 0
         any_fixed = False
-        name_of_backup, changes, metadata = self.load_from_extension_file(file_containing_patches)
+        name_of_backup, changes, metadata, prompt_used, _ = self.load_from_extension_file(file_containing_patches)
         
         errors = {} # key: file_path, value: error_msg
         
@@ -179,7 +278,7 @@ class VersionControl:
         if any_fixed:
             print(f"Saving fixed patches to {file_containing_patches}...")
             with open(file_containing_patches, 'w') as f:
-                json.dump({"name_of_backup": name_of_backup, "changes": changes}, f)
+                json.dump({"name_of_backup": name_of_backup, "changes": changes, "prompt_used": prompt_used}, f)
 
         return success_count == len(changes), success_count, len(changes), errors
 
@@ -188,7 +287,7 @@ class VersionControl:
             print("ERROR: File containing patches is not provided")
             return False, "File containing patches is not provided"
 
-        name_of_backup, changes, metadata = self.load_from_extension_file(file_containing_patches)
+        name_of_backup, changes, metadata, prompt_used, _ = self.load_from_extension_file(file_containing_patches)
 
         if needs_rebase:
             if path_to_BASE_backup is not None:
@@ -205,7 +304,10 @@ class VersionControl:
                     print("Available backups: ", available_backups)
                     print("Name of backup to find: ", name_of_backup)
                     return False, "No base backup found, cannot rebase"
-                base_backup_handler.restore_backup(name_of_backup, target_path="GameFolder")
+                success, _ = base_backup_handler.restore_backup(name_of_backup, target_path="GameFolder")
+                if success is None:
+                    print(f"[error] Failed to restore to base code: {name_of_backup}")
+                    return False, "Failed to restore to base code"
                 print("Restored to base code")
                 time.sleep(1)
                 if not skip_warnings:
@@ -231,7 +333,10 @@ class VersionControl:
                     raise("Not implemented yet")
 
             print("Restoring to temporary backup")
-            self.security_backup_handler.restore_backup("GameFolder", target_path="GameFolder")
+            success, _ = self.security_backup_handler.restore_backup("GameFolder", target_path="GameFolder")
+            if success is None:
+                print(f"[error] Failed to restore to temporary backup: {name_of_backup}")
+                return False, errors
             print("Restored, removing temporary backup")
             self.security_backup_handler.delete_entire_backup_folder()
             return False, errors
@@ -263,8 +368,10 @@ class VersionControl:
             output_path = "merged_patch.json"
         
         # Load both patches
-        name_a, changes_a, _ = self.load_from_extension_file(patch_a_path)
-        name_b, changes_b, _ = self.load_from_extension_file(patch_b_path)
+        name_a, changes_a, _, old_prompt_a, _ = self.load_from_extension_file(patch_a_path)
+        name_b, changes_b, _, old_prompt_b, _ = self.load_from_extension_file(patch_b_path)
+
+        combined_prompt = old_prompt_a + old_prompt_b
         
         # Verify both patches are from the same base
         if name_a != name_b:
@@ -337,7 +444,7 @@ class VersionControl:
         
         # Write output
         with open(output_path, 'w') as f:
-            json.dump({"name_of_backup": name_a, "changes": merged_changes}, f, indent=2)
+            json.dump({"name_of_backup": name_a, "changes": merged_changes, "prompt_used": combined_prompt}, f, indent=2)
         
         if conflicts_found:
             return False, f"Merged with {len(conflicts_found)} conflicts in: {conflicts_found}. Output: {output_path}"
@@ -709,9 +816,17 @@ class VersionControl:
         expected_structure = {
             "arenas/GAME_arena.py": "exists",
             "characters/GAME_character.py": "exists", 
-            "platforms/GAME_platform.py": "exists",
-            "projectiles/GAME_projectile.py": "exists",
-            "weapons/GAME_weapon.py": "exists",
+            "effects/coneeffect.py": "exists",
+            "effects/radialeffect.py": "exists",
+            "effects/lineeffect.py": "exists",
+            "effects/waveprojectileeffect.py": "exists",
+            "effects/obstacleeffect.py": "exists",
+            "effects/zoneindicator.py": "exists",
+            "pickups/GAME_pickups.py": "exists",
+            "world/GAME_world_objects.py": "exists",
+            "abilities/ability_loader.py": "exists",
+            "abilities/primary/__init__.py": "exists",
+            "abilities/passive/__init__.py": "exists",
             "ui/GAME_ui.py": "exists",
             "setup.py": "exists"
         }

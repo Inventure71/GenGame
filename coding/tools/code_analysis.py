@@ -188,6 +188,3 @@ def get_file_outline(file_path: str):
     except Exception as e:
         return f"Error: {str(e)}"
 
-# Alias for backward compatibility if needed, or we can update schemas to use get_file_outline
-list_functions_in_file = get_file_outline
-

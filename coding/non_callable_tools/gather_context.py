@@ -1,4 +1,5 @@
 from coding.tools.file_handling import get_tree_directory, read_file
+from coding.non_callable_tools.helpers import open_file
 import os
 
 def get_full_directory_tree():
@@ -12,11 +13,46 @@ def get_full_directory_tree():
     )
     return context
 
+def gather_all_file_outlines(directory: str = "GameFolder") -> str:
+    """Gathers file outlines for all Python files in a directory, respecting skip rules."""
+    from coding.tools.code_analysis import get_file_outline
+    from coding.tools.security import is_file_allowed
+    from coding.non_callable_tools.helpers import should_skip_item
+    import os
+    
+    outlines = []
+    outlines.append(f"## File Outlines for {directory}/")
+    
+    # Get all Python files
+    for root, dirs, files in os.walk(directory):
+        # Filter directories in-place using should_skip_item
+        dirs[:] = [d for d in dirs if not should_skip_item(d)]
+        
+        for file in files:
+            # Skip non-Python files and files that should be skipped
+            if not file.endswith('.py') or should_skip_item(file):
+                continue
+                
+            file_path = os.path.join(root, file)
+            
+            # Check if file is allowed (security check)
+            if not is_file_allowed(file_path, operation="read"):
+                continue
+            
+            outlines.append(f"\n### {file_path}")
+            try:
+                outline = get_file_outline(file_path)
+                outlines.append(outline)
+            except Exception as e:
+                outlines.append(f"Error getting outline: {e}")
+    
+    return "\n".join(outlines)
+
 def gather_context_enchancer():
     """Gathers context for the enchancer phase."""
     lines = [
         "## Context given:",
-        "Documentation of BASE game components:",
+        "Documentation of BASE game components (high-level; code is source of truth):",
         read_file(file_path='BASE_components/BASE_COMPONENTS_DOCS.md'),
     ]
     return "\n".join(lines)
@@ -28,8 +64,13 @@ def gather_context_planning():
         "",
         get_full_directory_tree(),
         "",
-        "## Documentation of BASE components:",
+        "## File Outlines (structure overview):",
+        gather_all_file_outlines("GameFolder"),
+        "",
+        "## Documentation of BASE components (high-level; verify against code):",
         read_file(file_path="BASE_components/BASE_COMPONENTS_DOCS.md"),
+        "## Guide for adding abilities (patterns only; verify against code):",
+        open_file(file_path="coding/prompts/GUIDE_Adding_Abilities.md"),
     ]
     
     # Read core game files
@@ -37,8 +78,15 @@ def gather_context_planning():
     for filepath in [
         'GameFolder/arenas/GAME_arena.py',
         'GameFolder/characters/GAME_character.py',
-        'GameFolder/projectiles/GAME_projectile.py',
-        'GameFolder/weapons/GAME_weapon.py',
+        'GameFolder/effects/coneeffect.py',
+        'GameFolder/effects/radialeffect.py',
+        'GameFolder/effects/lineeffect.py',
+        'GameFolder/effects/waveprojectileeffect.py',
+        'GameFolder/effects/obstacleeffect.py',
+        'GameFolder/effects/zoneindicator.py',
+        'GameFolder/pickups/GAME_pickups.py',
+        'GameFolder/world/GAME_world_objects.py',
+        'GameFolder/abilities/ability_loader.py',
     ]:
         lines.append(f"\n### {filepath}")
         lines.append(read_file(file_path=filepath))
@@ -53,14 +101,19 @@ def gather_context_planning():
     return "\n".join(lines)
 
 def gather_context_coding():
-    """Gathers minimal context for the coding phase (tree only, files read on demand)."""
+    """Gathers context for the coding phase with file outlines."""
     context = (
         f"=== STARTING CONTEXT ===\n"
         f"{get_full_directory_tree()}\n"
         f"**Access Rules:**\n"
         f"- GameFolder/: You can read and write files here\n"
         f"- BASE_components/: Read-only, inherit from these classes in GameFolder/\n\n"
+        f"## File Outlines (structure overview - use get_file_outline for details):\n"
+        f"{gather_all_file_outlines('GameFolder')}\n\n"
         f"Do NOT call get_tree_directory - use the paths above.\n\n"
+        f"## Guide for adding abilities (patterns; verify against code):\n"
+        f"{open_file(file_path='coding/prompts/GUIDE_Adding_Abilities.md')}\n\n"
+        f"Note: Code is the source of truth. When adding abilities or effects, follow the guide above and confirm behavior against real implementations.\n\n"
         f"=== END OF STARTING CONTEXT ===\n\n"
         f"⚡ REMINDER: Use tools in PARALLEL. If you need multiple files, read ALL of them in ONE response. ⚡"
     )
@@ -73,9 +126,18 @@ def gather_context_testing():
         "",
         get_full_directory_tree(),
         "",
+        "## File Outlines (structure overview):",
+        gather_all_file_outlines("GameFolder"),
+        "",
         "⚡ CRITICAL REMINDER: Batch ALL file reads in ONE turn (5-10+ parallel calls is expected). Sequential reading is FORBIDDEN. ⚡",
         "",
-        "## CRITICAL: Character & Weapon Attributes",
+        "## 🚨 EXECUTION ORDER WARNING (CRITICAL FOR COLLISION TESTS):",
+        "handle_collisions() resolves obstacles first (can move the character), then effects and pickups.",
+        "If you place entities at the character's initial location, they may not collide after obstacle push-out.",
+        "SOLUTION: Call handle_collisions() once, capture char.location, then place entities at that position.",
+        "See GUIDE_Testing.md (EXECUTION ORDER / TEST PATTERNS) for examples.",
+        "",
+        "## CRITICAL: Character & Ability Attributes",
         "Before writing tests, note these BASE_components facts:",
         "",
         "### Character (BASE_character.py)",
@@ -84,9 +146,9 @@ def gather_context_testing():
         "- To kill: `character.health = 0`",
         "- Dimensions use: `char.width * char.scale_ratio`",
         "",
-        "### Weapon Cooldowns",
-        "- `weapon.shoot()` returns `None` if cooldown hasn't elapsed",
-        "- Create NEW weapon instances per test, or reset: `weapon.last_shot_time = 0`",
+        "### Primary Ability Usage",
+        "- `character.use_primary_ability(arena, mouse_pos)` consumes a charge when allowed",
+        "- Cooldown is enforced by `character.primary_use_cooldown` and `last_primary_use`",
         "",
         "### Timing in Tests",
         "- Use INTEGER frame counting, not float accumulation:",
@@ -96,8 +158,12 @@ def gather_context_testing():
         "- `arena.handle_collisions(dt)` applies ALL effects each call (damage, knockback, recoil)",
         "- Effects ACCUMULATE across loop iterations",
         "",
-        "## Testing Guide:",
-        read_file(file_path="coding/prompts/GUIDE_Testing.md"),
+        "## 🚨 BASE IMPORTS & SERIALIZATION (CRITICAL):",
+        "When a test imports from BASE_components, use the EXACT export name from that module (e.g. BaseCamera from BASE_camera, NOT 'Camera'). Check the BASE file or BASE_COMPONENTS_DOCS.md.",
+        "For serializing effects/pickups/platforms (NetworkObject): use obj.__getstate__() and NetworkObject.create_from_network_data(state). Do NOT assume .serialize() or .deserialize() exist; follow test_gameplay_integration.py and test_network_serialization.py.",
+        "",
+        "## Testing Guide (patterns only; verify expectations against code):",
+        open_file(file_path="coding/prompts/GUIDE_Testing.md"),
         "",
         "=== END OF TESTING CONTEXT ==="
     ]
@@ -110,7 +176,30 @@ def gather_context_fix(results: dict) -> str:
         "",
         get_full_directory_tree(),  # Directory structure
         "",
-        "⚡ CRITICAL REMINDER: Batch ALL tool calls in ONE turn (read_file, get_file_outline, get_function_source, etc.). 5-20+ parallel calls is expected. Sequential calls are FORBIDDEN. ⚡",
+        "## File Outlines (structure overview):",
+        gather_all_file_outlines("GameFolder"),
+        "",
+        "⚡ CRITICAL REMINDER: Batch tool calls in ONE turn (read_file, get_file_outline, get_function_source, etc.). 5-20+ parallel calls is expected. A second batch is allowed only if a NEW hypothesis appears. ⚡",
+        "⚡ SANITY CHECK: If a numeric assertion is off by an exact factor (0.5x, 2x, 4x), suspect duplicate logic or double-application before changing constants. ⚡",
+        "",
+        "⚡ DETERMINISM RULE (CRITICAL): `Arena` auto-spawns random obstacles/grass/pickups in `__init__`/`_spawn_world()`. "
+        "Tests must not rely on this. For targeted tests, clear arena state immediately after creation "
+        "(e.g., `arena.obstacles.clear()`, `arena.grass_fields.clear()`, `arena.platforms.clear()`, `arena.weapon_pickups.clear()`, `arena.effects.clear()`) "
+        "and/or set a fixed `random.seed(...)` inside the test. ⚡",
+        "",
+        "⚡ TIME/COOLDOWN RULE: Abilities are gated by `arena.current_time` and cooldown fields (e.g., `last_primary_use`, `primary_use_cooldown`). "
+        "If a test expects an action to be usable again, advance time via `arena.update(dt)` (preferred) or set `arena.current_time` explicitly. ⚡",
+        "",
+        "## Execution Order Warning:",
+        "If test fails with 'no collision' or 'entity not found' despite correct setup:",
+        "1. Read the method called in the test (e.g., handle_collisions)",
+        "2. Trace ALL methods it calls in order",
+        "3. Check if ANY method modifies state (location, health, etc.) BEFORE the assertion",
+        "4. If yes, the test setup may need to account for these mutations",
+        "5. Common pattern: collision resolution methods move entities before effect/pickup checks",
+        "",
+        "## Quick Heuristic (Exact-Factor Mismatch):",
+        "If an assertion is off by an exact factor (0.5x, 2x, 4x), check for duplicate logic or double-application before changing constants.",
         "",
         "## Files Involved in Errors:",
         gather_context_fixing_errors(results),  # Only error-related files
