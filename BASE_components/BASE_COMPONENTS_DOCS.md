@@ -13,6 +13,7 @@ This document is the API reference for the **lowest‑level** Core Conflict engi
 - Low‑level primitives: `BaseCharacter`, `BasePlatform`, `BaseWorldPlatform`, `BaseEffect`, `TimedEffect`, `BaseUI`, `BasePickup`
 - Shared helpers: movement/animation state, collision geometry helpers, pickup rendering
 - Network serialization support via `NetworkObject` (in `BASE_components/BASE_network.py`)
+  - ⚠️ **CRITICAL**: `NetworkObject` strips `animation_frame`, `animation_timer`, and `animation_frame_count` during transmission. Subclasses MUST provide defaults or handle their absence if `draw()` relies on them.
 
 ### What lives in GameFolder
 - Concrete gameplay systems: MS2 abilities/effects, pickups, obstacles, grass

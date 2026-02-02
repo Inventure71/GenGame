@@ -68,7 +68,7 @@ You are a QA engineer writing tests in `GameFolder/tests/` for new game features
   - Tests must **pass 100% of the time**. The thing under test (e.g. a spawn, a drop) may only happen sometimes—that is fine.
   - When the **feature** is chance-based (e.g. "5% chance to spawn", "random drop"), **do not** assert on a single run; that makes the test flaky (pass sometimes, fail sometimes).
   - **Use a bounded for loop**: run the scenario many times (e.g. `for _ in range(100):` or `range(200)`) and assert that the expected outcome occurred **at least once**. Then the test always passes while validating the probabilistic behavior.
-  - Example: testing "RainbowRyePatch has a chance to spawn" → loop N times with a seed or repeated setup, check `any(isinstance(g, RainbowRyePatch) for g in arena.grass_fields)` (or similar) **after the loop**, having set a flag inside the loop when the outcome happened; then assert the flag is True.
+  - Example: testing "RainbowRyePatch has a chance to spawn" → loop N times with a seed or repeated setup, check `any(isinstance(g, RainbowRyePatch) for g in arena.grass_fields) ` (or similar) **after the loop**, having set a flag inside the loop when the outcome happened; then assert the flag is True.
 
 ---
 
@@ -121,7 +121,7 @@ assert char.primary_ability_name == pickup.ability_name
 **State transitions:** Beginning, middle, end, invalid transitions
 **Spatial:** Multiple positions, boundaries, owner IDs, hit symmetry
 **Resources:** No ammo, missing components, insufficient resources
-**Effect Drawing:** Color/alpha validation, serialization edge cases, pygame drawing arguments
+**Effect Drawing:** Color/alpha validation, serialization edge cases, pygame drawing arguments, forcing graphics initialization
 
 ### Effect Drawing Tests (MANDATORY for effects with draw methods)
 
@@ -141,37 +141,38 @@ assert char.primary_ability_name == pickup.ability_name
    - Test with very large lifetime values
    - Ensure alpha never goes negative or exceeds 255
 
-3. **Drawing method calls:**
-   - `draw()` method must not crash with any valid effect state
-   - Test drawing with `camera=None` and `camera=SomeCamera()`
-   - Test drawing when `_graphics_initialized=False` (should return early)
-   - Test drawing when effect is expired or at lifetime boundary
+3. **Drawing method calls (CRITICAL):**
+   - `draw()` method must not crash with any valid effect state.
+   - **Headless Bypass**: Automated tests run with `headless=True` which skips `draw()` logic. You MUST force it to run by setting `effect._graphics_initialized = True` manually in the test.
+   - **State Coverage**: Test drawing in all major states (e.g. `is_attacking = True`, `is_eating = True`).
+   - Test drawing with `camera=None` and `camera=SomeCamera()`.
+   - Test drawing when effect is expired or at lifetime boundary.
 
-4. **Serialization edge cases:**
-   - If effect is serialized/deserialized, verify all drawing attributes (color, radius, etc.) are preserved correctly
-   - Test that deserialized effects can be drawn without errors
+4. **Network Object Roundtrip (MANDATORY)**: If the object is a `NetworkObject`, you MUST:
+   - Serialize it (`state = obj.__getstate__()`).
+   - Create a new instance from that state (`new_obj = NetworkObject.create_from_network_data(state)`).
+   - **Call `draw(screen)` on the new instance.**
+   - This catches attributes that are used in `draw()` but are missing from serialization (e.g. `animation_frame`, `is_attacking`).
 
 **Example test pattern:**
 ```python
-def test_effect_drawing_with_edge_cases():
-    # Test valid color
-    effect = MyEffect(..., color=(255, 50, 0))
+def test_effect_drawing_with_serialization():
+    # Setup
     arena = setup_battle_arena(headless=True)
-    arena.add_effect(effect)
-    # Should not crash
+    effect = MyEffect(...)
+    effect.is_attacking = True
+    
+    # Roundtrip
+    state = effect.__getstate__()
+    new_effect = NetworkObject.create_from_network_data(state)
+    
+    # The new_effect is what the client sees!
+    # Force graphics and try to draw
     screen = pygame.Surface((100, 100))
-    effect.draw(screen, arena.height)
+    new_effect._graphics_initialized = True
     
-    # Test after serialization (if applicable)
-    serialized = effect.serialize()
-    deserialized = MyEffect.deserialize(serialized)
-    deserialized.draw(screen, arena.height)  # Should not crash
-    
-    # Test at lifetime boundaries
-    effect.age = 0
-    effect.draw(screen, arena.height)  # Should work
-    effect.age = effect.lifetime
-    effect.draw(screen, arena.height)  # Should work
+    # This will catch missing attributes like 'animation_frame' or 'is_attacking'
+    new_effect.draw(screen, arena.height)
 ```
 
 ---

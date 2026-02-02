@@ -181,13 +181,28 @@ arena._update_spatial_grid()
 # Now queries will work
 nearby = arena.spatial_grid.get_nearby(spawn_x, spawn_y, 100)
 
-## 13. TROUBLESHOOTING SPECIFIC FAILURES
+## 14. EFFECT DRAWING (CRASHES & HEADLESS)
 
-| Symptom | Probable Cause | Check |
-| :--- | :--- | :--- |
-| **Action fails on first frame** | Cooldown blocking | Is `last_use_time` initialized to `0.0`? If `current_time` is also `0.0`, `0 < cooldown` is True. Init to `-cooldown`. |
-| **"Expected X, got 0"** | Early return / Blocking | Is a state flag (e.g., `crafting_timer`) stuck > 0 because the previous action didn't clear it? |
-| **AttributeError: 'X' has no attribute 'serialize'** | Missing Interface | Does class X inherit from a parent but fail to implement a method required by the test? `NetworkObject` often requires explicit `serialize/deserialize`. |
-| **Test says "Overlapping" but `colliderect` fails** | Hitbox Precision | Are they physically touching or just close? For Auras/Shields, use distance checks (`dist < r1+r2`) instead of `colliderect`. |
-| **"Spawn on death" fails** | Execution Order | Does `arena.update` call `super()` (respawning the char) *before* checking if it died? Move death checks *before* `super().update`. |
-| **Effect didn't modify target** | Loop Scope | Did you define `targets = a + b` but write `for x in a:`? |
+**CRITICAL**: Drawing code often crashes during real gameplay but passes in tests because `headless=True` skips the `draw()` logic.
+
+- **Forcing Graphics**: You MUST manually set `effect._graphics_initialized = True` in tests to bypass the early-return guard in `draw()`.
+- **Surface Creation**: Create a dummy `pygame.Surface` (e.g., `screen = pygame.Surface((100, 100))`) to pass to the `draw()` method.
+- **State Coverage**: Test drawing while `is_attacking = True`. This is where many tinting/blitting crashes occur.
+- **Serialization Roundtrip**: The most common crash is missing attributes on the client side (e.g. `animation_frame`). You MUST test drawing a **deserialized** object.
+
+**Pattern:**
+```python
+def test_draw_no_crash():
+    screen = pygame.Surface((100, 100))
+    effect = MyEffect(...)
+    
+    # 1. Test local object
+    effect._graphics_initialized = True 
+    effect.draw(screen, 900)
+    
+    # 2. Test DESERIALIZED object (Client perspective)
+    state = effect.__getstate__()
+    new_obj = NetworkObject.create_from_network_data(state)
+    new_obj._graphics_initialized = True
+    new_obj.draw(screen, 900) # This catches 'animation_frame' errors!
+```

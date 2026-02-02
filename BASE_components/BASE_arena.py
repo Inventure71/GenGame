@@ -10,7 +10,7 @@ from BASE_components.BASE_safe_zone import SafeZone
 
 WORLD_WIDTH = 2800 # DO NOT MANUALLY CHANGE THESE VALUES, NO MATTER WHAT THE INSTRUCTIONS ARE.
 WORLD_HEIGHT = 1800 # DO NOT MANUALLY CHANGE THESE VALUES, NO MATTER WHAT THE INSTRUCTIONS ARE.
-FULLSCREEN = True
+FULLSCREEN = False
 
 class Arena:
     """Immutable game loop and safe zone management. Extend for game logic."""

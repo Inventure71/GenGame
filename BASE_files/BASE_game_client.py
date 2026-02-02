@@ -9,7 +9,7 @@ from BASE_components.BASE_spatial import SpatialGrid
 
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 720
-FULLSCREEN = True
+FULLSCREEN = False
 
 class ClientArena:
     """Mock arena for client-side prediction."""

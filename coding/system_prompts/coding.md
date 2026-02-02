@@ -100,6 +100,9 @@ The spatial grid contains BOTH rigid obstacles (walls) and non-rigid interactive
 - **ALWAYS** store derived values (like `cow_size`) if needed for `draw()` method
 - **NOTE**: Effects may accept `update(delta_time, arena=None)`; the MS2 Arena passes itself when the effect signature supports it. Keep effects serializable and never store the arena.
 
+- **Visual State Stripping**: `NetworkObject` removes `animation_frame`, `animation_timer`, and `animation_frame_count` during serialization.
+- **Client Safety**: Classes using these in `draw()` MUST handle their absence in `__setstate__` (or rely on the `NetworkObject` base defaults) to prevent client crashes. Always test drawing a deserialized instance.
+
 ### Pattern for Effects Needing Entity Access
 ```python
 class MyEffect(TimedEffect):

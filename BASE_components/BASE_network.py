@@ -87,6 +87,11 @@ class NetworkObject:
         """
         self.__dict__.update(state)
 
+        # Prevent 'attribute missing' crashes on client for stripped visual state
+        for attr in ['animation_frame', 'animation_timer', 'animation_frame_count']:
+            if not hasattr(self, attr):
+                setattr(self, attr, 0)
+
         # Reinitialize graphics on the receiving end
         if hasattr(self, 'init_graphics'):
             self.init_graphics()

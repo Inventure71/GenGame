@@ -24,7 +24,7 @@ from BASE_components.BASE_asset_handler import AssetHandler
 from coding.non_callable_tools.version_control import VersionControl
 from coding.non_callable_tools.action_logger import ActionLogger
 
-FULLSCREEN = True
+FULLSCREEN = False
 
 # Features:
 # - Main menu
