@@ -30,6 +30,7 @@ SKIP_FILES_EXACT = {
     ".DS_Store",
     "Thumbs.db",
     "desktop.ini",
+    "patch.txt",
 }
 
 SKIP_GLOBS = [

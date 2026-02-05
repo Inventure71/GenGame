@@ -208,6 +208,12 @@ class VersionControl:
         any_fixed = False
         name_of_backup, changes, metadata, prompt_used, _ = self.load_from_extension_file(file_containing_patches)
         
+        # We write this so we know that we applied a patch, even if the prompt is not detected
+        if not prompt_used:
+            prompt_used = "Not detected"
+        with open("GameFolder/patch.txt", "w", encoding="utf-8") as f:
+            f.write(prompt_used)
+
         errors = {} # key: file_path, value: error_msg
         
         for change in changes:

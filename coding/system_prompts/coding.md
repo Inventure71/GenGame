@@ -67,6 +67,7 @@ You are an expert Python developer implementing one task at a time for the Core 
   - Then center the rect around that point: rect origin must be `[center_x - width/2, screen_y_center - height/2]`.
 - Do **NOT** assume `location` is already the top-left; that will make melee/area-effect hitboxes live only on one side (e.g., only hitting to the right).
 - For any new melee or area-effect ability, add tests that verify hits when the target is on **both** sides of the attacker (left and right, and vertically if relevant).
+- **Angle calculations**: Always use `math.atan2(dy, dx)` (Y first, X second) where `dy` is vertical and `dx` is horizontal. Reversed parameters invert mouse controls.
 
 ### Effect Collision Detection
 
