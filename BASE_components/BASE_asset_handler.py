@@ -396,6 +396,7 @@ class AssetHandler:
         fallback_draw: Optional[Callable[[pygame.Surface], None]] = None,
         fallback_tag: Optional[str] = None,
         subcategory: Optional[str] = None,
+        asset_prefix: Optional[str] = None,
     ) -> Tuple[List[pygame.Surface], bool, Optional[str]]:
         """
         Load animation from category/subcategory/variant structure.
@@ -415,7 +416,7 @@ class AssetHandler:
                 return [], False, None
         
         # Count frames automatically
-        frame_count = cls._count_frames(category, variant, subcategory)
+        frame_count = cls._count_frames(category, variant, subcategory, asset_prefix=asset_prefix)
         if frame_count == 0:
             # No frames found, use fallback if provided
             if fallback_draw is not None and size is not None:
@@ -425,7 +426,7 @@ class AssetHandler:
             return [], False, variant
         
         # Check cache
-        anim_key = (category, subcategory, variant, frame_count, size)
+        anim_key = (category, subcategory, variant, asset_prefix, frame_count, size)
         if anim_key in cls._animation_cache:
             frames, loaded = cls._animation_cache[anim_key]
             return frames, loaded, variant
@@ -436,7 +437,7 @@ class AssetHandler:
         asset_root = cls._asset_root()
         
         for i in range(frame_count):
-            frame_path = cls._build_frame_path(category, variant, i, subcategory=subcategory)
+            frame_path = cls._build_frame_path(category, variant, i, subcategory=subcategory, asset_prefix=asset_prefix)
             if not os.path.isfile(frame_path):
                 all_loaded = False
                 frames = []

@@ -253,9 +253,9 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
                 print(f"Batch {i+1}/{num_blocks} - Attempt {attempt + 1}/{max_attempts}")
 
                 # Enable deferred application for this attempt
-                from coding.tools.conflict_resolution import _defer_application, _pending_resolutions
-                _defer_application = True
-                _pending_resolutions.clear()
+                import coding.tools.conflict_resolution as conflict_resolution
+                conflict_resolution._defer_application = True
+                conflict_resolution._pending_resolutions.clear()
 
                 # Send JUST the todo list string as prompt
                 prompt = (
@@ -274,11 +274,11 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
                 print(f"\n[MODEL RESPONSE for batch {i+1}, attempt {attempt + 1}]:\n", resp, "\n")
 
                 # Apply all collected resolutions in reverse conflict number order
-                _pending_resolutions.sort(key=lambda x: x['conflict_num'], reverse=True)
-                _defer_application = False
+                conflict_resolution._pending_resolutions.sort(key=lambda x: x['conflict_num'], reverse=True)
+                conflict_resolution._defer_application = False
 
-                print(f"Applying {len(_pending_resolutions)} resolutions from attempt {attempt + 1}...")
-                for resolution in _pending_resolutions:
+                print(f"Applying {len(conflict_resolution._pending_resolutions)} resolutions from attempt {attempt + 1}...")
+                for resolution in conflict_resolution._pending_resolutions:
                     result = resolve_conflict(**resolution)  # This will auto-complete todos
                     print(f"Applied: {result}")
 

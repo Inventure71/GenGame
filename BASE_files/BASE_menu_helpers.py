@@ -77,6 +77,22 @@ def get_local_ip_prefix():
     finally:
         s.close()
 
+
+def get_fullscreen_size():
+    """Return (width, height) for fullscreen so in-Docker/VNC windows fill the display.
+    Uses VNC_GEOMETRY env (e.g. '1280x720') when set to match the Xvnc geometry; otherwise (1280, 720)."""
+    geom = os.environ.get("VNC_GEOMETRY", "1280x720").strip()
+    if "x" in geom.lower():
+        parts = geom.lower().split("x")
+        try:
+            w, h = int(parts[0].strip()), int(parts[1].strip())
+            if w > 0 and h > 0:
+                return (w, h)
+        except (ValueError, IndexError):
+            pass
+    return (1280, 720)
+
+
 def encrypt_code(ip: str, port: int, mode: str) -> str:
     if mode == "REMOTE":
         # Remote only needs to hide the port

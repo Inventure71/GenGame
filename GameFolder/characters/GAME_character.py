@@ -426,7 +426,7 @@ class Character(BaseCharacter):
             self.available_primary_abilities = self.max_primary_abilities
 
     def set_passive_ability(self, ability_name: str):
-        self.passive_ability_name = ability_name
+        self.passive_ability_name = None
         self.passive_description = ""
         self.regenation = False
         self.regeneration_rate = 0.0

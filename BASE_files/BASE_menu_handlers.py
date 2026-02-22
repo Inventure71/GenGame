@@ -279,6 +279,7 @@ class MenuHandlers:
             return
 
         self.menu.agent_running = True
+        self.menu.agent_stop_requested = False
         self.menu.agent_results = None
         self.menu.show_fix_prompt = False
 
@@ -308,6 +309,7 @@ class MenuHandlers:
         """Handle agent fix button click."""
         print("Agent Fix clicked")
         self.menu.agent_running = True
+        self.menu.agent_stop_requested = False
         self.menu.show_fix_prompt = False
 
         # Run agent fix in a separate thread

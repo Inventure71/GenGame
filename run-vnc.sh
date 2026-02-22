@@ -26,8 +26,10 @@ rm -rf /tmp/.X11-unix
 export SDL_AUDIODRIVER=dummy
 
 # 2. Start TigerVNC X server (Xvnc)
-echo "📺 Starting TigerVNC X Server (Xvnc)..."
-Xvnc :0 -geometry 1280x720 -depth 24 -rfbport 5900 -SecurityTypes None -localhost no &
+# VNC_GEOMETRY must match so pygame fullscreen windows fill the noVNC view
+export VNC_GEOMETRY="${VNC_GEOMETRY:-1280x720}"
+echo "📺 Starting TigerVNC X Server (Xvnc) at ${VNC_GEOMETRY}..."
+Xvnc :0 -geometry $VNC_GEOMETRY -depth 24 -rfbport 5900 -SecurityTypes None -localhost no &
 sleep 2
 
 # 3. Start Window Manager (Fluxbox)

@@ -19,6 +19,7 @@ from BASE_files.BASE_menu_helpers import get_local_ip, encrypt_code
 from BASE_files.server_state import ServerStateManager
 from BASE_files.server_sync import ServerSyncManager
 from BASE_files.patch_database import PatchDatabase
+from BASE_files.safe_serialization import safe_pickle_loads
 
 # Add the project root to the Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -30,6 +31,8 @@ if not ensure_gamefolder_exists():
     sys.exit(1)
 
 import GameFolder.setup
+
+MAX_MESSAGE_SIZE_BYTES = 8 * 1024 * 1024
 
 class GameServer:
     """
@@ -436,7 +439,7 @@ class GameServer:
                             continue
 
                     # Receive message
-                    length_bytes = client_socket.recv(4)
+                    length_bytes = self._recv_exact(client_socket, 4)
                     if not length_bytes:
                         # Client disconnected
                         if is_pending:
@@ -452,13 +455,40 @@ class GameServer:
                             self._handle_client_disconnect(player_id)
                         continue
 
+                    if len(length_bytes) != 4:
+                        print(f"Invalid message header from {player_id}")
+                        if is_pending:
+                            if client_socket in self.pending_clients:
+                                self.pending_clients.pop(client_socket, None)
+                                self.pending_capabilities.pop(client_socket, None)
+                            try:
+                                client_socket.close()
+                            except Exception:
+                                pass
+                        else:
+                            self._handle_client_disconnect(player_id)
+                        continue
+
                     message_length = int.from_bytes(length_bytes, byteorder='big')
+                    if message_length <= 0 or message_length > MAX_MESSAGE_SIZE_BYTES:
+                        print(f"[security] Invalid message length from {player_id}: {message_length}")
+                        if is_pending:
+                            if client_socket in self.pending_clients:
+                                self.pending_clients.pop(client_socket, None)
+                                self.pending_capabilities.pop(client_socket, None)
+                            try:
+                                client_socket.close()
+                            except Exception:
+                                pass
+                        else:
+                            self._handle_client_disconnect(player_id)
+                        continue
 
                     # Receive the actual message using robust reader
                     data = self._recv_exact(client_socket, message_length)
                     
                     if data and len(data) == message_length:
-                        message = pickle.loads(data)
+                        message = safe_pickle_loads(data, max_bytes=MAX_MESSAGE_SIZE_BYTES)
                         self._process_client_message(player_id, message, client_socket)
                     else:
                         print(f"Failed to receive complete message body from {player_id}")
