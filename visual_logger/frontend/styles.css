@@ -10,6 +10,7 @@
     --bg-secondary: #161b22;
     --bg-tertiary: #21262d;
     --bg-elevated: #292e36;
+    --bg-hover: rgba(255, 255, 255, 0.08);
 
     /* Accent Colors */
     --accent-primary: #00ff9f;

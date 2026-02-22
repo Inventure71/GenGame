@@ -253,9 +253,9 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
                 print(f"Batch {i+1}/{num_blocks} - Attempt {attempt + 1}/{max_attempts}")
 
                 # Enable deferred application for this attempt
-                from coding.tools.conflict_resolution import _defer_application, _pending_resolutions
-                _defer_application = True
-                _pending_resolutions.clear()
+                import coding.tools.conflict_resolution as conflict_resolution
+                conflict_resolution._defer_application = True
+                conflict_resolution._pending_resolutions.clear()
 
                 # Send JUST the todo list string as prompt
                 prompt = (
@@ -274,11 +274,11 @@ def auto_fix_conflicts(settings: dict, path_to_problematic_patch: str, patch_pat
                 print(f"\n[MODEL RESPONSE for batch {i+1}, attempt {attempt + 1}]:\n", resp, "\n")
 
                 # Apply all collected resolutions in reverse conflict number order
-                _pending_resolutions.sort(key=lambda x: x['conflict_num'], reverse=True)
-                _defer_application = False
+                conflict_resolution._pending_resolutions.sort(key=lambda x: x['conflict_num'], reverse=True)
+                conflict_resolution._defer_application = False
 
-                print(f"Applying {len(_pending_resolutions)} resolutions from attempt {attempt + 1}...")
-                for resolution in _pending_resolutions:
+                print(f"Applying {len(conflict_resolution._pending_resolutions)} resolutions from attempt {attempt + 1}...")
+                for resolution in conflict_resolution._pending_resolutions:
                     result = resolve_conflict(**resolution)  # This will auto-complete todos
                     print(f"Applied: {result}")
 
@@ -708,6 +708,12 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
         print(prompt)
         print("--------------------------------"*5)
 
+        # We write this so we know that we applied a patch and that the folder isn't a backup
+        with open("GameFolder/patch.txt", "w", encoding="utf-8") as f:
+            f.write(prompt)
+        print("[success] Marked GameFolder as dirty (patch.txt created)")
+        
+
         plan_feature(prompt, modelHandler, todo_list, fix_mode=fix_mode, results=results)
         implement_feature(modelHandler, todo_list)
     
@@ -779,14 +785,13 @@ def full_loop(prompt: str, modelHandler: GenericHandler, todo_list: TodoList, fi
         # Return success
         return True, modelHandler, todo_list, "", backup_name
 
-def start_complete_agent_session(prompt: str = None, start_from_base: str = None, patch_to_load: str = None, needs_rebase: bool = True, UI_called=False, settings: dict = None):
+def start_complete_agent_session_old(prompt: str = None, start_from_base: str = None, patch_to_load: str = None, needs_rebase: bool = True, UI_called=False, settings: dict = None):
     if settings is None:
         print("WARNING: No settings provided, returning False")
         return False, None, None, "", ""
 
     load_dotenv()
-    check_integrity()
-
+    #check_integrity()    
     handler = BackupHandler("__game_backups")
     backup_name = start_from_base
     
@@ -819,6 +824,8 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
         print(f"Using already loaded patch context. Base backup: {backup_name}")
 
     elif start_from_base is None:
+        from BASE_files.BASE_menu_helpers import ensure_gamefolder_exists
+        ensure_gamefolder_exists(create_backup=False)
         # No base specified and no patch to load - create a fresh starting point
         backup_path, backup_name = handler.create_backup("GameFolder") 
         print("Initial backup created at: ", backup_path)
@@ -878,6 +885,86 @@ def start_complete_agent_session(prompt: str = None, start_from_base: str = None
         - Cleanup the Todo List recreating the object to reset
     """
     action_logger.end_session()
+
+def start_complete_agent_session(prompt: str = None, start_from_base: str = None, patch_to_load: str = None, needs_rebase: bool = True, UI_called=False, settings: dict = None):
+    if settings is None: return False, None, None, "", ""
+
+    load_dotenv()
+    from BASE_files.BASE_menu_helpers import ensure_gamefolder_exists, reload_game_code
+    from coding.non_callable_tools.version_control import VersionControl
+    
+    vc = VersionControl()
+    handler = BackupHandler("__game_backups")
+    final_base_name = None
+
+    # =========================================================================
+    # CASE 1: IMPROVING AN EXISTING PATCH
+    # We must keep the ORIGINAL base so the patch remains one cohesive unit.
+    # =========================================================================
+    if patch_to_load:
+        print(f"🔄 Continuing patch: {patch_to_load}")
+        if needs_rebase:
+            # Revert to original base + apply all patch changes
+            success, _ = vc.apply_all_changes(needs_rebase=True, path_to_BASE_backup="__game_backups", file_containing_patches=patch_to_load, skip_warnings=True)
+            if not success: return False, None, None, "", ""
+            reload_game_code()
+        
+        # KEY: Always use the base backup ID stored inside the patch file!
+        final_base_name, _, _, old_prompt, _ = vc.load_from_extension_file(patch_to_load)
+        action_logger.prompt_used = old_prompt
+
+    # =========================================================================
+    # CASE 2: CLEAN START (Standard User Flow)
+    # We want to ensure we are starting from a verified "Zero Point".
+    # =========================================================================
+    elif needs_rebase:
+        if start_from_base:
+            print(f"⏪ Rebasing to specific checkpoint: {start_from_base}")
+            handler.restore_backup(start_from_base, target_path="GameFolder")
+            final_base_name = start_from_base
+        else:
+            print("🏠 System cleaning folder and deciding best base...")
+            # This wipes unfinished work and returns the 'official' base ID
+            final_base_name = ensure_gamefolder_exists()
+
+    # =========================================================================
+    # CASE 3: EXPERIMENTAL / MANUAL (User has unsaved edits)
+    # We snapshot the folder NOW so manual edits are included in the 'Base'.
+    # =========================================================================
+    else:
+        # If the user passed a base, use it. Otherwise, create a new one from current state.
+        if start_from_base:
+            final_base_name = start_from_base
+        else:
+            print("🧪 User requested no rebase. Snapshotting manual edits as new base...")
+            _, final_base_name = handler.create_backup("GameFolder")
+
+    # ==========================================
+    # FINAL EXECUTION
+    # ==========================================
+    if not final_base_name or final_base_name is True:
+        print("[error] Failed to acquire a valid backup ID string.")
+        return False, None, None, "", ""
+
+    action_logger.start_session(visual=True)
+    modelHandler = get_model_handler(settings)
+    todo_list = TodoList()
+
+    if prompt is None: prompt = input("Enter your prompt: ")
+
+    success, modelHandler, todo_list, fix_prompt, _ = full_loop(
+        prompt, modelHandler, todo_list, 
+        fix_mode=False, 
+        backup_name=final_base_name, # This is either original base OR our new snapshot
+        total_cleanup=True, 
+        UI_called=UI_called,
+        old_prompt=action_logger.prompt_used
+    )
+    
+    if success or not UI_called:
+        action_logger.end_session()
+    
+    return success, modelHandler, todo_list, fix_prompt, final_base_name
 
 if __name__ == "__main__":
     #print(run_all_tests())

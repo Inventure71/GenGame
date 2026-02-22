@@ -2,13 +2,13 @@ import pygame
 import time
 import sys
 import traceback
+from BASE_files.BASE_menu_helpers import get_fullscreen_size
 from BASE_files.network_client import NetworkClient, EntityManager, sync_game_files
+from BASE_components.BASE_arena import WORLD_WIDTH, WORLD_HEIGHT
 from BASE_components.BASE_camera import BaseCamera
 from BASE_components.BASE_asset_handler import AssetHandler
 from BASE_components.BASE_spatial import SpatialGrid
 
-DEFAULT_WIDTH = 1280
-DEFAULT_HEIGHT = 720
 FULLSCREEN = True
 
 class ClientArena:
@@ -160,7 +160,7 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         pygame.init()
         # Disable key repeat for precise game control
         pygame.key.set_repeat()
-        width, height = DEFAULT_WIDTH, DEFAULT_HEIGHT  # Viewport dimensions
+        width, height = get_fullscreen_size()  # Match VNC/display so noVNC shows full screen
         screen = pygame.display.set_mode(
             (width, height),
             pygame.FULLSCREEN if FULLSCREEN else 0 | pygame.DOUBLEBUF,
@@ -195,8 +195,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     entity_manager.clear() # Clear old entities before reloading
                     ui = reloaded_setup.GameUI(screen, width, height)
                     Character = reloaded_setup.Character
-                    world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
-                    world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
+                    world_width = getattr(reloaded_setup, "WORLD_WIDTH", WORLD_WIDTH)
+                    world_height = getattr(reloaded_setup, "WORLD_HEIGHT", WORLD_HEIGHT)
                     camera.set_world_size(world_width, world_height)
                     load_background()  # Reload background with new world size
                     
@@ -221,8 +221,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                         entity_manager.clear() # Clear old entities before reloading
                         ui = reloaded_setup.GameUI(screen, width, height)
                         Character = reloaded_setup.Character
-                        world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
-                        world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
+                        world_width = getattr(reloaded_setup, "WORLD_WIDTH", WORLD_WIDTH)
+                        world_height = getattr(reloaded_setup, "WORLD_HEIGHT", WORLD_HEIGHT)
                         camera.set_world_size(world_width, world_height)
                         load_background()  # Load background with world size
                         
@@ -260,8 +260,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
                     entity_manager.clear() # Clear old entities before reloading
                     ui = reloaded_setup.GameUI(screen, width, height)
                     Character = reloaded_setup.Character
-                    world_width = getattr(reloaded_setup, "WORLD_WIDTH", DEFAULT_WIDTH)
-                    world_height = getattr(reloaded_setup, "WORLD_HEIGHT", DEFAULT_HEIGHT)
+                    world_width = getattr(reloaded_setup, "WORLD_WIDTH", WORLD_WIDTH)
+                    world_height = getattr(reloaded_setup, "WORLD_HEIGHT", WORLD_HEIGHT)
                     camera.set_world_size(world_width, world_height)
                     load_background()  # Load background with world size
                     
@@ -346,8 +346,8 @@ def run_client(network_client: NetworkClient, player_id: str = ""):
         winner = None
         ui = None  # Will be created after file sync
         Character = None  # Will be loaded after file sync
-        world_width = DEFAULT_WIDTH
-        world_height = DEFAULT_HEIGHT
+        world_width = WORLD_WIDTH
+        world_height = WORLD_HEIGHT
         camera = BaseCamera(world_width, world_height, width, height)
         
         # Background will be loaded after world dimensions are known

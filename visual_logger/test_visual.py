@@ -7,6 +7,7 @@ from coding.non_callable_tools.todo_list import TodoList
 from coding.tools.testing import run_all_tests_tool as run_all_tests
 import time
 import random
+import os
 
 error_scenarios = [
     {
@@ -494,10 +495,10 @@ class PlasmaProjectile(Projectile):
         print("   • Complete process flow visualization")
 
         print("\n🌐 Check http://127.0.0.1:8765 for the complete interactive visualization!")
-        print("\n🌐 Check http://127.0.0.1:8765 for the complete interactive visualization!")
-        print("Session kept alive for browser verification...")
-        while True:
-            time.sleep(1)
+        keepalive_seconds = int(os.getenv("VISUAL_LOGGER_KEEPALIVE_SECONDS", "30"))
+        if keepalive_seconds > 0:
+            print(f"Session kept alive for browser verification ({keepalive_seconds}s)...")
+            time.sleep(keepalive_seconds)
 
     except KeyboardInterrupt:
         print("\n⏹️  Session interrupted by user")

@@ -77,6 +77,22 @@ def get_local_ip_prefix():
     finally:
         s.close()
 
+
+def get_fullscreen_size():
+    """Return (width, height) for fullscreen so in-Docker/VNC windows fill the display.
+    Uses VNC_GEOMETRY env (e.g. '1280x720') when set to match the Xvnc geometry; otherwise (1280, 720)."""
+    geom = os.environ.get("VNC_GEOMETRY", "1280x720").strip()
+    if "x" in geom.lower():
+        parts = geom.lower().split("x")
+        try:
+            w, h = int(parts[0].strip()), int(parts[1].strip())
+            if w > 0 and h > 0:
+                return (w, h)
+        except (ValueError, IndexError):
+            pass
+    return (1280, 720)
+
+
 def encrypt_code(ip: str, port: int, mode: str) -> str:
     if mode == "REMOTE":
         # Remote only needs to hide the port
@@ -338,6 +354,13 @@ def validate_gamefolder_importable():
 def ensure_gamefolder_exists():
     """Ensure GameFolder exists with content and is importable, restoring from backup if needed."""
     game_folder = "GameFolder"
+    patch_marker = os.path.join(game_folder, "patch.txt")
+    # 1. Load current settings to find the 'base'
+    settings = load_settings(auto_create_settings=False)
+    base_backup = settings.get("base_working_backup")
+
+    from coding.non_callable_tools.backup_handling import BackupHandler
+    handler = BackupHandler("__game_backups")
     
     # Check if GameFolder exists and has content
     if not os.path.exists(game_folder) or not os.listdir(game_folder):
@@ -352,32 +375,35 @@ def ensure_gamefolder_exists():
             print(f"GameFolder is in a broken state: {error_msg}")
             print("Attempting to restore from default backup...")
             should_restore = True
+
+        # It is importable, but check if it's a new Base GameFolder state
+        if os.path.exists(patch_marker): # meaning this isn't a new Base GameFolder state
+            should_restore = True
+            print("Found patch.txt, so we need to restore from backup.")
         else:
+            should_restore = False
+            base_backup, _ = handler.create_backup(game_folder)
             print("GameFolder is valid and importable. No need to restore from backup.")
-            return True
-    
-    # Restore from backup if needed
+
     if should_restore:
         try:
-            from coding.non_callable_tools.backup_handling import BackupHandler
-            handler = BackupHandler("__game_backups")
-
             # Get available backups and pick the most recent one
             backups = handler.list_backups()
             if not backups:
                 print("ERROR: No backups available to restore from!")
                 return False
 
-            # Sort by modification time (most recent first)
-            backups_with_mtime = [(b, os.path.getmtime(os.path.join("__game_backups", b))) for b in backups]
-            backups_with_mtime.sort(key=lambda x: x[1], reverse=True)
-            default_backup = backups_with_mtime[0][0]
+            if base_backup is None:
+                # Sort by modification time (most recent first)
+                backups_with_mtime = [(b, os.path.getmtime(os.path.join("__game_backups", b))) for b in backups]
+                backups_with_mtime.sort(key=lambda x: x[1], reverse=True)
+                base_backup = backups_with_mtime[0][0]
 
-            print(f"Restoring from backup: {default_backup}")
+            print(f"Restoring from backup: {base_backup}")
             print(f"Target path: {game_folder}")
-            success, _ = handler.restore_backup(default_backup, target_path=game_folder)
+            success, _ = handler.restore_backup(base_backup, target_path=game_folder)
             if success is None:
-                print(f"[error] Failed to restore GameFolder from backup: {default_backup}")
+                print(f"[error] Failed to restore GameFolder from backup: {base_backup}")
                 return False
             print("GameFolder restored successfully.")
             
@@ -390,13 +416,24 @@ def ensure_gamefolder_exists():
                 return False
             
             print("Restored GameFolder is valid and importable.")
-            return True
 
         except Exception as e:
             print(f"ERROR: Failed to restore GameFolder from backup: {e}")
             return False
+
+    # Set this in the settings
+    create_settings_file(
+        username=settings.get("username", ""),
+        gemini_api_key=settings.get("gemini_api_key", ""),
+        openai_api_key=settings.get("openai_api_key", ""),
+        selected_provider=settings.get("selected_provider", "GEMINI"),
+        model_name=settings.get("model", ""),
+        base_working_backup=base_backup,
+        already_encrypted=False
+    )
     
-    return True
+    # we now create the backup again, considering we already avoid duplicates with hash this is always a new backup or it doesn't do anything
+    return base_backup
 
 def load_settings(auto_create_settings: bool = True) -> dict:
     """Load settings from config file."""
@@ -466,7 +503,7 @@ def create_settings_file(username: str, gemini_api_key: str, openai_api_key: str
     try:
         with open(config_path, 'w') as f:
             json.dump(settings, f, indent=2)
-        print(f"Created settings file at {config_path}")
+        print(f"Created/Updated settings file at {config_path}")
         return {"success": True, "result": "Settings file created successfully"}
     except Exception as e:
         print(f"Failed to create settings: {e}")

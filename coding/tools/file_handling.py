@@ -85,7 +85,9 @@ def create_file(path: str = None, **kwargs):
         print(f"[TOOL LOG] create_file output: {result}")
         return result
 
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    dir_name = os.path.dirname(path)
+    if dir_name:
+        os.makedirs(dir_name, exist_ok=True)
 
     action_logger.snapshot_file(path)
     

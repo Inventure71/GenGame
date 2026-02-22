@@ -2,19 +2,27 @@ import random
 from GameFolder.arenas.GAME_arena import Arena
 from GameFolder.characters.GAME_character import Character
 from GameFolder.ui.GAME_ui import GameUI
-from BASE_components.BASE_arena import WORLD_WIDTH, WORLD_HEIGHT # DO NOT MANUALLY CHANGE THESE VALUES, NO MATTER WHAT THE INSTRUCTIONS ARE.
+from BASE_components.BASE_arena import WORLD_WIDTH, WORLD_HEIGHT  # DO NOT MANUALLY CHANGE THESE VALUES, NO MATTER WHAT THE INSTRUCTIONS ARE.
+from BASE_files.BASE_menu_helpers import get_fullscreen_size
 
 def setup_battle_arena(width: int = WORLD_WIDTH, height: int = WORLD_HEIGHT, headless: bool = False, player_names: list = None):
     random.seed(69)
-    arena = Arena(width, height, headless=headless)
+    # Viewport size: use fullscreen size when displaying (so noVNC/Docker fills the screen)
+    if not headless:
+        vw, vh = get_fullscreen_size()
+        arena = Arena(vw, vh, headless=headless)
+    else:
+        arena = Arena(width, height, headless=headless)
+    spawn_width = arena.width
+    spawn_height = arena.height
 
     if player_names is None:
         player_names = ["Player1", "Player2"]
 
     def pick_spawn():
         for _ in range(20):
-            x = random.uniform(80, width - 80)
-            y = random.uniform(80, height - 80)
+            x = random.uniform(80, spawn_width - 80)
+            y = random.uniform(80, spawn_height - 80)
             blocked = False
             for obstacle in arena.obstacles:
                 dx = x - obstacle.world_center[0]
@@ -25,7 +33,7 @@ def setup_battle_arena(width: int = WORLD_WIDTH, height: int = WORLD_HEIGHT, hea
                     break
             if not blocked:
                 return [x, y]
-        return [width / 2, height / 2]
+        return [spawn_width / 2, spawn_height / 2]
 
     for name in player_names:
         spawn = pick_spawn()

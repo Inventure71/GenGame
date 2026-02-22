@@ -3,6 +3,7 @@ import pygame
 import threading
 from typing import Dict, List
 from BASE_components.BASE_character import BaseCharacter
+from BASE_files.BASE_menu_helpers import get_fullscreen_size
 from BASE_components.BASE_platform import BasePlatform
 from BASE_components.BASE_effects import BaseEffect
 from BASE_components.BASE_safe_zone import SafeZone
@@ -29,6 +30,8 @@ class Arena:
 
         if not self.headless:
             pygame.init()
+            fw, fh = get_fullscreen_size()
+            self.width, self.height = fw, fh
             self.screen = pygame.display.set_mode((self.width, self.height), pygame.FULLSCREEN if FULLSCREEN else 0)
             pygame.display.set_caption("Core Arena")
             self.clock = pygame.time.Clock()

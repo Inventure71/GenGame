@@ -28,3 +28,4 @@ _debug_testing.py
 _migrate_patches.py
 _export_patches.py
 GameFolder/assets/
+launcher/

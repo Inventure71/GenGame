@@ -13,6 +13,7 @@ import tempfile
 import time
 import json
 import hashlib
+import re
 from datetime import datetime
 
 from coding.non_callable_tools.backup_handling import BackupHandler
@@ -54,6 +55,74 @@ class ChunkTransfer:
     total_chunks: int = 0
     received_chunks: int = 0
     start_time: float = field(default_factory=time.time)
+
+
+_SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_CLIENT_ALLOWED_PREFIXES = (
+    "GameFolder/",
+    "BASE_components/",
+    "__patches/",
+    "__config/",
+)
+
+
+def _project_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+def _sanitize_filename(filename: str, default_name: str = "file") -> str:
+    raw = os.path.basename((filename or default_name).replace("\\", "/")).strip()
+    stem, ext = os.path.splitext(raw)
+    safe_stem = _SAFE_NAME_RE.sub("_", stem).strip("._") or default_name
+    safe_ext = ext if ext else ".json"
+    if not safe_ext.startswith("."):
+        safe_ext = f".{safe_ext}"
+    return f"{safe_stem}{safe_ext}"
+
+
+def _sanitize_patch_name(patch_name: str) -> str:
+    if not isinstance(patch_name, str):
+        raise ValueError("Patch name must be a string")
+    sanitized = _SAFE_NAME_RE.sub("_", patch_name).strip("._")
+    if not sanitized:
+        raise ValueError("Patch name is empty after sanitization")
+    return sanitized[:120]
+
+
+def _resolve_client_write_path(file_path: str) -> str:
+    if not isinstance(file_path, str) or not file_path.strip():
+        raise ValueError("Invalid file path")
+
+    normalized = file_path.replace("\\", "/").lstrip("/")
+    if not any(normalized.startswith(prefix) for prefix in _CLIENT_ALLOWED_PREFIXES):
+        raise ValueError(f"Disallowed file target: {file_path}")
+
+    if ".." in normalized.split("/"):
+        raise ValueError(f"Path traversal detected: {file_path}")
+
+    root = _project_root()
+    resolved = os.path.abspath(os.path.join(root, normalized))
+    if not (resolved == root or resolved.startswith(root + os.sep)):
+        raise ValueError(f"Resolved path escaped project root: {file_path}")
+
+    return resolved
+
+
+def _safe_extract_tar_stream(tar_stream: io.BytesIO, target_dir: str) -> None:
+    target_abs = os.path.abspath(target_dir)
+    with tarfile.open(fileobj=tar_stream, mode='r:gz') as tar:
+        for member in tar.getmembers():
+            member_name = member.name.replace("\\", "/")
+            if not member_name or member_name.startswith("/") or ".." in member_name.split("/"):
+                raise ValueError(f"Unsafe archive member path: {member.name}")
+            if member.issym() or member.islnk():
+                raise ValueError(f"Symlinks are not allowed in backup archives: {member.name}")
+
+            member_path = os.path.abspath(os.path.join(target_abs, member_name))
+            if not (member_path == target_abs or member_path.startswith(target_abs + os.sep)):
+                raise ValueError(f"Archive member escapes target directory: {member.name}")
+
+        tar.extractall(path=target_abs)
 
 
 # ---------------------------
@@ -249,11 +318,12 @@ def _client_assemble_file(
     transfer = file_transfers[file_path]
 
     try:
-        dir_name = os.path.dirname(file_path)
+        safe_target_path = _resolve_client_write_path(file_path)
+        dir_name = os.path.dirname(safe_target_path)
         if dir_name:
             os.makedirs(dir_name, exist_ok=True)
 
-        with open(file_path, 'wb') as f:
+        with open(safe_target_path, 'wb') as f:
             for chunk_num in range(transfer['total_chunks']):
                 if chunk_num in transfer['chunks']:
                     f.write(transfer['chunks'][chunk_num])
@@ -265,7 +335,7 @@ def _client_assemble_file(
         if on_file_received:
             on_file_received(file_path, True)
 
-        print(f"File received successfully: {file_path}")
+        print(f"File received successfully: {file_path} -> {safe_target_path}")
 
     except Exception as e:
         print(f"Failed to assemble file {file_path}: {e}")
@@ -288,7 +358,9 @@ def client_handle_patch_file(
     on_patch_received: Optional[Callable[[str], None]] = None,
 ) -> None:
     """Handle incoming patch file from server."""
-    filename = message.get('filename', 'merge_patch.json')
+    filename = _sanitize_filename(message.get('filename', 'merge_patch.json'), default_name='merge_patch')
+    if not filename.lower().endswith(".json"):
+        filename = f"{os.path.splitext(filename)[0]}.json"
     content = message.get('content', b'')
 
     print(f"Received patch file: {filename} ({len(content)} bytes)")
@@ -316,7 +388,9 @@ def client_handle_patch_library_file(
     on_saved: Optional[Callable[[str, dict], None]] = None,
 ) -> None:
     """Save a patch file from the server library without applying it."""
-    filename = message.get('filename', 'server_patch.json')
+    filename = _sanitize_filename(message.get('filename', 'server_patch.json'), default_name='server_patch')
+    if not filename.lower().endswith(".json"):
+        filename = f"{os.path.splitext(filename)[0]}.json"
     content = message.get('content', b'')
 
     print(f"Received library patch file: {filename} ({len(content)} bytes)")
@@ -387,8 +461,7 @@ def _client_assemble_backup_archive(
 
         print(f"BACKUP DOWNLOAD: Extracting '{backup_name}' to {backup_dir}/")
         with io.BytesIO(backup_data) as bio:
-            with tarfile.open(fileobj=bio, mode='r:gz') as tar:
-                tar.extractall(path=backup_dir)
+            _safe_extract_tar_stream(bio, backup_dir)
 
         extracted_backup_path = os.path.join(backup_dir, backup_name)
         if os.path.exists(extracted_backup_path):
@@ -462,7 +535,9 @@ def client_handle_patch_file_chunk(
     on_patch_received: Optional[Callable[[str], None]] = None,
 ) -> None:
     """Handle incoming patch file chunk from server."""
-    filename = message.get('filename', 'merge_patch.json')
+    filename = _sanitize_filename(message.get('filename', 'merge_patch.json'), default_name='merge_patch')
+    if not filename.lower().endswith(".json"):
+        filename = f"{os.path.splitext(filename)[0]}.json"
     chunk_num = message.get('chunk_num')
     total_chunks = message.get('total_chunks')
     chunk_data = message.get('data')
@@ -609,7 +684,13 @@ def server_handle_patch_chunk(server, player_id: str, message: dict) -> None:
         print(f"Invalid patch chunk from {player_id}")
         return
 
-    key = f"{player_id}:{patch_name}"
+    try:
+        safe_patch_name = _sanitize_patch_name(patch_name)
+    except ValueError as e:
+        print(f"[security] Rejected patch chunk from {player_id}: {e}")
+        return
+
+    key = f"{player_id}:{safe_patch_name}"
 
     if key not in server.client_patch_files:
         server.client_patch_files[key] = {
@@ -625,18 +706,26 @@ def server_handle_patch_chunk(server, player_id: str, message: dict) -> None:
         transfer['received'] += 1
 
     if transfer['received'] == total_chunks:
-        server_assemble_patch_file(server, player_id, patch_name)
+        server_assemble_patch_file(server, player_id, safe_patch_name)
 
 
 def server_assemble_patch_file(server, player_id: str, patch_name: str) -> None:
-    key = f"{player_id}:{patch_name}"
+    try:
+        safe_patch_name = _sanitize_patch_name(patch_name)
+    except ValueError as e:
+        print(f"[security] Invalid patch name from {player_id}: {e}")
+        return
+    key = f"{player_id}:{safe_patch_name}"
+    if key not in server.client_patch_files:
+        print(f"[warning] Missing patch transfer state for {player_id}:{safe_patch_name}")
+        return
     transfer = server.client_patch_files[key]
 
     try:
         player_patch_dir = os.path.join(server.server_patches_dir, player_id)
         os.makedirs(player_patch_dir, mode=0o755, exist_ok=True)
 
-        patch_path = os.path.join(player_patch_dir, f"{patch_name}.json")
+        patch_path = os.path.join(player_patch_dir, f"{safe_patch_name}.json")
         with open(patch_path, 'wb') as f:
             for chunk_num in range(transfer['total']):
                 if chunk_num in transfer['chunks']:
@@ -644,7 +733,7 @@ def server_assemble_patch_file(server, player_id: str, patch_name: str) -> None:
                 else:
                     raise ValueError(f"Missing chunk {chunk_num}")
 
-        print(f"[success] Received complete patch from {player_id}: {patch_name}")
+        print(f"[success] Received complete patch from {player_id}: {safe_patch_name}")
 
         # Add to database and delete file to save space
         if hasattr(server, 'patch_db'):
@@ -656,7 +745,7 @@ def server_assemble_patch_file(server, player_id: str, patch_name: str) -> None:
                 changes_str = json.dumps(patch_data.get("changes", []), sort_keys=True)
                 patch_hash = hashlib.sha256(changes_str.encode('utf-8')).hexdigest()
                 
-                patch_db_id = server.patch_db.add_patch(patch_data, player_id, patch_hash, name=patch_name)
+                patch_db_id = server.patch_db.add_patch(patch_data, player_id, patch_hash, name=safe_patch_name)
                 print(f"    ✓ Stored in DB (ID: {patch_db_id})")
                 
                 # Keep file on disk so merge can find it; server_sync cleans up after merge
@@ -855,8 +944,7 @@ def server_assemble_client_backup(server, player_id: str, backup_name: str) -> b
 
         print(f"BACKUP ASSEMBLY: Extracting '{backup_name}' to {backup_dir}/")
         with io.BytesIO(backup_data) as bio:
-            with tarfile.open(fileobj=bio, mode='r:gz') as tar:
-                tar.extractall(path=backup_dir)
+            _safe_extract_tar_stream(bio, backup_dir)
 
         print(f"[success] BACKUP ASSEMBLY: Successfully extracted backup '{backup_name}' from {player_id}")
 

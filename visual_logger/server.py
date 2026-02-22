@@ -8,12 +8,13 @@ import os
 import difflib
 from datetime import datetime
 from typing import Optional, Dict, List, Set
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response
 import uvicorn
 
 app = FastAPI(title="Visual Logger")
+VISUAL_LOGGER_TOKEN = os.getenv("VISUAL_LOGGER_TOKEN", "").strip()
 
 # Store connected WebSocket clients
 connected_clients: Set[WebSocket] = set()
@@ -69,6 +70,15 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+
+def _authorize_http(request: Request) -> None:
+    """Enforce optional token auth for HTTP endpoints when configured."""
+    if not VISUAL_LOGGER_TOKEN:
+        return
+    provided = request.headers.get("x-visual-logger-token") or request.query_params.get("token")
+    if provided != VISUAL_LOGGER_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 
 def generate_diff(old_content: str, new_content: str, filename: str = "") -> dict:
@@ -142,6 +152,12 @@ def generate_diff(old_content: str, new_content: str, filename: str = "") -> dic
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    if VISUAL_LOGGER_TOKEN:
+        token = websocket.query_params.get("token")
+        if token != VISUAL_LOGGER_TOKEN:
+            await websocket.close(code=1008, reason="Unauthorized")
+            return
+
     await manager.connect(websocket)
     try:
         # Send initial connection confirmation
@@ -333,29 +349,33 @@ async def handle_message(data: dict, websocket: WebSocket = None):
 
 
 @app.get("/api/state")
-async def get_state():
+async def get_state(request: Request):
     """Get current session state."""
+    _authorize_http(request)
     return session_state
 
 
 @app.get("/api/diff/{path:path}")
-async def get_file_diff(path: str):
+async def get_file_diff(path: str, request: Request):
     """Get diff for a specific file."""
+    _authorize_http(request)
     old = session_state["file_snapshots"].get(path, "")
     new = session_state["file_changes"].get(path, old)
     return generate_diff(old, new, os.path.basename(path))
 
 
 @app.get("/api/file-history/{path:path}")
-async def get_file_history(path: str):
+async def get_file_history(path: str, request: Request):
     """Get complete history of a file."""
+    _authorize_http(request)
     history = session_state["file_history"].get(path, [])
     return {"path": path, "history": history}
 
 
 @app.get("/api/compare-versions")
-async def compare_versions(path: str, version_a: int, version_b: int):
+async def compare_versions(path: str, version_a: int, version_b: int, request: Request):
     """Compare two versions of a file."""
+    _authorize_http(request)
     history = session_state["file_history"].get(path, [])
     if version_a >= len(history) or version_b >= len(history):
         return {"error": "Version not found"}
@@ -373,8 +393,9 @@ if os.path.exists(static_path):
 
 
 @app.get("/")
-async def root():
+async def root(request: Request):
     """Serve the main HTML page."""
+    _authorize_http(request)
     frontend_path = os.path.join(os.path.dirname(__file__), "frontend", "index.html")
     if os.path.exists(frontend_path):
         return FileResponse(frontend_path)
@@ -392,11 +413,12 @@ def run_server(host: str = "127.0.0.1", port: int = 8765):
 
 
 @app.get("/export/{tab_name}")
-async def export_tab(tab_name: str):
+async def export_tab(tab_name: str, request: Request):
     """
     Export a specific tab's data as markdown.
     Supports: flow, diff, thinking, timeline, all
     """
+    _authorize_http(request)
     from datetime import datetime
     
     def format_time(ts):
@@ -412,7 +434,7 @@ async def export_tab(tab_name: str):
         
         # Export each section
         for section in ["flow", "diff", "thinking", "timeline"]:
-            response = await export_tab(section)
+            response = await export_tab(section, request)
             if response.status_code == 200:
                 md += response.body.decode('utf-8') + "\n\n"
         
@@ -469,4 +491,3 @@ async def export_tab(tab_name: str):
 
 if __name__ == "__main__":
     run_server()
-

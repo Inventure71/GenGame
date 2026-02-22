@@ -26,6 +26,7 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from BASE_components.BASE_network import NetworkObject
+from BASE_files.safe_serialization import safe_pickle_loads
 from BASE_files.transfer_manager import (
     client_send_patch_file,
     client_send_backup,
@@ -36,6 +37,8 @@ from BASE_files.transfer_manager import (
     client_handle_backup_download_chunk,
     client_handle_patch_file_chunk,
 )
+
+MAX_MESSAGE_SIZE_BYTES = 8 * 1024 * 1024
 
 
 class NetworkClient:
@@ -449,20 +452,29 @@ class NetworkClient:
 
                 if readable:
                     # Receive message length
-                    length_bytes = self.socket.recv(4)
+                    length_bytes = self._recv_exact(4)
                     if not length_bytes:
                         # Server disconnected
                         self.disconnect()
                         break
 
+                    if len(length_bytes) != 4:
+                        print("Invalid message header from server")
+                        self.disconnect()
+                        break
+
                     message_length = int.from_bytes(length_bytes, byteorder='big')
+                    if message_length <= 0 or message_length > MAX_MESSAGE_SIZE_BYTES:
+                        print(f"[security] Invalid message length from server: {message_length}")
+                        self.disconnect()
+                        break
 
                     # Receive the actual message using robust reader
                     data = self._recv_exact(message_length)
                     
                     if data and len(data) == message_length:
                         try:
-                            message = pickle.loads(data)
+                            message = safe_pickle_loads(data, max_bytes=MAX_MESSAGE_SIZE_BYTES)
                             
                             # If this is game_state and file sync hasn't completed, skip it
                             if message.get('type') == 'game_state' and not self.file_sync_complete:
@@ -577,7 +589,7 @@ class NetworkClient:
                     print("[error] Msgpack payload received but msgpack is unavailable")
                     return None
                 return msgpack.unpackb(data, raw=False, strict_map_key=False)
-            return pickle.loads(data)
+            return safe_pickle_loads(data, max_bytes=MAX_MESSAGE_SIZE_BYTES)
         except Exception as e:
             print(f"[error] Failed to decode game state payload ({serialization}): {e}")
             return None

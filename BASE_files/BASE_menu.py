@@ -1,6 +1,5 @@
 import os
 import json
-import ctypes
 
 # Set video driver BEFORE importing pygame
 #os.environ['SDL_VIDEODRIVER'] = 'cocoa'
@@ -14,9 +13,9 @@ import platform
 import subprocess
 import threading
 
-from BASE_files.BASE_menu_helpers import load_settings
+from BASE_files.BASE_menu_helpers import load_settings, get_fullscreen_size
 from BASE_files.patch_manager import PatchManager
-from BASE_files.BASE_game_client import run_client, DEFAULT_WIDTH, DEFAULT_HEIGHT
+from BASE_files.BASE_game_client import run_client
 from BASE_files.BASE_menu_renderers import MenuRenderers
 from BASE_files.BASE_menu_handlers import MenuHandlers
 from BASE_files.BASE_menu_network import MenuNetwork
@@ -58,8 +57,9 @@ class BaseMenu:
             print("Warning: Clipboard support not available.")
 
         print("Creating window...")
+        fw, fh = get_fullscreen_size()
         self.screen = pygame.display.set_mode(
-            (DEFAULT_WIDTH, DEFAULT_HEIGHT),
+            (fw, fh),
             pygame.FULLSCREEN if FULLSCREEN else 0 | pygame.DOUBLEBUF,
             vsync=1,
         )
@@ -102,6 +102,7 @@ class BaseMenu:
         self.agent_prompt = ""
         self.agent_running = False
         self.agent_thread = None
+        self.agent_stop_requested = False
         self.agent_results = None
         self.show_fix_prompt = False
         self.agent_values = None
@@ -413,37 +414,25 @@ class BaseMenu:
         print("Failed to retrieve clipboard content")
         return ""
 
-    def _kill_agent_thread(self):
-        """Attempt to stop the running agent thread by raising SystemExit."""
+    def stop_agent_immediately(self):
+        """Request cooperative stop for the currently running agent thread."""
+        self.agent_stop_requested = True
         thread = getattr(self, "agent_thread", None)
         if thread and thread.is_alive():
-            res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
-                ctypes.c_long(thread.ident),
-                ctypes.py_object(SystemExit)
-            )
-            if res == 0:
-                return False  # thread not found
-            if res > 1:
-                # revert if more than one thread was affected
-                ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread.ident), 0)
-                return False
-        return True
-
-    def stop_agent_immediately(self):
-        """Hard kill the agent thread and reset state."""
-        stopped = self._kill_agent_thread()
+            self.show_error_message("Stop requested. Agent will stop after the current step.")
+            return
         self.agent_running = False
         self.agent_thread = None
-        try:
-            self.action_logger.end_session()
-        except Exception:
-            pass
-        self.show_error_message("Agent stopped." if stopped else "Failed to stop agent thread.")
+        self.show_error_message("Agent stop requested.")
 
     # Agent functionality
     def run_agent(self, prompt: str, patch_to_load: str = None, needs_rebase: bool = True):
         """Run the agent with the given prompt."""
         try:
+            if self.agent_stop_requested:
+                self.agent_results = {'passed': 0, 'total': 0, 'error': 'Agent stop requested before start'}
+                return
+
             from agent import start_complete_agent_session
             settings = {
                 "selected_provider": self.selected_provider,
@@ -459,6 +448,11 @@ class BaseMenu:
                 settings=settings
             )
             self.agent_values = {"success": success, "modelHandler": modelHandler, "todo_list": todo_list, "prompt": prompt, "backup_name": backup_name}
+
+            if self.agent_stop_requested:
+                self.agent_results = {'passed': 0, 'total': 0, 'error': 'Agent stop requested'}
+                return
+
             # Get test results
             from coding.tools.testing import run_all_tests_tool
             test_results = run_all_tests_tool(explanation="Post-agent test run from UI")
@@ -475,6 +469,7 @@ class BaseMenu:
         finally:
             self.agent_running = False
             self.agent_thread = None
+            self.agent_stop_requested = False
 
     def run_agent_fix(self, results):
         """Run the agent in fix mode."""

@@ -67,6 +67,7 @@ You are an expert Python developer implementing one task at a time for the Core 
   - Then center the rect around that point: rect origin must be `[center_x - width/2, screen_y_center - height/2]`.
 - Do **NOT** assume `location` is already the top-left; that will make melee/area-effect hitboxes live only on one side (e.g., only hitting to the right).
 - For any new melee or area-effect ability, add tests that verify hits when the target is on **both** sides of the attacker (left and right, and vertically if relevant).
+- **Angle calculations**: Always use `math.atan2(dy, dx)` (Y first, X second) where `dy` is vertical and `dx` is horizontal. Reversed parameters invert mouse controls.
 
 ### Effect Collision Detection
 
@@ -99,6 +100,9 @@ The spatial grid contains BOTH rigid obstacles (walls) and non-rigid interactive
 - **ALWAYS** store primitive data (strings, numbers, lists, dicts)
 - **ALWAYS** store derived values (like `cow_size`) if needed for `draw()` method
 - **NOTE**: Effects may accept `update(delta_time, arena=None)`; the MS2 Arena passes itself when the effect signature supports it. Keep effects serializable and never store the arena.
+
+- **Visual State Stripping**: `NetworkObject` removes `animation_frame`, `animation_timer`, and `animation_frame_count` during serialization.
+- **Client Safety**: Classes using these in `draw()` MUST handle their absence in `__setstate__` (or rely on the `NetworkObject` base defaults) to prevent client crashes. Always test drawing a deserialized instance.
 
 ### Pattern for Effects Needing Entity Access
 ```python

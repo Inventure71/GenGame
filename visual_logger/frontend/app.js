@@ -319,7 +319,10 @@ class VisualLogger {
     // =========================================================================
     
     connect() {
-        const wsUrl = `ws://${window.location.host}/ws`;
+        const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const authToken = new URLSearchParams(window.location.search).get('token');
+        const authQuery = authToken ? `?token=${encodeURIComponent(authToken)}` : '';
+        const wsUrl = `${wsScheme}://${window.location.host}/ws${authQuery}`;
         this.ws = new WebSocket(wsUrl);
         
         this.ws.onopen = () => {
